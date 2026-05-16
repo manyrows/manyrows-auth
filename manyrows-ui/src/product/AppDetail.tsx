@@ -489,7 +489,7 @@ export default function AppDetail({ project, workspace, appId, onAppUpdated }: P
                 disabled={saving}
                 placeholder="auth.myapp.com"
                 helperText={t("apps.detail.authDomainDesc", {
-                  defaultValue: "Custom hostname for OAuth callbacks and AppKit's API base. Bare hostname only (no scheme, no path). CNAME this to the ManyRows install. Leave blank to use the install's default base URL.",
+                  defaultValue: "Custom hostname for OAuth callbacks and AppKit's API base. Bare hostname only (no scheme, no path). CNAME this to the ManyRows install. Leave blank to use the install's default base URL. If you set this, also set the Cookie domain to the registrable parent (e.g. auth.drumkingdom.com → drumkingdom.com) under Security → Session transport → enable cookies → Cookie domain, or session cookies stay scoped to the auth subdomain.",
                 })}
               />
 

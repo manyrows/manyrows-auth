@@ -141,10 +141,16 @@ The Docker compose stack is for local evaluation. For a real deploy:
 4. **Persist `manyrows-db`** — managed Postgres recommended in
    production. If you stay with the bundled compose Postgres, back the
    volume up.
-5. **Custom domain for branding** — wire `auth.yourdomain.com` to
-   ManyRows so cookies are first-party with your app. Detailed
-   per-app runbook is in the admin UI under
-   *App → Security → Custom Domain*.
+5. **Custom domain + cookie scope** — wire `auth.yourdomain.com` to
+   ManyRows so cookies are first-party with your app. Two per-app
+   settings in the admin UI:
+   - *App → Security → Custom Domain* — set the **Auth domain**
+     (e.g. `auth.drumkingdom.com`). Detailed runbook is on that screen.
+   - *App → Security → Session transport → Enable cookies → Cookie
+     domain* — set this to the **registrable parent domain**
+     (`auth.drumkingdom.com` → `drumkingdom.com`). Skip it and the
+     session cookie is scoped to the auth subdomain only, so it won't
+     be sent on requests from your app's own domain.
 
 ### Reverse-proxy examples
 
