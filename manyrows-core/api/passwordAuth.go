@@ -38,8 +38,7 @@ type PasswordAuthResult struct {
 // password login: user lookup, constant-time hash compare, lockout
 // check, email-verification check. It does NOT touch rate limits,
 // audit logs, attempt counters, or sessions — those are the caller's
-// responsibility because they depend on which surface (workspace
-// auth handler vs. /bff/login) is calling.
+// responsibility because they depend on which surface is calling.
 //
 // The function performs a verify on every call, even on the
 // no-user branch (against a dummy), so the timing is constant

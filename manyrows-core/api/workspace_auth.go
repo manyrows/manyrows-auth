@@ -1223,8 +1223,8 @@ func (handler *RequestHandler) WorkspaceLoginPassword(w http.ResponseWriter, r *
 
 	// Validate credentials. The helper does the security-critical
 	// part (lookup, constant-time password verify, lockout check,
-	// email-verification check) so any future password surface (e.g.
-	// the BFF /bff/login endpoint) shares exactly the same logic.
+	// email-verification check) so any future password surface shares
+	// exactly the same logic.
 	authResult, err := validateAppPasswordCredentials(r.Context(), handler.repo, ctxApp, toEmail, pw)
 	if err != nil {
 		log.Err(err).Msg("failed to validate password credentials")

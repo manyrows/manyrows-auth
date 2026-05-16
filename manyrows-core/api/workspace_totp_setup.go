@@ -142,7 +142,7 @@ func (handler *RequestHandler) HandleWorkspaceTOTPSetupInit(w http.ResponseWrite
 // totpSetupCompletionResult is what enrollSetupCompletionShared
 // returns on success — the freshly-minted session + the user's
 // backup codes. Caller wraps these in whatever response shape its
-// surface uses (Tier 1 token pair vs BFF session ID).
+// surface uses (e.g. the Tier-1 token-pair response).
 type totpSetupCompletionResult struct {
 	Session     *core.ClientSession
 	User        *core.User
@@ -153,8 +153,8 @@ type totpSetupCompletionResult struct {
 // runTOTPSetupCompletion does the full "validate code → enable TOTP →
 // banned/default-role checks → create session" pipeline. Returns
 // false when an HTTP error has already been written (caller stops).
-// On success, caller writes the response (Tier 1 includes a token
-// pair, BFF returns the session ID).
+// On success, caller writes the response (e.g. Tier 1 includes a
+// token pair).
 //
 // Auth-logs: emits totp.enabled when enrollment succeeds and
 // login.success when the session is created.
@@ -330,39 +330,5 @@ func (handler *RequestHandler) HandleWorkspaceTOTPSetupComplete(w http.ResponseW
 		"expiresIn":    tokenPair.ExpiresIn,
 		"session":      toClientSessionResource(result.Session),
 		"backupCodes":  result.BackupCodes,
-	})
-}
-
-// BFFTOTPSetupComplete is the BFF-mode counterpart. No token pair —
-// returns the session ID for the customer's BFF cookie + the backup
-// codes (the BFF SDK forwards backup codes to the browser).
-//
-// POST /bff/totp/setup-complete
-func (handler *RequestHandler) BFFTOTPSetupComplete(w http.ResponseWriter, r *http.Request) {
-	ctxApp, ok := core.AppFromContext(r.Context())
-	if !ok || ctxApp == nil {
-		log.Error().Msg("bff/totp/setup-complete: app missing from context")
-		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
-		return
-	}
-
-	var req struct {
-		SetupChallengeToken string `json:"setupChallengeToken"`
-		Code                string `json:"code"`
-	}
-	if !utils.ReadJson(w, r, &req) {
-		return
-	}
-
-	result, ok := handler.runTOTPSetupCompletion(w, r, ctxApp, req.SetupChallengeToken, req.Code)
-	if !ok {
-		return
-	}
-
-	utils.WriteJson(w, map[string]any{
-		"sessionId":   result.Session.ID,
-		"userId":      result.Session.UserID,
-		"expiresAt":   result.Session.ExpiresAt,
-		"backupCodes": result.BackupCodes,
 	})
 }

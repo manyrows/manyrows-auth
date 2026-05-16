@@ -24,10 +24,8 @@ import (
 // creation, token-pair issue, audit logs, webhooks, cookies) is
 // shared across all four providers.
 //
-// Mirrors bffOAuthCallbackOpts on the BFF side; the two flows
-// diverge in their response shape (BFF redirects to the customer's
-// URL with an auth code; Tier 1 returns JSON tokens + sets cookies)
-// but the gating logic is identical and must stay in lockstep.
+// Tier 1 returns JSON tokens and sets cookies; the gating logic
+// above is provider-agnostic and shared across all four providers.
 type tier1OAuthLoginOpts struct {
 	// AuthMethod is what appears in the auth_log rows.
 	AuthMethod core.AuthLogMethod

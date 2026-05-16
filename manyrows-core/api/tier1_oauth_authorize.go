@@ -17,7 +17,7 @@ import (
 // shared Authorize handler. Each provider's WorkspaceXxxAuthorize
 // becomes a thin wrapper that builds these opts and calls the helper.
 //
-// Mirrors the bff side's pattern but keeps Tier-1's quirks visible:
+// Keeps Tier-1's quirks visible:
 // Google uniquely tolerates an empty openerOrigin (server-side /
 // non-popup callers fall through with no postMessage target); the
 // other three providers require it because the popup-postMessage
@@ -106,8 +106,8 @@ func (handler *RequestHandler) requireOAuthAppContext(
 // workspaceOAuthAuthorize is the shared body of the four Tier-1
 // WorkspaceXxxAuthorize handlers. Validates the workspace + app
 // context, the per-provider config, the popup opener origin against
-// the app's CORS allowlist, and the optional bff_redirect_uri. Then
-// signs an OAuth state row and returns {url, state} as JSON.
+// the app's CORS allowlist. Then signs an OAuth state row and returns
+// {url, state} as JSON.
 func (handler *RequestHandler) workspaceOAuthAuthorize(
 	w http.ResponseWriter, r *http.Request,
 	opts tier1OAuthAuthorizeOpts,

@@ -14,8 +14,8 @@ import (
 // immediately without touching the response writer again.
 //
 // Pass an empty subject ("") to skip the per-subject check; some flows
-// rate-limit by IP only (refresh-token rotation, BFF endpoints that
-// have no caller-supplied identifier at the moment of the check).
+// rate-limit by IP only (e.g. refresh-token rotation, which has no
+// caller-supplied identifier at the moment of the check).
 //
 // purposeContext is the human-readable phrase suffixed onto the log
 // message ("failed to count attempts by IP for <purposeContext>"). It

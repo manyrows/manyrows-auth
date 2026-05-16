@@ -57,9 +57,6 @@ docker compose down
   default-role assignment on signup.
 - **Session management** — per-app session TTL, cookie-domain control,
   IP allowlists, CORS origin lists, revocation.
-- **BFF support** — first-class backend-for-frontend pattern with
-  Go / Node / Python / Java SDKs (Go is published; others are
-  source-only on GitHub for now).
 - **Audit logs** — every authentication event recorded per
   workspace/app, filterable in the admin AuthLogs view.
 - **Embeddable end-user UI** (`@manyrows/appkit-react`) — drop in a
@@ -215,8 +212,8 @@ end-user auth UI bundle compiled in via `//go:embed`. Postgres is the
 only external dependency — schema lives in `manyrows-core/db/migrations`,
 applied at boot via `goose` into a configurable schema (`manyrows` by
 default). Admin auth uses cookie sessions; end-user auth issues
-JWT bearer tokens for direct-API callers and HttpOnly cookies for
-the BFF pattern.
+JWT bearer tokens (`local` transport) or HttpOnly cookies (`cookie`
+transport), selectable per app.
 
 ---
 

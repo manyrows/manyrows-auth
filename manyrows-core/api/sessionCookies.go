@@ -42,9 +42,9 @@ func resolveSameSite(app *core.App) http.SameSite {
 // ManyRows must share an origin (or sit on subdomains of a shared
 // registrable domain reached via top-level navigation). Cross-origin
 // XHR is not supported on the cookie path — those clients use Bearer
-// or BFF. Bearer-mode clients (AppKit-direct localStorage, BFF,
-// native apps) ignore these cookies and keep reading tokens from the
-// JSON response body.
+// mode. Bearer-mode clients (AppKit-direct localStorage, native apps)
+// ignore these cookies and keep reading tokens from the JSON response
+// body.
 //
 // SameSite defaults to Lax — works for every flow including magic
 // links, OAuth redirects, and the bookmark/typed-URL cases. Apps

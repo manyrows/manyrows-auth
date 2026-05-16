@@ -337,9 +337,9 @@ func newTokenClaims() (core.TokenClaims, []byte, error) {
 }
 
 // effectiveClientIPKey carries an authenticated client IP set by an
-// upstream middleware. Currently unused (the BFF middleware that wrote
-// to it was removed) but kept as the escape hatch for future trusted
-// middlewares that need to override the wire-level client IP.
+// upstream middleware. Currently unused, but kept as the escape hatch
+// for future trusted middlewares that need to override the wire-level
+// client IP.
 type effectiveClientIPKey struct{}
 
 // WithClientIP returns a context that carries an authenticated client

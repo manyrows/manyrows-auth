@@ -375,10 +375,9 @@ type AppResource struct {
 	HideBranding              bool      `json:"hideBranding,omitempty"`
 	PasskeyEnabled            bool      `json:"passkeyEnabled,omitempty"`
 	// TransportMode is the explicit selector for how the session token
-	// is delivered ("local" / "bff" / "cookie"). AppKit reads this on
-	// boot and configures fetch / storage behaviour accordingly — no
-	// client-side prop needed. Replaces the older bffMode boolean,
-	// which was just (transportMode == "bff").
+	// is delivered ("local" / "cookie"). AppKit reads this on boot and
+	// configures fetch / storage behaviour accordingly — no client-side
+	// prop needed.
 	TransportMode string `json:"transportMode"`
 }
 
@@ -995,9 +994,9 @@ func (handler *RequestHandler) HandleUpdateAppCookieDomain(w http.ResponseWriter
 
 // HandleUpdateAppTransportMode sets the per-app session-transport
 // selector. Validates the value is one of the allowed enum constants
-// (local / bff / cookie). Switching modes does NOT auto-clear the
-// per-mode config (bff_client_id, cookie_domain) — those stay
-// dormant when the mode is off, so flipping back doesn't lose them.
+// (local / cookie). Switching modes does NOT auto-clear the per-mode
+// config (e.g. cookie_domain) — it stays dormant when the mode is
+// off, so flipping back doesn't lose it.
 func (handler *RequestHandler) HandleUpdateAppTransportMode(w http.ResponseWriter, r *http.Request) {
 	_, ws, ok := handler.adminAndWorkspace(w, r)
 	if !ok {
