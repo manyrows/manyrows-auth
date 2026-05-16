@@ -17,6 +17,9 @@
 /build.sh
 /deploy.sh
 
+# Personal local notes/draft — not part of the project.
+/README1.md
+
 # Embedded UI bundle — copied from manyrows-ui/dist at build time
 manyrows-core/web/*
 !manyrows-core/web/web.go
