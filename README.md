@@ -10,7 +10,6 @@ app or several SSO-style), with their own sign-in settings, OAuth
 credentials, and roles.
 
 > **Status:** in active development by a solo dev. Self-hosted only.
-> See `todo/TODO.md` for direction.
 
 ---
 
@@ -61,7 +60,8 @@ docker compose down
 - **BFF support** — first-class backend-for-frontend pattern with
   Go / Node / Python / Java SDKs (Go is published; others are
   source-only on GitHub for now).
-- **Audit logs** with optional GeoIP enrichment.
+- **Audit logs** — every authentication event recorded per
+  workspace/app, filterable in the admin AuthLogs view.
 - **Embeddable end-user UI** (`@manyrows/appkit-react`) — drop in a
   React component, get a fully wired sign-in screen.
 
@@ -237,8 +237,11 @@ go test -v ./api/... -run "TestCreateProject" -count=1
 ```
 
 The repo is an npm workspace at the root, so `npm install` from the
-top-level pulls deps for `manyrows-ui`, `appkit-ui`, and `appkit-react`
-in one shot.
+top-level pulls deps for `manyrows-ui` and `appkit-ui` in one shot.
+`appkit-react` (the published customer SDK) is standalone — it's not
+part of the workspace and isn't needed to build or run the server;
+install its deps separately when working on it (see *Publishing the
+React SDK* below).
 
 ### Publishing the React SDK
 
