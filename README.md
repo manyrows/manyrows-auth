@@ -199,6 +199,76 @@ miss the `Secure` flag.
 
 ---
 
+## Adding login to your app (AppKit)
+
+You don't have to build a sign-in screen. ManyRows ships **AppKit** —
+a drop-in end-user auth UI (sign-in, registration, OTP verification,
+password reset, profile) that talks to your install. It's an optional
+convenience layer for React (with a framework-free runtime too); if you
+want full control, call the Client REST API directly. Full reference —
+every prop, hook, theming, auth-route handling, the REST API — is at
+**<https://manyrows.com/docs>**.
+
+> **CORS — required.** AppKit calls ManyRows from *your* app's origin,
+> so add your domain (e.g. `https://yourapp.com`) to the app's allowed
+> CORS origins in the admin UI (Apps page) — otherwise the browser
+> blocks every request.
+
+**React** — `npm i @manyrows/appkit-react`:
+
+```tsx
+import { AppKit, AppKitAuthed, useUser } from "@manyrows/appkit-react";
+
+function MyApp() {
+  const user = useUser();
+  return <p>Welcome, {user?.name || user?.email}</p>;
+}
+
+export default function Page() {
+  return (
+    <AppKit
+      workspace="your-workspace"
+      appId="your-app-id"
+      src="https://auth.yourdomain.com/appkit/assets/appkit.js"
+    >
+      <AppKitAuthed fallback={null}>
+        <MyApp />
+      </AppKitAuthed>
+    </AppKit>
+  );
+}
+```
+
+Only `workspace` and `appId` are required. Because you're self-hosting,
+set the `src` prop to your install's runtime URL — otherwise AppKit
+loads the hosted (manyrows.com) runtime by default.
+
+**Without React** — load the runtime and drive `window.ManyRows.AppKit`:
+
+```html
+<script src="https://auth.yourdomain.com/appkit/assets/appkit.js" defer></script>
+<div id="manyrows-app"></div>
+<script>
+  window.addEventListener("load", () => {
+    window.ManyRows.AppKit.init({
+      containerId: "manyrows-app",
+      workspace: "your-workspace",
+      appId: "your-app-id",
+      onState: (s) => {
+        if (s.status === "authenticated") {
+          console.log("user:", s.appData?.account?.email, "token:", s.jwtToken);
+        }
+      },
+    });
+  });
+</script>
+```
+
+The runtime is served by your own binary at
+`/appkit/assets/appkit.js` (embedded — nothing extra to deploy).
+
+---
+
 ## Privacy: what this install does over the network
 
 ManyRows is self-hosted and does not phone home. The binary makes
