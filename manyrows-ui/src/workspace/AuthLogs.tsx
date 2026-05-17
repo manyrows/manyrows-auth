@@ -5,11 +5,13 @@ import {
   Alert,
   Box,
   Button,
+  Checkbox,
   Chip,
   CircularProgress,
   Drawer,
   IconButton,
   InputAdornment,
+  ListItemText,
   MenuItem,
   Paper,
   Select,
@@ -541,12 +543,13 @@ export default function AuthLogs({ workspaceId, appId }: Props) {
               setEventsSel(typeof e.target.value === "string" ? [e.target.value] : e.target.value);
               setPage(0);
             }}
-            renderValue={(s) => (s.length === 0 ? <em>Event</em> : `${s.length} event${s.length === 1 ? "" : "s"}`)}
+            renderValue={(s) => (s.length === 0 ? <em>Event (any)</em> : `${s.length} event${s.length === 1 ? "" : "s"}`)}
             sx={{ minWidth: 160 }}
           >
             {EVENT_VOCAB.map((e) => (
               <MenuItem key={e.value} value={e.value}>
-                {e.label}
+                <Checkbox size="small" checked={eventsSel.includes(e.value)} sx={{ py: 0, mr: 1 }} />
+                <ListItemText primary={e.label} />
               </MenuItem>
             ))}
           </Select>
@@ -560,12 +563,13 @@ export default function AuthLogs({ workspaceId, appId }: Props) {
               setMethodsSel(typeof e.target.value === "string" ? [e.target.value] : e.target.value);
               setPage(0);
             }}
-            renderValue={(s) => (s.length === 0 ? <em>Method</em> : `${s.length} method${s.length === 1 ? "" : "s"}`)}
+            renderValue={(s) => (s.length === 0 ? <em>Method (any)</em> : `${s.length} method${s.length === 1 ? "" : "s"}`)}
             sx={{ minWidth: 160 }}
           >
             {METHOD_VOCAB.map((m) => (
               <MenuItem key={m.value} value={m.value}>
-                {m.label}
+                <Checkbox size="small" checked={methodsSel.includes(m.value)} sx={{ py: 0, mr: 1 }} />
+                <ListItemText primary={m.label} />
               </MenuItem>
             ))}
           </Select>
