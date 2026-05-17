@@ -190,9 +190,11 @@ type ListAuthLogsParams struct {
 	ActorTypes     []core.AuthLogActorType
 
 	// Subject filters. SubjectUserID/SubjectAccountID are exact matches;
-	// EmailAttemptedLike is a case-insensitive substring on the
-	// email_attempted column (handy for unknown-user attempts where the
-	// only identity is what was typed).
+	// EmailAttemptedLike is a case-insensitive substring matched against
+	// the typed email_attempted AND the subject's actual email
+	// (subject_user → users.email, subject_account → accounts.email), so
+	// searching a known user/admin by email also finds rows where
+	// email_attempted is null (OAuth, session events, admin actions).
 	SubjectUserID      *uuid.UUID
 	SubjectAccountID   *uuid.UUID
 	EmailAttemptedLike string
@@ -313,7 +315,14 @@ func buildAuthLogWhere(p ListAuthLogsParams) (string, []any) {
 		add("subject_account_id = ?", *p.SubjectAccountID)
 	}
 	if e := strings.TrimSpace(strings.ToLower(p.EmailAttemptedLike)); e != "" {
-		add("email_attempted ILIKE ?", "%"+e+"%")
+		// Match the typed email OR the subject's actual email so a
+		// known user/admin is found even when email_attempted is null.
+		add(
+			"(email_attempted ILIKE ?"+
+				" OR EXISTS (SELECT 1 FROM users u WHERE u.id = auth_logs.subject_user_id AND u.email ILIKE ?)"+
+				" OR EXISTS (SELECT 1 FROM accounts a WHERE a.id = auth_logs.subject_account_id AND a.email ILIKE ?))",
+			"%"+e+"%", "%"+e+"%", "%"+e+"%",
+		)
 	}
 	if p.SessionID != nil {
 		add("session_id = ?", *p.SessionID)
