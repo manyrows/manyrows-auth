@@ -105,14 +105,14 @@ set is `MANYROWS_FROM_EMAIL`; everything else has sane defaults.
 
 A few worth knowing:
 
-| Variable | Default | Notes |
-|---|---|---|
-| `DATABASE_URL` | (required) | Postgres connection string. |
-| `MANYROWS_FROM_EMAIL` | (none) | Sender address on outbound mail (admin register, password reset, magic links). **Required for production** — the email service refuses to send with an empty From and logs an error. Use an address on your own domain so DKIM/SPF pass. |
-| `MANYROWS_BASE_URL` | (auto-pinned) | Pinned automatically on the first `/admin/register`. Set explicitly when behind a known reverse proxy. |
-| `MANYROWS_DB_SCHEMA` | `manyrows` | Postgres schema. Override if `manyrows` clashes with anything in the database. |
+| Variable                                          | Default | Notes |
+|---------------------------------------------------|---|---|
+| `DATABASE_URL` or `MANYROWS_DATABASE_URL`         | (required) | Postgres connection string. |
+| `MANYROWS_FROM_EMAIL`                             | (none) | Sender address on outbound mail (admin register, password reset, magic links). **Required for production** — the email service refuses to send with an empty From and logs an error. Use an address on your own domain so DKIM/SPF pass. |
+| `MANYROWS_BASE_URL`                               | (auto-pinned) | Pinned automatically on the first `/admin/register`. Set explicitly when behind a known reverse proxy. |
+| `MANYROWS_DB_SCHEMA`                              | `manyrows` | Postgres schema. Override if `manyrows` clashes with anything in the database. |
 | `MANYROWS_SMTP_HOST`/`PORT`/`USERNAME`/`PASSWORD` | (none) | Outbound mail. Without these, mail is logged to stdout. |
-| `MANYROWS_TURNSTILE_ENABLED` | `false` | Cloudflare bot challenge on register/login. Off by default. |
+| `MANYROWS_TURNSTILE_ENABLED`                      | `false` | Cloudflare bot challenge on register/login. Off by default. |
 
 ### Database tuning
 
