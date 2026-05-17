@@ -87,6 +87,16 @@ docker compose down
 
 ---
 
+## Screenshots
+
+<p align="center">
+  <img src="docs/screenshots/sign-in.png" width="760" alt="End-user sign-in (AppKit)"><br><br>
+  <img src="docs/screenshots/admin-dashboard.png" width="760" alt="Admin dashboard"><br><br>
+  <img src="docs/screenshots/auth-logs.png" width="760" alt="Auth logs">
+</p>
+
+---
+
 ## Configuration
 
 All knobs are env vars prefixed `MANYROWS_*`. The full list with
