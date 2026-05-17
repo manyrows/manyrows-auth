@@ -274,7 +274,7 @@ export default function AppHeader(props: AppHeaderProps) {
               }}
               title={`Server build: ${serverVersion}`}
             >
-              v{serverVersion}
+              {serverVersion}
             </Typography>
           )}
 

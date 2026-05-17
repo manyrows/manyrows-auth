@@ -47,7 +47,7 @@ export default function AuthShell({ children }: Props) {
             }}
             title="Server build"
           >
-            ManyRows v{version}
+            ManyRows {version}
           </Typography>
         )}
       </Box>
