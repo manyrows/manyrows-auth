@@ -3,33 +3,33 @@
 Self-hostable user authentication you can drop in front of your apps.
 Sign-in, password reset, email verification, magic links, OAuth (Google,
 Apple, Microsoft, GitHub), passkeys, sessions, audit logs, role-based
-access — running as a single Go binary with Postgres.
+access - running as a single Go binary with Postgres.
 
 One install runs many apps. Apps share users through user pools (one
 app or several SSO-style), with their own sign-in settings, OAuth
 credentials, and roles.
 
 > **Honest status.** ManyRows Auth is built by one developer. It runs
-> in production today — it powers sign-in for
+> in production today - it powers sign-in for
 > [DrumKingdom.com](https://drumkingdom.com) and
-> [JerryLingo.com](https://jerrylingo.com) — but there's no QA team, no SLA, and no claim it's
+> [JerryLingo.com](https://jerrylingo.com) - but there's no QA team, no SLA, and no claim it's
 > bug-free. Run it, kick the tyres, and satisfy yourself it holds up
 > before you put it in front of anything that matters. If something
 > breaks or feels wrong, that's a bug I want to hear about.
 >
 > **Help shape it.** Issues, reproductions, and PRs are genuinely
-> welcome — real-world use is what hardens an auth system. If it
+> welcome - real-world use is what hardens an auth system. If it
 > almost-but-not-quite fits your case, say so; that feedback moves the
 > roadmap more than anything.
 >
 > **Why open source.** Authentication is security-critical
-> infrastructure — you shouldn't have to trust a black box with your
+> infrastructure - you shouldn't have to trust a black box with your
 > users' credentials. Open source means anyone can audit exactly what
 > the binary does, self-host it with no vendor lock-in, and fork it if
 > I ever step away. AGPL-3.0 keeps it that way; a commercial license is
 > available if those terms don't fit (see *License*).
 >
-> **Your data.** It's your Postgres. Users, sessions, audit logs —
+> **Your data.** It's your Postgres. Users, sessions, audit logs -
 > query, join, export, or build on them directly in plain SQL. No
 > proprietary API, rate-limited dashboard, or export fee stands
 > between you and the data you own.
@@ -46,13 +46,13 @@ docker compose up -d
 ```
 
 Open `http://localhost:8080`. The first registrant becomes the
-super-admin — there's no signup flow after that, so claim it before
+super-admin - there's no signup flow after that, so claim it before
 exposing the install.
 
 If you can't claim before exposure (CI deploys, slow first boot, etc.),
 set `MANYROWS_SUPER_ADMIN_EMAIL=you@yourcompany.com` in `.env` before
 `docker compose up`. The slot is then pre-claimed at boot and only that
-exact email can complete the first registration — random scanners
+exact email can complete the first registration - random scanners
 hitting the install can't take it.
 
 To watch the boot:
@@ -73,16 +73,16 @@ docker compose down
 
 - **Sign-in methods** per app: password, OTP code, magic link, OAuth
   (Google / Apple / Microsoft / GitHub), passkeys.
-- **Workspace + project + app hierarchy** — one ManyRows install
+- **Workspace + project + app hierarchy** - one ManyRows install
   groups environments (dev / staging / prod) under projects, and
   projects under workspaces.
-- **Role-based access control** — per-project permissions and roles,
+- **Role-based access control** - per-project permissions and roles,
   default-role assignment on signup.
-- **Session management** — per-app session TTL, cookie-domain control,
+- **Session management** - per-app session TTL, cookie-domain control,
   IP allowlists, CORS origin lists, revocation.
-- **Audit logs** — every authentication event recorded per
+- **Audit logs** - every authentication event recorded per
   workspace/app, filterable in the admin AuthLogs view.
-- **Embeddable end-user UI** (`@manyrows/appkit-react`) — drop in a
+- **Embeddable end-user UI** (`@manyrows/appkit-react`) - drop in a
   React component, get a fully wired sign-in screen.
 
 ---
@@ -108,7 +108,7 @@ A few worth knowing:
 | Variable                                          | Default | Notes |
 |---------------------------------------------------|---|---|
 | `DATABASE_URL` or `MANYROWS_DATABASE_URL`         | (required) | Postgres connection string. |
-| `MANYROWS_FROM_EMAIL`                             | (none) | Sender address on outbound mail (admin register, password reset, magic links). **Required for production** — the email service refuses to send with an empty From and logs an error. Use an address on your own domain so DKIM/SPF pass. |
+| `MANYROWS_FROM_EMAIL`                             | (none) | Sender address on outbound mail (admin register, password reset, magic links). **Required for production** - the email service refuses to send with an empty From and logs an error. Use an address on your own domain so DKIM/SPF pass. |
 | `MANYROWS_BASE_URL`                               | (auto-pinned) | Pinned automatically on the first `/admin/register`. Set explicitly when behind a known reverse proxy. |
 | `MANYROWS_DB_SCHEMA`                              | `manyrows` | Postgres schema. Override if `manyrows` clashes with anything in the database. |
 | `MANYROWS_SMTP_HOST`/`PORT`/`USERNAME`/`PASSWORD` | (none) | Outbound mail. Without these, mail is logged to stdout. |
@@ -126,10 +126,10 @@ The pool defaults are fine for most installs. Override these when you know why.
 | `MANYROWS_POOL_MAX_CONN_IDLE_TIME_SECONDS` | (pgx default) | Idle pruning. Tighten when your DB charges for connection-minutes. |
 | `MANYROWS_POOL_MAX_CONN_LIFETIME_SECONDS` | (pgx default) | Recycle every connection after this many seconds. Useful behind load balancers that drop long-lived TCP. |
 | `MANYROWS_POOL_HEALTH_CHECK_PERIOD_SECONDS` | (pgx default) | How often pgx pings idle connections to keep them warm. |
-| `MANYROWS_DB_STATEMENT_TIMEOUT_SECONDS` | (server default — usually off) | Postgres `statement_timeout` set on every pooled connection. Bounds the wall-clock any one query can spend before the server cancels it. **Strongly recommend setting this** (start with 30s) — the guardrail against a runaway query pinning a worker forever. |
-| `MANYROWS_DB_CONNECT_TIMEOUT_SECONDS` | (pgx default — wait forever) | TCP+TLS handshake bound on new pool connections. Set when your DB IP can flap during a boot race (Fly, Render) so startup fails loudly instead of hanging. 10s is a sensible value. |
+| `MANYROWS_DB_STATEMENT_TIMEOUT_SECONDS` | (server default - usually off) | Postgres `statement_timeout` set on every pooled connection. Bounds the wall-clock any one query can spend before the server cancels it. **Strongly recommend setting this** (start with 30s) - the guardrail against a runaway query pinning a worker forever. |
+| `MANYROWS_DB_CONNECT_TIMEOUT_SECONDS` | (pgx default - wait forever) | TCP+TLS handshake bound on new pool connections. Set when your DB IP can flap during a boot race (Fly, Render) so startup fails loudly instead of hanging. 10s is a sensible value. |
 | `MANYROWS_DB_APPLICATION_NAME` | `manyrows` | Reported via Postgres's `application_name` GUC; visible in `pg_stat_activity` / `pg_stat_statements`. Override per-deploy when one cluster hosts multiple installs (`manyrows-prod`, `manyrows-staging`). |
-| `MANYROWS_DB_SKIP_MIGRATIONS` | `false` | Set to `true` to short-circuit goose on boot. Used by two-step deploys that apply schema separately from the binary rollout — the new binary boots without re-racing migrations the previous deploy already ran. |
+| `MANYROWS_DB_SKIP_MIGRATIONS` | `false` | Set to `true` to short-circuit goose on boot. Used by two-step deploys that apply schema separately from the binary rollout - the new binary boots without re-racing migrations the previous deploy already ran. |
 
 Auto-generated on first boot (no setup needed): HMAC keys, encryption
 key, OTP pepper. They're persisted to `system_secrets` and reused on
@@ -141,23 +141,23 @@ subsequent boots.
 
 The Docker compose stack is for local evaluation. For a real deploy:
 
-1. **Terminate TLS upstream** — Caddy, Traefik, nginx + certbot,
+1. **Terminate TLS upstream** - Caddy, Traefik, nginx + certbot,
    Cloudflare proxy, or your platform's load balancer. ManyRows speaks
    plain HTTP behind the proxy.
 2. **Forward `X-Forwarded-Proto: https`** so cookies get the `Secure`
    flag and redirect targets are constructed correctly.
 3. **Set `MANYROWS_BASE_URL`** to the canonical hostname before going
    live (or let the first `/admin/register` pin it from the request).
-4. **Persist `manyrows-db`** — managed Postgres recommended in
+4. **Persist `manyrows-db`** - managed Postgres recommended in
    production. If you stay with the bundled compose Postgres, back the
    volume up.
-5. **Custom domain + cookie scope** — wire `auth.yourdomain.com` to
+5. **Custom domain + cookie scope** - wire `auth.yourdomain.com` to
    ManyRows so cookies are first-party with your app. Two per-app
    settings in the admin UI:
-   - *App → Security → Custom Domain* — set the **Auth domain**
+   - *App → Security → Custom Domain* - set the **Auth domain**
      (e.g. `auth.drumkingdom.com`). Detailed runbook is on that screen.
    - *App → Security → Session transport → Enable cookies → Cookie
-     domain* — set this to the **registrable parent domain**
+     domain* - set this to the **registrable parent domain**
      (`auth.drumkingdom.com` → `drumkingdom.com`). Skip it and the
      session cookie is scoped to the auth subdomain only, so it won't
      be sent on requests from your app's own domain.
@@ -175,7 +175,7 @@ auth.example.com {
 }
 ```
 
-That's the whole config — Caddy adds `X-Forwarded-For`,
+That's the whole config - Caddy adds `X-Forwarded-For`,
 `X-Forwarded-Proto`, and `X-Forwarded-Host` automatically. If your
 ManyRows container is on another host, swap `localhost` for the
 internal hostname / IP.
@@ -217,20 +217,20 @@ miss the `Secure` flag.
 
 ## Adding login to your app (AppKit)
 
-You don't have to build a sign-in screen. ManyRows ships **AppKit** —
+You don't have to build a sign-in screen. ManyRows ships **AppKit** -
 a drop-in end-user auth UI (sign-in, registration, OTP verification,
 password reset, profile) that talks to your install. It's an optional
 convenience layer for React (with a framework-free runtime too); if you
-want full control, call the Client REST API directly. Full reference —
-every prop, hook, theming, auth-route handling, the REST API — is at
+want full control, call the Client REST API directly. Full reference -
+every prop, hook, theming, auth-route handling, the REST API - is at
 **<https://manyrows.com/docs>**.
 
-> **CORS — required.** AppKit calls ManyRows from *your* app's origin,
+> **CORS - required.** AppKit calls ManyRows from *your* app's origin,
 > so add your domain (e.g. `https://yourapp.com`) to the app's allowed
-> CORS origins in the admin UI (Apps page) — otherwise the browser
+> CORS origins in the admin UI (Apps page) - otherwise the browser
 > blocks every request.
 
-**React** — `npm i @manyrows/appkit-react`:
+**React** - `npm i @manyrows/appkit-react`:
 
 ```tsx
 import { AppKit, AppKitAuthed, useUser } from "@manyrows/appkit-react";
@@ -256,10 +256,10 @@ export default function Page() {
 ```
 
 Only `workspace` and `appId` are required. Because you're self-hosting,
-set the `src` prop to your install's runtime URL — otherwise AppKit
+set the `src` prop to your install's runtime URL - otherwise AppKit
 loads the hosted (manyrows.com) runtime by default.
 
-**Without React** — load the runtime and drive `window.ManyRows.AppKit`:
+**Without React** - load the runtime and drive `window.ManyRows.AppKit`:
 
 ```html
 <script src="https://auth.yourdomain.com/appkit/assets/appkit.js" defer></script>
@@ -281,7 +281,7 @@ loads the hosted (manyrows.com) runtime by default.
 ```
 
 The runtime is served by your own binary at
-`/appkit/assets/appkit.js` (embedded — nothing extra to deploy).
+`/appkit/assets/appkit.js` (embedded - nothing extra to deploy).
 
 ---
 
@@ -289,7 +289,7 @@ The runtime is served by your own binary at
 
 Single Go binary (`manyrows-core`) with the admin UI bundle and the
 end-user auth UI bundle compiled in via `//go:embed`. Postgres is the
-only external dependency — schema lives in `manyrows-core/db/migrations`,
+only external dependency - schema lives in `manyrows-core/db/migrations`,
 applied at boot via `goose` into a configurable schema (`manyrows` by
 default). Admin auth uses cookie sessions; end-user auth issues
 JWT bearer tokens (`local` transport) or HttpOnly cookies (`cookie`
@@ -315,7 +315,7 @@ go test -v ./api/... -run "TestCreateProject" -count=1
 
 The repo is an npm workspace at the root, so `npm install` from the
 top-level pulls deps for `manyrows-ui` and `appkit-ui` in one shot.
-`appkit-react` (the published customer SDK) is standalone — it's not
+`appkit-react` (the published customer SDK) is standalone - it's not
 part of the workspace and isn't needed to build or run the server;
 install its deps separately when working on it.
 
@@ -327,7 +327,7 @@ install its deps separately when working on it.
 
 You can self-host, modify, and redistribute the code freely. If you
 run a modified version as a network service, you must publish your
-changes under AGPL-3.0 too — that's the SaaS-loophole-closing clause
+changes under AGPL-3.0 too - that's the SaaS-loophole-closing clause
 specific to AGPL.
 
 A commercial license is available on request for organisations that
