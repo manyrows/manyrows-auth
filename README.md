@@ -12,8 +12,7 @@ credentials, and roles.
 > **Honest status.** ManyRows Auth is built by one developer. It runs
 > in production today — it powers sign-in for
 > [DrumKingdom.com](https://drumkingdom.com) and
-> [JerryLingo.com](https://jerrylingo.com) — and is actively
-> developed, but there's no QA team, no SLA, and no claim it's
+> [JerryLingo.com](https://jerrylingo.com) — but there's no QA team, no SLA, and no claim it's
 > bug-free. Run it, kick the tyres, and satisfy yourself it holds up
 > before you put it in front of anything that matters. If something
 > breaks or feels wrong, that's a bug I want to hear about.
