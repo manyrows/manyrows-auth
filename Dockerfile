@@ -60,7 +60,7 @@ COPY manyrows-core manyrows-core
 
 # Drop the built UI bundles into the locations the embed directives
 # expect (manyrows-core/web for the admin app, manyrows-core/appkit
-# for the AppKit-bundled auth UI). Mirrors build.sh.
+# for the AppKit-bundled auth UI). Mirrors build-ui.sh.
 RUN rm -rf manyrows-core/web/assets manyrows-core/appkit/appkit/assets
 COPY --from=ui-build /work/appkit-ui/dist/.   manyrows-core/appkit/
 COPY --from=ui-build /work/manyrows-ui/dist/. manyrows-core/web/
