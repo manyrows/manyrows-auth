@@ -84,6 +84,10 @@ docker compose down
   workspace/app, filterable in the admin AuthLogs view.
 - **Embeddable end-user UI** (`@manyrows/appkit-react`) - drop in a
   React component, get a fully wired sign-in screen.
+- **OpenID Connect provider** - expose any app over standards-
+  conformant OIDC. Off-the-shelf libraries (next-auth,
+  passport-openidconnect, Spring Security, etc.) integrate by
+  pointing at the per-app discovery URL - no ManyRows SDK required.
 
 ---
 
@@ -282,6 +286,57 @@ loads the hosted (manyrows.com) runtime by default.
 
 The runtime is served by your own binary at
 `/appkit/assets/appkit.js` (embedded - nothing extra to deploy).
+
+---
+
+## Integrating via OpenID Connect
+
+If you'd rather use a standards-conformant OIDC client library than
+the AppKit SDK, ManyRows exposes each app as an OpenID Connect
+provider. Discovery, authorize, token, userinfo, and end-session
+endpoints are all built in; PKCE is required, S256 only; both
+confidential (with `client_secret`) and public (PKCE-only) client
+modes are supported.
+
+Configure in *App → Auth methods → OIDC*: flip the toggle, optionally
+generate a `client_secret` (shown once - copy it then), and add your
+RP's callback URL to the redirect-URIs allowlist. The admin tab
+surfaces the three values your RP library needs:
+
+| Field | Value pattern |
+|---|---|
+| Discovery URL | `https://<auth-domain>/.well-known/openid-configuration` |
+| Client ID | The app's UUID |
+| Client Secret | Generated server-side; copy from the dialog once |
+
+Point any standard OIDC client at the discovery URL and it
+self-configures. Example with `next-auth`:
+
+```ts
+import { type AuthOptions } from "next-auth";
+
+export const authOptions: AuthOptions = {
+  providers: [
+    {
+      id: "manyrows",
+      name: "ManyRows",
+      type: "oauth",
+      wellKnown: "https://auth.yourdomain.com/.well-known/openid-configuration",
+      clientId: process.env.MANYROWS_CLIENT_ID,      // the app UUID
+      clientSecret: process.env.MANYROWS_CLIENT_SECRET,
+      authorization: { params: { scope: "openid email" } },
+    },
+  ],
+};
+```
+
+> **Cookie transport mode required.** OIDC's `/authorize` → sign-in
+> → `/authorize/resume` round-trip relies on a same-origin session
+> cookie. Switch the app's *Session transport* to cookies before
+> enabling OIDC; the admin UI blocks the enable toggle when it isn't.
+
+Coexists with the AppKit SDK - both can authenticate against the
+same app in parallel.
 
 ---
 
