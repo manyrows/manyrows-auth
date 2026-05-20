@@ -1108,6 +1108,58 @@ func TestOIDCAuthorize_RejectsLocalTransportModeAtRuntime(t *testing.T) {
 	}
 }
 
+// TestOIDCEndSession_ClearedCookieMatchesAppDomain prevents a
+// regression caught in audit pass #3: a custom cookie-clear helper
+// hardcoded Secure=true, SameSite=Lax, and omitted Domain entirely,
+// so for apps with cookie_domain set the browser kept the stale
+// cookie in its jar. The fix is to use the shared
+// handler.clearSessionCookies which threads the right attributes.
+//
+// This test sets cookie_domain on the test app, exercises end-session,
+// and asserts the Set-Cookie response includes the matching Domain.
+func TestOIDCEndSession_ClearedCookieMatchesAppDomain(t *testing.T) {
+	e := setupOIDCRouter(t)
+	e.enableOIDC(t, []string{"https://customer.example/cb"}, nil, "")
+
+	// Set a custom cookie_domain on the app so the clear-cookie path
+	// has something non-empty to put in the Domain attribute.
+	if _, err := testEnv.DB.Pool().Exec(context.Background(),
+		`update apps set cookie_domain = $2 where id = $1`,
+		e.app.ID, "customer.example"); err != nil {
+		t.Fatalf("set cookie_domain: %v", err)
+	}
+
+	// Seed a session so end-session has something to revoke + cookies
+	// to clear.
+	_, accessJWT := e.seedSessionForApp(t)
+
+	req := httptest.NewRequest("GET", "/x/"+e.ws.Slug+"/apps/"+e.app.ID.String()+"/oidc/end-session", nil)
+	req.Header.Set("Authorization", "Bearer "+accessJWT)
+	rr := httptest.NewRecorder()
+	e.router.ServeHTTP(rr, req)
+
+	setCookies := rr.Result().Cookies()
+	if len(setCookies) == 0 {
+		t.Fatalf("expected Set-Cookie headers on end-session, got none")
+	}
+	var sawAccessClear bool
+	for _, c := range setCookies {
+		if c.Name == "mr_at_"+e.app.ID.String() {
+			sawAccessClear = true
+			if c.Domain != "customer.example" {
+				t.Fatalf("access cookie clear must include the app's Domain attribute; got %q want %q",
+					c.Domain, "customer.example")
+			}
+			if c.MaxAge != -1 {
+				t.Fatalf("clear cookie must have MaxAge=-1; got %d", c.MaxAge)
+			}
+		}
+	}
+	if !sawAccessClear {
+		t.Fatalf("expected mr_at_<appID> Set-Cookie clear; got cookies: %+v", setCookies)
+	}
+}
+
 func TestOIDCEndSession_RejectsUnallowlistedRedirect(t *testing.T) {
 	e := setupOIDCRouter(t)
 	e.enableOIDC(t, []string{"https://customer.example/cb"}, []string{"https://customer.example/signed-out"}, "")

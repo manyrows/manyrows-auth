@@ -1181,6 +1181,7 @@ func writeOIDCBearerError(w http.ResponseWriter, code, description string) {
 // access cookie that brought us here.
 func (handler *RequestHandler) OIDCEndSession(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
+	ws, _ := core.WorkspaceFromContext(ctx)
 	app, ok := core.AppFromContext(ctx)
 	if !ok || app == nil {
 		WriteError(w, r, "error.notFound", http.StatusNotFound)
@@ -1214,7 +1215,10 @@ func (handler *RequestHandler) OIDCEndSession(w http.ResponseWriter, r *http.Req
 		if delErr := handler.clientAuthService.DeleteSession(ctx, ses.ID); delErr != nil {
 			log.Err(delErr).Str("session_id", ses.ID.String()).Msg("OIDCEndSession: DeleteSession failed")
 		}
-		clearOIDCSessionCookies(w, app.ID)
+		// Use the shared helper so the clear-cookie attributes (Domain,
+		// Secure, SameSite) MATCH what setSessionCookies wrote — otherwise
+		// the browser keeps the stale cookie in its jar.
+		handler.clearSessionCookies(w, ws, app)
 	}
 
 	if postLogout != "" {
@@ -1238,19 +1242,3 @@ func (handler *RequestHandler) OIDCEndSession(w http.ResponseWriter, r *http.Req
 	_, _ = w.Write([]byte(`<!doctype html><html><head><meta charset="utf-8"><title>Signed out</title></head><body style="font-family:system-ui;padding:2rem"><h1>Signed out</h1><p>You have been signed out.</p></body></html>`))
 }
 
-// clearOIDCSessionCookies removes the per-app access + refresh cookies
-// set by AppKit during cookie-mode sign-in. Matches the naming scheme
-// in auth/client/auth_session.go.
-func clearOIDCSessionCookies(w http.ResponseWriter, appID uuid.UUID) {
-	for _, name := range []string{client.AccessCookieName(appID), client.RefreshCookieName(appID)} {
-		http.SetCookie(w, &http.Cookie{
-			Name:     name,
-			Value:    "",
-			Path:     "/",
-			MaxAge:   -1,
-			HttpOnly: true,
-			Secure:   true,
-			SameSite: http.SameSiteLaxMode,
-		})
-	}
-}
