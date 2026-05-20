@@ -189,6 +189,17 @@ func (j *Janitor) sweep(ctx context.Context) {
 		return j.repo.DeleteAllExpiredClientSessions(ctx, now)
 	})
 
+	// OIDC provider tables. Sweep methods delete expired rows AND
+	// used/consumed rows that have aged past their replay-detection
+	// grace window (oidcCodeUsedGrace / oidcPendingConsumedGrace in
+	// the repo).
+	step("oidc_auth_codes", func() (int64, error) {
+		return j.repo.SweepExpiredOIDCAuthCodes(ctx)
+	})
+	step("oidc_pending_authorize", func() (int64, error) {
+		return j.repo.SweepExpiredOIDCPendingAuthorize(ctx)
+	})
+
 	if total > 0 {
 		log.Info().Int64("rows_deleted", total).Msg("janitor: sweep complete")
 	}

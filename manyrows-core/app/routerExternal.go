@@ -85,6 +85,23 @@ func (a *AppService) externalAPIRouter(h *api.RequestHandler, corsMiddleware fun
 			authed.Use(workspaceAuthMiddleware(a.clientAuthService, a.repo))
 			registerAuthedAppRoutes(authed, h, a.repo)
 		})
+
+		// OIDC provider. Public surface (no workspaceAuthMiddleware) —
+		// the spec endpoints either gate their own auth (userinfo via
+		// bearer, token via client_secret + PKCE) or are intentionally
+		// unauthenticated (discovery, authorize, end-session). The
+		// existing per-app CORS + IP allowlist still apply.
+		ar.Get("/.well-known/openid-configuration", h.OIDCDiscovery)
+		ar.Route("/oidc", func(oidc chi.Router) {
+			oidc.Get("/authorize", h.OIDCAuthorize)
+			oidc.Get("/authorize/resume", h.OIDCAuthorizeResume)
+			oidc.Get("/login", h.OIDCLoginPage)
+			oidc.Post("/token", h.OIDCToken)
+			oidc.Get("/userinfo", h.OIDCUserInfo)
+			oidc.Post("/userinfo", h.OIDCUserInfo)
+			oidc.Get("/end-session", h.OIDCEndSession)
+			oidc.Post("/end-session", h.OIDCEndSession)
+		})
 	})
 
 	return r
