@@ -211,6 +211,7 @@ type AppResource = {
   microsoftEnabled?: boolean;
   githubEnabled?: boolean;
   passkeyEnabled?: boolean;
+  qrSignInEnabled?: boolean;
   hideBranding?: boolean;
   require2fa?: boolean;
   // Server-side selector for how the session token is delivered.
@@ -1798,10 +1799,10 @@ export default function AppKit(props: AppKitProps) {
           )
         ) : authStatus === "unauthenticated" ? (
           props.hideAuthUI ? null :
-          <Auth workspaceBaseUrl={appBaseURL} cookieMode={cookieMode} onTokenPair={onTokenPairReceived} allowRegistration={app?.allowRegistration} appId={app?.id} googleOAuthClientId={app?.googleOAuthClientId} appleEnabled={app?.appleEnabled} microsoftEnabled={app?.microsoftEnabled} githubEnabled={app?.githubEnabled} primaryAuthMethod={app?.primaryAuthMethod} passkeyEnabled={app?.passkeyEnabled} hideBranding={app?.hideBranding} require2fa={app?.require2fa} header={props.authHeader} labels={props.labels} initialScreen={props.initialScreen} onScreenChange={props.onScreenChange} embedded={props.embedded} />
+          <Auth workspaceBaseUrl={appBaseURL} cookieMode={cookieMode} onTokenPair={onTokenPairReceived} allowRegistration={app?.allowRegistration} appId={app?.id} googleOAuthClientId={app?.googleOAuthClientId} appleEnabled={app?.appleEnabled} microsoftEnabled={app?.microsoftEnabled} githubEnabled={app?.githubEnabled} primaryAuthMethod={app?.primaryAuthMethod} passkeyEnabled={app?.passkeyEnabled} qrSignInEnabled={app?.qrSignInEnabled} hideBranding={app?.hideBranding} require2fa={app?.require2fa} header={props.authHeader} labels={props.labels} initialScreen={props.initialScreen} onScreenChange={props.onScreenChange} embedded={props.embedded} />
         ) : !appData ? (
           props.hideAuthUI ? null :
-          <Auth workspaceBaseUrl={appBaseURL} cookieMode={cookieMode} onTokenPair={onTokenPairReceived} allowRegistration={app?.allowRegistration} appId={app?.id} googleOAuthClientId={app?.googleOAuthClientId} appleEnabled={app?.appleEnabled} microsoftEnabled={app?.microsoftEnabled} githubEnabled={app?.githubEnabled} primaryAuthMethod={app?.primaryAuthMethod} passkeyEnabled={app?.passkeyEnabled} hideBranding={app?.hideBranding} require2fa={app?.require2fa} header={props.authHeader} labels={props.labels} initialScreen={props.initialScreen} onScreenChange={props.onScreenChange} embedded={props.embedded} />
+          <Auth workspaceBaseUrl={appBaseURL} cookieMode={cookieMode} onTokenPair={onTokenPairReceived} allowRegistration={app?.allowRegistration} appId={app?.id} googleOAuthClientId={app?.googleOAuthClientId} appleEnabled={app?.appleEnabled} microsoftEnabled={app?.microsoftEnabled} githubEnabled={app?.githubEnabled} primaryAuthMethod={app?.primaryAuthMethod} passkeyEnabled={app?.passkeyEnabled} qrSignInEnabled={app?.qrSignInEnabled} hideBranding={app?.hideBranding} require2fa={app?.require2fa} header={props.authHeader} labels={props.labels} initialScreen={props.initialScreen} onScreenChange={props.onScreenChange} embedded={props.embedded} />
         ) : totpSetupNeeded ? (
           <TOTPSetupGate
             workspaceBaseURL={appBaseURL}

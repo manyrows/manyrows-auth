@@ -50,6 +50,10 @@ type pairStartResponse struct {
 // existing per-app IP allowlist + CORS still apply via the parent
 // router; a per-IP rate limit guards against pairing-spam from a
 // single source.
+//
+// Gated by app.QRSignInEnabled — when off, 404 so the entire QR
+// surface (this endpoint + the hosted pages) is indistinguishable
+// from "feature doesn't exist."
 func (handler *RequestHandler) HandleAuthPairStart(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	ws, ok := core.WorkspaceFromContext(ctx)
@@ -59,6 +63,10 @@ func (handler *RequestHandler) HandleAuthPairStart(w http.ResponseWriter, r *htt
 	}
 	app, ok := core.AppFromContext(ctx)
 	if !ok || app == nil {
+		WriteError(w, r, "error.notFound", http.StatusNotFound)
+		return
+	}
+	if !app.QRSignInEnabled {
 		WriteError(w, r, "error.notFound", http.StatusNotFound)
 		return
 	}
@@ -369,6 +377,8 @@ func (handler *RequestHandler) HandleAuthPairQR(w http.ResponseWriter, r *http.R
 // /auth/pair/qr, polls /auth/pair/wait, and on success redirects to
 // the customer-supplied return_to URL with tokens in the fragment
 // (same delivery pattern as magic-link sign-in).
+//
+// Gated by app.QRSignInEnabled.
 func (handler *RequestHandler) HandleQRSignInPage(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	ws, ok := core.WorkspaceFromContext(ctx)
@@ -378,6 +388,10 @@ func (handler *RequestHandler) HandleQRSignInPage(w http.ResponseWriter, r *http
 	}
 	app, ok := core.AppFromContext(ctx)
 	if !ok || app == nil {
+		WriteError(w, r, "error.notFound", http.StatusNotFound)
+		return
+	}
+	if !app.QRSignInEnabled {
 		WriteError(w, r, "error.notFound", http.StatusNotFound)
 		return
 	}
@@ -524,9 +538,14 @@ var qrSignInTmpl = template.Must(template.New("qr_sign_in").Parse(`<!doctype htm
                     clearInterval(pollTimer); clearInterval(expiresTimer);
                     setStatus("Signed in.", "ok");
                     if (returnTo) {
+                      // AppKit's fragment reader parses mr_expires as
+                      // a Unix second timestamp (parseInt * 1000). The
+                      // server's tp.expiresAt is RFC3339, so convert
+                      // here — otherwise AppKit reads NaN and rejects.
+                      var expiresUnix = Math.floor(new Date(tp.expiresAt).getTime() / 1000);
                       var frag = "mr_session=" + encodeURIComponent(tp.accessToken)
                                + "&mr_refresh=" + encodeURIComponent(tp.refreshToken)
-                               + "&mr_expires=" + encodeURIComponent(tp.expiresAt);
+                               + "&mr_expires=" + encodeURIComponent(expiresUnix);
                       window.location.assign(returnTo + "#" + frag);
                     }
                   });
@@ -572,6 +591,10 @@ func (handler *RequestHandler) HandlePairLandingPage(w http.ResponseWriter, r *h
 	}
 	app, ok := core.AppFromContext(ctx)
 	if !ok || app == nil {
+		WriteError(w, r, "error.notFound", http.StatusNotFound)
+		return
+	}
+	if !app.QRSignInEnabled {
 		WriteError(w, r, "error.notFound", http.StatusNotFound)
 		return
 	}

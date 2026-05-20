@@ -374,6 +374,9 @@ type AppResource struct {
 	Require2FA                bool      `json:"require2fa"`
 	HideBranding              bool      `json:"hideBranding,omitempty"`
 	PasskeyEnabled            bool      `json:"passkeyEnabled,omitempty"`
+	// QRSignInEnabled gates the "Sign in with phone" button on
+	// AppKit's login screen. Read from app.QRSignInEnabled.
+	QRSignInEnabled bool `json:"qrSignInEnabled,omitempty"`
 	// TransportMode is the explicit selector for how the session token
 	// is delivered ("local" / "cookie"). AppKit reads this on boot and
 	// configures fetch / storage behaviour accordingly — no client-side
@@ -452,6 +455,7 @@ func (handler *RequestHandler) HandleGetAppForAppKit(w http.ResponseWriter, r *h
 		Require2FA:                a.Require2FA,
 		HideBranding:              hideBranding,
 		PasskeyEnabled:            passkeyEnabled,
+		QRSignInEnabled:           a.QRSignInEnabled,
 		TransportMode:             transportMode,
 	}
 

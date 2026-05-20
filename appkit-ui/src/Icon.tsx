@@ -13,6 +13,7 @@ import {
   faFingerprint,
   faKey,
   faTrash,
+  faQrcode,
 } from "@fortawesome/free-solid-svg-icons";
 import {
   faCircleCheck,
@@ -37,6 +38,7 @@ const icons: Record<string, IconDefinition> = {
   fingerprint: faFingerprint,
   key: faKey,
   trash: faTrash,
+  qrcode: faQrcode,
 };
 
 export default function Icon({

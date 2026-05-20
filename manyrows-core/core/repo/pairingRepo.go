@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"manyrows-core/core"
@@ -12,6 +13,48 @@ import (
 	"github.com/gofrs/uuid/v5"
 	"github.com/jackc/pgx/v5"
 )
+
+// ErrQRSignInRequiresAppURL is returned by UpdateAppQRSignInConfig
+// when an admin tries to enable QR sign-in on an app whose AppURL is
+// empty. The QR flow's success path redirects the desktop browser to
+// AppURL with tokens in the fragment; without it, there's nowhere
+// safe to land. Same shape as OIDC's ErrOIDCRequiresCookieTransport.
+var ErrQRSignInRequiresAppURL = errors.New("QR sign-in requires app_url to be set")
+
+// UpdateAppQRSignInConfig flips the per-app QR-sign-in toggle.
+// Enabling requires apps.app_url to be non-empty.
+func (r *Repo) UpdateAppQRSignInConfig(ctx context.Context, workspaceID, productID, appID uuid.UUID, enabled bool) (core.App, error) {
+	if enabled {
+		var appURL *string
+		err := r.db.Pool().QueryRow(ctx, `select app_url from apps where id = $1 and workspace_id = $2 and product_id = $3`, appID, workspaceID, productID).Scan(&appURL)
+		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return core.App{}, ErrNotFound
+			}
+			return core.App{}, fmt.Errorf("UpdateAppQRSignInConfig: app_url lookup: %w", err)
+		}
+		if appURL == nil || strings.TrimSpace(*appURL) == "" {
+			return core.App{}, ErrQRSignInRequiresAppURL
+		}
+	}
+
+	q := `
+		update apps
+		set qr_sign_in_enabled = $4,
+		    updated_at = now()
+		where id = $1 and workspace_id = $2 and product_id = $3
+		returning ` + appColumnsReturning
+
+	var out core.App
+	err := scanAppFull(r.db.Pool().QueryRow(ctx, q, appID, workspaceID, productID, enabled), &out)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return core.App{}, ErrNotFound
+		}
+		return core.App{}, fmt.Errorf("UpdateAppQRSignInConfig: %w", err)
+	}
+	return out, nil
+}
 
 // Cross-device pairing repo. The /start handler creates a pending
 // row with a hashed code and a desktop-side polling id. The /approve

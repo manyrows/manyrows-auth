@@ -348,6 +348,7 @@ export default function Auth(props: {
   microsoftEnabled?: boolean;
   githubEnabled?: boolean;
   passkeyEnabled?: boolean;
+  qrSignInEnabled?: boolean;
   require2fa?: boolean;
   hideBranding?: boolean;
   header?: React.ReactNode;
@@ -369,6 +370,7 @@ export default function Auth(props: {
   const showApple = props.appleEnabled === true;
   const showMicrosoft = props.microsoftEnabled === true;
   const showGithub = props.githubEnabled === true;
+  const showQRSignIn = props.qrSignInEnabled === true;
 
   // Legacy flag kept for the few places that branched on "Google is the
   // only thing we can show". Now equivalent to oauthOnly with Google
@@ -2036,7 +2038,7 @@ export default function Auth(props: {
               below the primary form. Shown on login (password/email) and
               register; passkey button is suppressed on register because
               passkeys can't sign up — there's no account yet to bind to. */}
-          <Collapse show={(view === "password" || view === "email" || view === "register") && (showGoogle || showApple || showMicrosoft || showGithub || (view !== "register" && !!(props.passkeyEnabled && isPasskeySupported())))}>
+          <Collapse show={(view === "password" || view === "email" || view === "register") && (showGoogle || showApple || showMicrosoft || showGithub || (view !== "register" && (!!(props.passkeyEnabled && isPasskeySupported()) || showQRSignIn)))}>
             <div className="ak-card-actions">
               <div className="ak-stack ak-gap-4">
                 {!googleOnly && (showPassword || view === "email" || view === "register") && (
@@ -2108,6 +2110,26 @@ export default function Auth(props: {
                     >
                       {githubLoading ? <Spinner size={16} /> : <GithubIcon />}
                       GitHub
+                    </button>
+                  )}
+
+                  {view !== "register" && showQRSignIn && (
+                    <button
+                      className="ak-btn ak-btn-outlined"
+                      disabled={loading}
+                      onClick={() => {
+                        // Navigate to the hosted /qr-sign-in page,
+                        // passing the current URL as return_to so
+                        // tokens land back here via the magic-link
+                        // fragment delivery (mr_session etc.).
+                        const url = `${baseUrl}/qr-sign-in?return_to=${encodeURIComponent(window.location.href)}`;
+                        window.location.assign(url);
+                      }}
+                      style={{ borderColor: "var(--ak-color-divider)", color: "var(--ak-color-text)" }}
+                      aria-label="Sign in with phone (QR code)"
+                    >
+                      <Icon name="qrcode" size={16} />
+                      Phone
                     </button>
                   )}
                 </div>

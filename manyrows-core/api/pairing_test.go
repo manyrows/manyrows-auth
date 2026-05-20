@@ -99,6 +99,18 @@ func setupPairingRouter(t *testing.T) *pairingTestEnv {
 	ws := testEnv.CreateTestWorkspace(t, acc, "Pair Test WS", GenerateUniqueSlug("ws"))
 	app := testEnv.CreateTestApp(t, ws, acc)
 
+	// QR sign-in is off-by-default on new apps. Tests that don't
+	// explicitly test the gate flip it on here so the happy paths
+	// can run.
+	if _, err := testEnv.DB.Pool().Exec(context.Background(),
+		`update apps set qr_sign_in_enabled = true, app_url = $2 where id = $1`,
+		app.ID, "https://customer.example"); err != nil {
+		t.Fatalf("enable qr + set app_url: %v", err)
+	}
+	app.QRSignInEnabled = true
+	customerURL := "https://customer.example"
+	app.AppURL = &customerURL
+
 	return &pairingTestEnv{router: r, cas: cas, ws: ws, app: app}
 }
 
@@ -442,12 +454,57 @@ func TestPair_QRSignInPageRejectsJavaScriptReturnTo(t *testing.T) {
 // malicious return_to and tokens land at evil.com).
 func TestPair_QRSignInPageRejectsReturnToWhenAppURLNotSet(t *testing.T) {
 	e := setupPairingRouter(t)
-	// app.AppURL is nil by default on CreateTestApp.
+	// Clear app_url for this test — the fixture pre-sets it.
+	if _, err := testEnv.DB.Pool().Exec(context.Background(),
+		`update apps set app_url = null where id = $1`, e.app.ID); err != nil {
+		t.Fatalf("clear app_url: %v", err)
+	}
 	req := httptest.NewRequest(http.MethodGet, pairingBase(e)+"/qr-sign-in?return_to=https://customer.example/cb", nil)
 	rr := httptest.NewRecorder()
 	e.router.ServeHTTP(rr, req)
 	if rr.Code != http.StatusBadRequest {
 		t.Fatalf("return_to with no app_url configured must be rejected, got %d", rr.Code)
+	}
+}
+
+// =====================
+// Phase 2: per-app gating
+// =====================
+
+// TestPair_StartRespects404WhenDisabled verifies the qr_sign_in_enabled
+// gate at /auth/pair/start. With the toggle off, the entry point is
+// 404 — there's no way to bootstrap a pairing.
+func TestPair_StartRespects404WhenDisabled(t *testing.T) {
+	e := setupPairingRouter(t)
+	// Fixture defaults to enabled; flip off for this test.
+	if _, err := testEnv.DB.Pool().Exec(context.Background(),
+		`update apps set qr_sign_in_enabled = false where id = $1`, e.app.ID); err != nil {
+		t.Fatalf("disable qr: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, pairingBase(e)+"/auth/pair/start", strings.NewReader("{}"))
+	req.Header.Set("Content-Type", "application/json")
+	rr := httptest.NewRecorder()
+	e.router.ServeHTTP(rr, req)
+	if rr.Code != http.StatusNotFound {
+		t.Fatalf("/start with toggle off should 404, got %d", rr.Code)
+	}
+}
+
+// TestPair_QRSignInPageRespects404WhenDisabled — same gate at the
+// hosted desktop page.
+func TestPair_QRSignInPageRespects404WhenDisabled(t *testing.T) {
+	e := setupPairingRouter(t)
+	if _, err := testEnv.DB.Pool().Exec(context.Background(),
+		`update apps set qr_sign_in_enabled = false where id = $1`, e.app.ID); err != nil {
+		t.Fatalf("disable qr: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, pairingBase(e)+"/qr-sign-in", nil)
+	rr := httptest.NewRecorder()
+	e.router.ServeHTTP(rr, req)
+	if rr.Code != http.StatusNotFound {
+		t.Fatalf("/qr-sign-in with toggle off should 404, got %d", rr.Code)
 	}
 }
 
