@@ -94,6 +94,10 @@ func (handler *RequestHandler) HandleAuthPairStart(w http.ResponseWriter, r *htt
 	qrURL := handler.AppBaseURL(app) + "/x/" + url.PathEscape(ws.Slug) +
 		"/apps/" + app.ID.String() + "/pair?c=" + pairingCode
 
+	// The raw pairing code goes in this response. Make sure no
+	// intermediate cache stores it — same posture as /token responses.
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("Pragma", "no-cache")
 	utils.WriteJsonWithStatusCode(w, pairStartResponse{
 		PairingID:   pairingID.String(),
 		PairingCode: pairingCode,
@@ -211,8 +215,10 @@ func (handler *RequestHandler) HandleAuthPairWait(w http.ResponseWriter, r *http
 	// effort — a failed audit-log write doesn't undo a successful
 	// sign-in. Same pattern as the OAuth flows.
 	handler.writeAuthLogForPairing(r, ws.ID, app.ID, approverUserID, ses.ID)
-	_ = claimed // explicitly: don't need it after the audit call
 
+	// Token pair travels in the body. Standard /token cache posture.
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("Pragma", "no-cache")
 	utils.WriteJsonWithStatusCode(w, tokenPair, http.StatusOK)
 }
 
@@ -376,14 +382,32 @@ func (handler *RequestHandler) HandleQRSignInPage(w http.ResponseWriter, r *http
 		return
 	}
 
-	// return_to is optional. When supplied, must be an http(s) URL
-	// (defends against javascript:/data: schemes); the customer is
-	// responsible for choosing a same-origin or trusted target on
-	// their own side. We don't allowlist here because the desktop
-	// QR sign-in is intentionally a generic entry-point.
+	// return_to is optional. When supplied:
+	//   1. Must be an http(s) URL (defends against javascript:/data:).
+	//   2. Host MUST match app.AppURL — otherwise this endpoint is an
+	//      open redirector (attacker hosts a /qr-sign-in URL with a
+	//      malicious return_to and the desktop ends up at evil.com with
+	//      tokens in the fragment). app.AppURL is the customer-set
+	//      "where my app lives" field; require it to be configured
+	//      before any return_to is accepted.
 	returnTo := strings.TrimSpace(r.URL.Query().Get("return_to"))
 	if returnTo != "" {
-		if u, err := url.Parse(returnTo); err != nil || (u.Scheme != "http" && u.Scheme != "https") {
+		u, err := url.Parse(returnTo)
+		if err != nil || (u.Scheme != "http" && u.Scheme != "https") {
+			WriteError(w, r, "error.invalidRequest", http.StatusBadRequest)
+			return
+		}
+		if app.AppURL == nil || strings.TrimSpace(*app.AppURL) == "" {
+			// No allowlisted target — reject rather than allow any host.
+			WriteError(w, r, "error.invalidRequest", http.StatusBadRequest)
+			return
+		}
+		appU, appErr := url.Parse(strings.TrimSpace(*app.AppURL))
+		if appErr != nil || appU.Host == "" {
+			WriteError(w, r, "error.invalidRequest", http.StatusBadRequest)
+			return
+		}
+		if !strings.EqualFold(u.Host, appU.Host) {
 			WriteError(w, r, "error.invalidRequest", http.StatusBadRequest)
 			return
 		}
@@ -584,18 +608,20 @@ func (handler *RequestHandler) HandlePairLandingPage(w http.ResponseWriter, r *h
 // sign-in branch when the user isn't authed yet; once AppKit reports
 // status=authenticated, the template's own JS hides the AppKit root
 // and reveals an Approve / Cancel overlay that POSTs to /auth/pair/
-// approve or /auth/pair/cancel with credentials:include (same
-// session cookie AppKit just set).
+// approve or /auth/pair/cancel.
+//
+// Works for both transport modes:
+//   - cookie-mode: the same-origin session cookie that AppKit just
+//     set is auto-sent via credentials:include
+//   - local-mode (Bearer-only): the JWT captured via AppKit's onJWT
+//     callback rides in the Authorization header
+// Both headers go on every request so neither side has to know which
+// mode the app is in.
 //
 // All template values come from server-controlled trusted sources
 // (workspace slug + app UUID from path; pairing code is a random
 // base64url string we generated). html/template still escapes for
 // defence in depth.
-//
-// Requires cookie transport mode on the app — the approve POST
-// relies on the same-origin session cookie. Local-mode (Bearer-only)
-// apps fall through to a 401 from /approve; the page surfaces that
-// as a "Could not approve" error.
 var pairLandingTmpl = template.Must(template.New("pair_landing").Parse(`<!doctype html>
 <html lang="en">
   <head>
@@ -643,6 +669,20 @@ var pairLandingTmpl = template.Must(template.New("pair_landing").Parse(`<!doctyp
         var pairingCode = {{ .PairingCode | js }};
         var base = "/x/" + encodeURIComponent(workspace) + "/apps/" + encodeURIComponent(appId);
 
+        // AppKit's onJWT hands us the live bearer token. We carry it
+        // in Authorization on the approve/cancel POSTs so local-mode
+        // apps (Bearer transport, no session cookie) work the same
+        // as cookie-mode apps. credentials:include is set too so
+        // cookie-mode users still authenticate via the cookie path —
+        // whichever the app actually uses, one of them works.
+        var currentJWT = null;
+
+        function authHeaders() {
+          var h = { "Content-Type": "application/json" };
+          if (currentJWT) h["Authorization"] = "Bearer " + currentJWT;
+          return h;
+        }
+
         function showApprovePanel() {
           document.getElementById("root").style.display = "none";
           document.getElementById("approve-panel").style.display = "flex";
@@ -669,7 +709,7 @@ var pairLandingTmpl = template.Must(template.New("pair_landing").Parse(`<!doctyp
           lockButtons();
           fetch(base + "/auth/pair/approve", {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
+            headers: authHeaders(),
             credentials: "include",
             body: JSON.stringify({ pairingCode: pairingCode }),
           })
@@ -686,7 +726,7 @@ var pairLandingTmpl = template.Must(template.New("pair_landing").Parse(`<!doctyp
           lockButtons();
           fetch(base + "/auth/pair/cancel", {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
+            headers: authHeaders(),
             credentials: "include",
             body: JSON.stringify({ pairingCode: pairingCode }),
           })
@@ -702,6 +742,7 @@ var pairLandingTmpl = template.Must(template.New("pair_landing").Parse(`<!doctyp
             container: document.getElementById("root"),
             workspace: workspace,
             appId: appId,
+            onJWT: function (jwt) { currentJWT = jwt; },
             onState: function (s) {
               if (s && s.status === "authenticated") {
                 showApprovePanel();

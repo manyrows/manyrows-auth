@@ -420,6 +420,80 @@ func TestPair_QRSignInPageRejectsJavaScriptReturnTo(t *testing.T) {
 	}
 }
 
+// TestPair_QRSignInPageRejectsReturnToWhenAppURLNotSet proves that
+// without app_url configured, no return_to is accepted — otherwise
+// /qr-sign-in is an open redirector (attacker hosts a URL with a
+// malicious return_to and tokens land at evil.com).
+func TestPair_QRSignInPageRejectsReturnToWhenAppURLNotSet(t *testing.T) {
+	e := setupPairingRouter(t)
+	// app.AppURL is nil by default on CreateTestApp.
+	req := httptest.NewRequest(http.MethodGet, pairingBase(e)+"/qr-sign-in?return_to=https://customer.example/cb", nil)
+	rr := httptest.NewRecorder()
+	e.router.ServeHTTP(rr, req)
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("return_to with no app_url configured must be rejected, got %d", rr.Code)
+	}
+}
+
+// TestPair_QRSignInPageRejectsReturnToMismatchedHost proves the
+// per-app host allowlist works: even with app_url set, only
+// matching hosts are accepted.
+func TestPair_QRSignInPageRejectsReturnToMismatchedHost(t *testing.T) {
+	e := setupPairingRouter(t)
+	// Set app_url so the comparison has something to match against.
+	if _, err := testEnv.DB.Pool().Exec(context.Background(),
+		`update apps set app_url = $2 where id = $1`,
+		e.app.ID, "https://legit.example"); err != nil {
+		t.Fatalf("set app_url: %v", err)
+	}
+
+	// Same host: allowed.
+	okReq := httptest.NewRequest(http.MethodGet, pairingBase(e)+"/qr-sign-in?return_to=https://legit.example/cb", nil)
+	okRR := httptest.NewRecorder()
+	e.router.ServeHTTP(okRR, okReq)
+	if okRR.Code != http.StatusOK {
+		t.Fatalf("matching host should be accepted, got %d", okRR.Code)
+	}
+
+	// Different host: rejected.
+	badReq := httptest.NewRequest(http.MethodGet, pairingBase(e)+"/qr-sign-in?return_to=https://evil.example/cb", nil)
+	badRR := httptest.NewRecorder()
+	e.router.ServeHTTP(badRR, badReq)
+	if badRR.Code != http.StatusBadRequest {
+		t.Fatalf("mismatched host must be rejected, got %d", badRR.Code)
+	}
+}
+
+// TestPair_TokenResponsesHaveNoStoreCache verifies token-bearing
+// responses (start, wait-after-approve) carry Cache-Control: no-store.
+func TestPair_TokenResponsesHaveNoStoreCache(t *testing.T) {
+	e := setupPairingRouter(t)
+
+	// /start — pairing code lives in the body.
+	startReq := httptest.NewRequest(http.MethodPost, pairingBase(e)+"/auth/pair/start", strings.NewReader("{}"))
+	startReq.Header.Set("Content-Type", "application/json")
+	startRR := httptest.NewRecorder()
+	e.router.ServeHTTP(startRR, startReq)
+	if cc := startRR.Header().Get("Cache-Control"); !strings.Contains(cc, "no-store") {
+		t.Fatalf("/start response must have Cache-Control: no-store, got %q", cc)
+	}
+
+	// Drive a happy-path to get a /wait 200 response, then check its
+	// headers.
+	id, code, _ := startPairing(t, e)
+	_, accessJWT := e.seedPhoneSession(t)
+	if rr := approve(t, e, accessJWT, code); rr.Code != http.StatusNoContent {
+		t.Fatalf("approve setup failed: %d", rr.Code)
+	}
+	waitRR := waitOnce(t, e, id)
+	if waitRR.Code != http.StatusOK {
+		t.Fatalf("wait setup failed: %d", waitRR.Code)
+	}
+	if cc := waitRR.Header().Get("Cache-Control"); !strings.Contains(cc, "no-store") {
+		t.Fatalf("/wait token response must have Cache-Control: no-store, got %q", cc)
+	}
+}
+
 func TestPair_LandingPageHasAntiClickjackingHeaders(t *testing.T) {
 	e := setupPairingRouter(t)
 	_, code, _ := startPairing(t, e)
