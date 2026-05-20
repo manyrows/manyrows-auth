@@ -200,6 +200,11 @@ func (j *Janitor) sweep(ctx context.Context) {
 		return j.repo.SweepExpiredOIDCPendingAuthorize(ctx)
 	})
 
+	// Cross-device QR pairing. Same expire-or-aged-out sweep shape.
+	step("cross_device_pairings", func() (int64, error) {
+		return j.repo.SweepExpiredCrossDevicePairings(ctx)
+	})
+
 	if total > 0 {
 		log.Info().Int64("rows_deleted", total).Msg("janitor: sweep complete")
 	}
