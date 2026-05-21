@@ -16,6 +16,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"net/url"
 	"strings"
@@ -111,13 +112,45 @@ func (c ProviderConfig) scopesOrDefault() string {
 	return c.Scopes
 }
 
+// requireSecureURL rejects an endpoint unless it's https — or http to a
+// loopback host, which we allow so local dev / tests work. Defends
+// against tokens, secrets, and authorization codes riding cleartext, and
+// against a downgraded endpoint being fetched server-side (SSRF/MITM).
+func requireSecureURL(rawURL string) error {
+	u, err := url.Parse(rawURL)
+	if err != nil || u.Host == "" {
+		return fmt.Errorf("%w: malformed URL %q", ErrConfig, rawURL)
+	}
+	switch u.Scheme {
+	case "https":
+		return nil
+	case "http":
+		if h := u.Hostname(); h == "localhost" {
+			return nil
+		} else if ip := net.ParseIP(h); ip != nil && ip.IsLoopback() {
+			return nil
+		}
+		return fmt.Errorf("%w: http is only allowed for loopback, got %q", ErrConfig, rawURL)
+	default:
+		return fmt.Errorf("%w: unsupported scheme in %q (need https)", ErrConfig, rawURL)
+	}
+}
+
 // resolveEndpoints returns the effective endpoints for a config: OIDC
 // discovers from the issuer (with optional manual overrides); OAuth2
-// uses the explicit values.
+// uses the explicit values. All endpoints must be https (or loopback).
 func resolveEndpoints(ctx context.Context, cfg ProviderConfig) (Endpoints, error) {
 	if cfg.Mode == ModeOAuth2 {
 		if cfg.AuthorizeURL == "" || cfg.TokenURL == "" {
 			return Endpoints{}, fmt.Errorf("%w: oauth2 mode needs authorize+token URLs", ErrConfig)
+		}
+		for _, u := range []string{cfg.AuthorizeURL, cfg.TokenURL, cfg.UserinfoURL} {
+			if u == "" {
+				continue
+			}
+			if err := requireSecureURL(u); err != nil {
+				return Endpoints{}, err
+			}
 		}
 		return Endpoints{
 			Issuer:    cfg.IssuerURL,

@@ -217,6 +217,23 @@ func TestOIDC_Authenticate_OAuth2Userinfo(t *testing.T) {
 	}
 }
 
+func TestOIDC_RejectsInsecureURLs(t *testing.T) {
+	ctx := context.Background()
+	// OIDC: a non-loopback http issuer is rejected before any fetch.
+	oidcCfg := oidc.ProviderConfig{Mode: oidc.ModeOIDC, IssuerURL: "http://idp.evil.example", ClientID: "c"}
+	if _, err := oidc.AuthorizeURL(ctx, oidcCfg, "https://app/cb", "s", "", ""); err == nil {
+		t.Fatal("expected a non-loopback http issuer to be rejected")
+	}
+	// OAuth2: cleartext explicit endpoints are rejected.
+	oauthCfg := oidc.ProviderConfig{
+		Mode: oidc.ModeOAuth2, ClientID: "c",
+		AuthorizeURL: "http://x.example/a", TokenURL: "http://x.example/t", UserinfoURL: "http://x.example/u",
+	}
+	if _, err := oidc.AuthorizeURL(ctx, oauthCfg, "https://app/cb", "s", "", ""); err == nil {
+		t.Fatal("expected cleartext oauth2 endpoints to be rejected")
+	}
+}
+
 func TestOIDC_AuthorizeURL_IncludesPKCEAndNonce(t *testing.T) {
 	idp := newMockIDP(t)
 	cfg := oidc.ProviderConfig{Mode: oidc.ModeOIDC, IssuerURL: idp.issuer(), ClientID: "client-123", Scopes: "openid email"}

@@ -52,6 +52,9 @@ func Discover(ctx context.Context, issuer string) (Endpoints, error) {
 	if issuer == "" {
 		return Endpoints{}, fmt.Errorf("%w: empty issuer", ErrDiscovery)
 	}
+	if err := requireSecureURL(issuer); err != nil {
+		return Endpoints{}, fmt.Errorf("%w: %v", ErrDiscovery, err)
+	}
 
 	discoveryCache.Lock()
 	if e, ok := discoveryCache.byIssuer[issuer]; ok && time.Since(e.fetchedAt) < discoveryTTL {
@@ -87,6 +90,17 @@ func Discover(ctx context.Context, issuer string) (Endpoints, error) {
 	}
 	if doc.AuthorizeURL == "" || doc.TokenURL == "" || doc.JWKSURL == "" {
 		return Endpoints{}, fmt.Errorf("%w: doc missing required endpoints", ErrDiscovery)
+	}
+	// Downgrade defense: a (malicious or misconfigured) issuer must not
+	// be able to point us at cleartext endpoints — these get fetched
+	// server-side or sent the user's browser.
+	for _, u := range []string{doc.AuthorizeURL, doc.TokenURL, doc.JWKSURL, doc.UserinfoURL} {
+		if u == "" {
+			continue
+		}
+		if err := requireSecureURL(u); err != nil {
+			return Endpoints{}, fmt.Errorf("%w: %v", ErrDiscovery, err)
+		}
 	}
 
 	ep := Endpoints{
