@@ -104,15 +104,29 @@ func (handler *RequestHandler) ResolveSignInIdentity(
 //
 // providerSubject must be non-empty - the four provider call sites
 // already validate the OAuth response before reaching here.
+//
+// providerKey is the user_identities.provider value used to match and
+// write the identity link. It is decoupled from `source` (the coarse
+// user.source / app_users.source) so generic external IdPs can use a
+// per-IdP key ("idp:<slug>") while still recording a coarse origin
+// (UserSourceExternalIDP). When providerKey is "" it defaults to
+// string(source) — exactly the old behavior, so the bespoke Google /
+// Apple / Microsoft / GitHub callers (which don't set it) are
+// unchanged: provider stays "google", etc.
 func (handler *RequestHandler) ResolveOAuthSignInIdentity(
 	ctx context.Context,
 	app *core.App,
 	email string,
 	source core.UserSource,
+	providerKey string,
 	providerSubject string,
 ) (user *core.User, userCreated bool, err error) {
+	if providerKey == "" {
+		providerKey = string(source)
+	}
+	identityProvider := core.UserSource(providerKey)
 	if providerSubject != "" {
-		user, err = handler.repo.FindUserByIdentity(ctx, app.UserPoolID, source, providerSubject)
+		user, err = handler.repo.FindUserByIdentity(ctx, app.UserPoolID, identityProvider, providerSubject)
 		if err != nil {
 			return nil, false, err
 		}
@@ -133,7 +147,7 @@ func (handler *RequestHandler) ResolveOAuthSignInIdentity(
 				}
 			}
 			if err := handler.repo.UpsertUserIdentity(
-				ctx, user.ID, app.UserPoolID, source, providerSubject, email,
+				ctx, user.ID, app.UserPoolID, identityProvider, providerSubject, email,
 			); err != nil {
 				if errors.Is(err, repo.ErrIdentitySubjectMismatch) {
 					return nil, false, ErrIdentityConflict
@@ -150,7 +164,7 @@ func (handler *RequestHandler) ResolveOAuthSignInIdentity(
 	}
 	if providerSubject != "" {
 		if err := handler.repo.UpsertUserIdentity(
-			ctx, user.ID, app.UserPoolID, source, providerSubject, email,
+			ctx, user.ID, app.UserPoolID, identityProvider, providerSubject, email,
 		); err != nil {
 			if errors.Is(err, repo.ErrIdentitySubjectMismatch) {
 				return nil, false, ErrIdentityConflict

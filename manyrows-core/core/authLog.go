@@ -98,6 +98,10 @@ const (
 	AuthMethodTOTP      AuthLogMethod = "totp"
 	AuthMethodEmailOTP  AuthLogMethod = "email_otp"
 	AuthMethodMagicLink AuthLogMethod = "magic_link"
+	// AuthMethodExternalIDP tags sign-ins via a generic configured
+	// external IdP (the per-IdP slug is recorded on the user_identities
+	// row, not here — this stays a small coarse method set).
+	AuthMethodExternalIDP AuthLogMethod = "external"
 )
 
 // AuthLogOutcome is the binary success/failure axis. Even events that

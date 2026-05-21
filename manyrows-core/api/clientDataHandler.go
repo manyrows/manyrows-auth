@@ -689,10 +689,14 @@ func (handler *RequestHandler) DeleteMyIdentity(w http.ResponseWriter, r *http.R
 	switch provider {
 	case core.UserSourceGoogle, core.UserSourceApple,
 		core.UserSourceMicrosoft, core.UserSourceGithub:
-		// ok
+		// bespoke provider — ok
 	default:
-		WriteError(w, r, "error.badRequest", http.StatusBadRequest)
-		return
+		// generic external IdP identities ("idp:<uuid>") are also
+		// disconnectable; anything else is a bad request.
+		if !core.IsExternalIDPProviderKey(string(provider)) {
+			WriteError(w, r, "error.badRequest", http.StatusBadRequest)
+			return
+		}
 	}
 
 	if err := handler.repo.DeleteUserIdentity(r.Context(), identity.User.ID, provider); err != nil {

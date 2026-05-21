@@ -41,6 +41,14 @@ type tier1OAuthLoginOpts struct {
 	// provider side still resolves to the same pool user.
 	ProviderSubject string
 
+	// ProviderKey is the user_identities.provider value used to link the
+	// identity. Leave "" for the bespoke providers — it defaults to
+	// string(UserSource) ("google", "apple", ...), so their behavior is
+	// unchanged. The generic external-IdP flow sets "idp:<slug>" so each
+	// configured IdP links as a distinct identity (a `sub` is unique only
+	// per-issuer, so the link key must be per-IdP).
+	ProviderKey string
+
 	// AttemptPurpose is the string passed to InsertAttempt when
 	// burning attempt budget on a successful exchange ("google_oauth",
 	// "apple_oauth", "microsoft_oauth", "github_oauth").
@@ -142,7 +150,7 @@ func (handler *RequestHandler) completeTier1OAuthLogin(
 
 	user, created, err := handler.ResolveOAuthSignInIdentity(
 		r.Context(), ctxApp, email, opts.UserSource,
-		opts.ProviderSubject,
+		opts.ProviderKey, opts.ProviderSubject,
 	)
 	if err != nil {
 		switch {

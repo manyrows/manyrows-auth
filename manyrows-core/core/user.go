@@ -16,6 +16,12 @@ const (
 	UserSourceApple      UserSource = "apple"
 	UserSourceMicrosoft  UserSource = "microsoft"
 	UserSourceGithub     UserSource = "github"
+	// UserSourceExternalIDP is the coarse origin for any user who signed
+	// in through a generic configured external IdP (both OIDC and OAuth2
+	// modes). The precise per-IdP link lives in user_identities.provider
+	// as "idp:<config-uuid>" (see ExternalIDPProviderKey); user.source
+	// stays coarse so it remains a small, predictable set.
+	UserSourceExternalIDP UserSource = "external"
 )
 
 // User is an identity keyed by (email, user_pool). A pool is the

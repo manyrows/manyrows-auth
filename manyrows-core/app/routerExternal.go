@@ -81,6 +81,10 @@ func (a *AppService) externalAPIRouter(h *api.RequestHandler, corsMiddleware fun
 			auth.Get("/microsoft/callback", h.WorkspaceMicrosoftCallback)
 			auth.Get("/github/authorize", h.WorkspaceGithubAuthorize)
 			auth.Get("/github/callback", h.WorkspaceGithubCallback)
+			// Generic external IdP (OIDC / OAuth2), one route pair for
+			// every configured provider, keyed by {providerSlug}.
+			auth.Get("/idp/{providerSlug}/authorize", h.WorkspaceExternalIDPAuthorize)
+			auth.Get("/idp/{providerSlug}/callback", h.WorkspaceExternalIDPCallback)
 			auth.Post("/totp/verify", h.HandleWorkspaceTOTPVerify)
 			auth.Post("/totp/setup-init", h.HandleWorkspaceTOTPSetupInit)
 			auth.Post("/totp/setup-complete", h.HandleWorkspaceTOTPSetupComplete)

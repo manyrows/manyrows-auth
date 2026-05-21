@@ -287,6 +287,12 @@ func (a *AppService) initRouter() error {
 			r.Get("/oidc-config", requestHandler.HandleGetAppOIDCConfig)
 			r.Put("/oidc-config", requestHandler.HandleUpdateAppOIDCConfig)
 			r.Put("/qr-sign-in-config", requestHandler.HandleUpdateAppQRSignInConfig)
+			// Generic external IdP (OIDC / OAuth2) CRUD sub-resource.
+			r.Get("/external-idps", requestHandler.HandleListExternalIDPs)
+			r.Post("/external-idps", requestHandler.HandleCreateExternalIDP)
+			r.Post("/external-idps/validate-discovery", requestHandler.HandleValidateExternalIDPDiscovery)
+			r.Put("/external-idps/{idpId}", requestHandler.HandleUpdateExternalIDP)
+			r.Delete("/external-idps/{idpId}", requestHandler.HandleDeleteExternalIDP)
 			r.Put("/password-policy", requestHandler.HandleUpdateAppPasswordPolicy)
 			r.Put("/cookie-domain", requestHandler.HandleUpdateAppCookieDomain)
 			r.Put("/transport-mode", requestHandler.HandleUpdateAppTransportMode)

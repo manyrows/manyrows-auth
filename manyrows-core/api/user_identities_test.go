@@ -8,6 +8,8 @@ import (
 	"manyrows-core/api"
 	"manyrows-core/core"
 	"manyrows-core/core/repo"
+
+	"github.com/gofrs/uuid/v5"
 )
 
 /*
@@ -199,7 +201,7 @@ func TestResolveOAuthSignInIdentity_PrefersSubjectMatchOverEmail(t *testing.T) {
 
 	ts := NewTestServices(t)
 	newEmail := "new-" + GenerateUniqueSlug("u") + "@example.com"
-	user, created, err := ts.Handler.ResolveOAuthSignInIdentity(ctx, app, newEmail, core.UserSourceGoogle, "sub-stable")
+	user, created, err := ts.Handler.ResolveOAuthSignInIdentity(ctx, app, newEmail, core.UserSourceGoogle, "", "sub-stable")
 	if err != nil {
 		t.Fatalf("ResolveOAuthSignInIdentity: %v", err)
 	}
@@ -240,7 +242,7 @@ func TestResolveOAuthSignInIdentity_FallsBackToEmailAndLinks(t *testing.T) {
 	}
 
 	ts := NewTestServices(t)
-	user, created, err := ts.Handler.ResolveOAuthSignInIdentity(ctx, app, email, core.UserSourceGoogle, "new-sub-001")
+	user, created, err := ts.Handler.ResolveOAuthSignInIdentity(ctx, app, email, core.UserSourceGoogle, "", "new-sub-001")
 	if err != nil {
 		t.Fatalf("ResolveOAuthSignInIdentity: %v", err)
 	}
@@ -286,7 +288,7 @@ func TestResolveOAuthSignInIdentity_RefusesEmailFallbackOnSubjectMismatch(t *tes
 	}
 
 	ts := NewTestServices(t)
-	_, _, err = ts.Handler.ResolveOAuthSignInIdentity(ctx, app, email, core.UserSourceGoogle, "sub-B")
+	_, _, err = ts.Handler.ResolveOAuthSignInIdentity(ctx, app, email, core.UserSourceGoogle, "", "sub-B")
 	if !errors.Is(err, api.ErrIdentityConflict) {
 		t.Fatalf("expected ErrIdentityConflict on subject mismatch, got %v", err)
 	}
@@ -310,7 +312,7 @@ func TestResolveOAuthSignInIdentity_CreatesUserAndIdentityWhenRegistrationOn(t *
 
 	email := "fresh-oauth-" + GenerateUniqueSlug("u") + "@example.com"
 	ts := NewTestServices(t)
-	user, created, err := ts.Handler.ResolveOAuthSignInIdentity(ctx, app, email, core.UserSourceGoogle, "brand-new-sub")
+	user, created, err := ts.Handler.ResolveOAuthSignInIdentity(ctx, app, email, core.UserSourceGoogle, "", "brand-new-sub")
 	if err != nil {
 		t.Fatalf("ResolveOAuthSignInIdentity: %v", err)
 	}
@@ -323,6 +325,78 @@ func TestResolveOAuthSignInIdentity_CreatesUserAndIdentityWhenRegistrationOn(t *
 	rows, err := testEnv.Repo.ListUserIdentities(ctx, user.ID)
 	if err != nil || len(rows) != 1 || rows[0].ProviderSubject != "brand-new-sub" {
 		t.Fatalf("expected one identity row with sub=brand-new-sub, got %+v err=%v", rows, err)
+	}
+}
+
+func TestResolveOAuthSignInIdentity_GenericPerProviderIsolation(t *testing.T) {
+	// The whole point of the provider-key decoupling: two distinct
+	// external IdPs can return the SAME `sub` (a sub is unique only
+	// per-issuer). With per-IdP keys ("idp:<config-uuid>") they must link
+	// as two SEPARATE identities on the same pool user — matched by email
+	// — not collide into one. And user.source stays the coarse "external"
+	// bucket, never a per-provider value.
+	ctx := context.Background()
+	acc := testEnv.CreateTestAccount(t, "roi-genidp-"+GenerateUniqueSlug("u")+"@example.com")
+	ws := testEnv.CreateTestWorkspace(t, acc, "WS", GenerateUniqueSlug("ws"))
+	app := testEnv.CreateTestApp(t, ws, acc)
+	app = allowReg(t, app, true)
+	defer testEnv.CleanupTestData(t, &TestFixtures{Account: acc, Workspace: ws})
+
+	email := "genidp-" + GenerateUniqueSlug("u") + "@example.com"
+	ts := NewTestServices(t)
+
+	idpA := uuid.Must(uuid.NewV4()) // e.g. an Okta config
+	idpB := uuid.Must(uuid.NewV4()) // e.g. an Auth0 config
+	keyA := core.ExternalIDPProviderKey(idpA)
+	keyB := core.ExternalIDPProviderKey(idpB)
+
+	// First IdP creates the user.
+	u1, created1, err := ts.Handler.ResolveOAuthSignInIdentity(ctx, app, email,
+		core.UserSourceExternalIDP, keyA, "shared-sub-123")
+	if err != nil {
+		t.Fatalf("idp A sign-in: %v", err)
+	}
+	if !created1 {
+		t.Error("expected first generic sign-in to create the user")
+	}
+
+	// Second IdP with the SAME sub but a different config key — resolves
+	// to the same user by email and links a SECOND identity.
+	u2, created2, err := ts.Handler.ResolveOAuthSignInIdentity(ctx, app, email,
+		core.UserSourceExternalIDP, keyB, "shared-sub-123")
+	if err != nil {
+		t.Fatalf("idp B sign-in: %v", err)
+	}
+	if created2 {
+		t.Error("expected second generic sign-in to match the existing user, not create")
+	}
+	if u1.ID != u2.ID {
+		t.Fatalf("both IdPs should resolve to the same pool user; got %s vs %s", u1.ID, u2.ID)
+	}
+
+	// Two distinct identity rows — the shared sub did NOT collapse them.
+	rows, err := testEnv.Repo.ListUserIdentities(ctx, u1.ID)
+	if err != nil {
+		t.Fatalf("list identities: %v", err)
+	}
+	if len(rows) != 2 {
+		t.Fatalf("expected 2 distinct identities (one per idp config), got %d: %+v", len(rows), rows)
+	}
+	gotProviders := map[string]bool{}
+	for _, row := range rows {
+		gotProviders[string(row.Provider)] = true
+	}
+	if !gotProviders[keyA] || !gotProviders[keyB] {
+		t.Fatalf("expected keys %q and %q, got %+v", keyA, keyB, gotProviders)
+	}
+
+	// Coarse origin only — not a per-slug value.
+	reloaded, err := testEnv.Repo.GetUserByID(ctx, u1.ID)
+	if err != nil {
+		t.Fatalf("reload user: %v", err)
+	}
+	if reloaded.Source != core.UserSourceExternalIDP {
+		t.Errorf("user.source should be coarse %q, got %q", core.UserSourceExternalIDP, reloaded.Source)
 	}
 }
 
@@ -339,7 +413,7 @@ func TestResolveOAuthSignInIdentity_NoSubjectStillWorksWithoutLinking(t *testing
 
 	email := "nosub-" + GenerateUniqueSlug("u") + "@example.com"
 	ts := NewTestServices(t)
-	user, created, err := ts.Handler.ResolveOAuthSignInIdentity(ctx, app, email, core.UserSourceGithub, "")
+	user, created, err := ts.Handler.ResolveOAuthSignInIdentity(ctx, app, email, core.UserSourceGithub, "", "")
 	if err != nil {
 		t.Fatalf("ResolveOAuthSignInIdentity (empty sub): %v", err)
 	}
