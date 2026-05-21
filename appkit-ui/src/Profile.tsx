@@ -414,6 +414,10 @@ export default function Profile({ workspaceBaseUrl, jwtToken, user, onBack, hide
   const disconnectIdentity = async (provider: string) => {
     setDisconnectingProvider(provider);
     try {
+      // NB: send the provider key verbatim. External-IdP keys are
+      // "idp:<uuid>" (a colon), and the server's router does NOT
+      // percent-decode path params — encodeURIComponent here would turn
+      // the colon into %3A and silently fail to match the stored row.
       await authedAxios.delete(`${workspaceBaseUrl}/a/me/identities/${provider}`, authHeaders);
       setIdentities((prev) => prev.filter((i) => i.provider !== provider));
     } catch {
@@ -1560,7 +1564,7 @@ export default function Profile({ workspaceBaseUrl, jwtToken, user, onBack, hide
             >
               <div style={{ display: "flex", flexDirection: "column", gap: 2, flex: 1, minWidth: 0 }}>
                 <span style={{ fontSize: 13, fontWeight: 600 }}>
-                  {PROVIDER_LABEL[i.provider] ?? i.provider}
+                  {PROVIDER_LABEL[i.provider] ?? (i.provider.startsWith("idp:") ? "Single sign-on" : i.provider)}
                 </span>
                 <span style={{ fontSize: 11, color: "var(--ak-color-text-secondary, #666)" }}>
                   {i.providerEmail ? `${i.providerEmail} · ` : ""}Last sign-in {formatRelative(i.lastLoginAt)}

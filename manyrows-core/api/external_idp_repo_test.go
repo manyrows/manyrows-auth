@@ -3,15 +3,54 @@ package api_test
 import (
 	"context"
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
 
 	"manyrows-core/auth"
 	"manyrows-core/core"
 	"manyrows-core/core/repo"
+	"manyrows-core/utils"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/gofrs/uuid/v5"
 )
+
+// TestExternalIDPProviderKey_RoutesAsPathParam guards the disconnect
+// endpoint /a/me/identities/{provider}: an external-IdP key is
+// "idp:<uuid>" (contains a colon). chi does NOT percent-decode path
+// params, so the AppKit client must send the key VERBATIM (raw colon) —
+// "idp:<uuid>" has only path-safe characters, so the raw form routes
+// correctly while URL-encoding the colon would silently break the match
+// (DeleteUserIdentity would look up "idp%3A<uuid>" and find nothing).
+func TestExternalIDPProviderKey_RoutesAsPathParam(t *testing.T) {
+	key := core.ExternalIDPProviderKey(uuid.Must(uuid.NewV4())) // "idp:<uuid>"
+
+	r := chi.NewRouter()
+	var got string
+	r.Delete("/identities/{provider}", func(w http.ResponseWriter, req *http.Request) {
+		got = utils.GetPathString("provider", req)
+		w.WriteHeader(http.StatusNoContent)
+	})
+
+	// Raw key (what the client must send) round-trips intact.
+	rr := httptest.NewRecorder()
+	r.ServeHTTP(rr, httptest.NewRequest(http.MethodDelete, "/identities/"+key, nil))
+	if got != key {
+		t.Fatalf("raw key: chi captured %q, want %q", got, key)
+	}
+
+	// Regression guard: chi does not decode %3A. If this ever starts
+	// matching, the don't-encode assumption changed — revisit the
+	// disconnect client (Profile.tsx must keep the provider raw).
+	got = ""
+	encoded := "idp%3A" + key[len("idp:"):]
+	r.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodDelete, "/identities/"+encoded, nil))
+	if got == key {
+		t.Fatal("chi unexpectedly percent-decoded the path param; the disconnect client must NOT URL-encode the provider key")
+	}
+}
 
 // TestExternalIDPRepo_CRUD exercises the full lifecycle and, by running
 // against the real test DB, validates that migration 00005 applies and
