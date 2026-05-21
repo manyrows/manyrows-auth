@@ -177,6 +177,7 @@ export default function AppAuthMethods({ project, appId }: Props) {
           <Tab label={t("apps.tab.passkeys", { defaultValue: "Passkeys" })} />
           <Tab label={t("apps.tab.oidc", { defaultValue: "OIDC" })} />
           <Tab label={t("apps.tab.qr", { defaultValue: "QR sign-in" })} />
+          <Tab label={t("apps.tab.externalIdps", { defaultValue: "External IdPs" })} />
         </Tabs>
       </Box>
 
@@ -210,6 +211,12 @@ export default function AppAuthMethods({ project, appId }: Props) {
         )}
         {tab === 5 && (
           <QRSignInCard
+            app={app} cardURL={cardURL}
+            onSaved={onSaved} onSuccess={onSuccess} onError={onError}
+          />
+        )}
+        {tab === 6 && (
+          <ExternalIDPsCard
             app={app} cardURL={cardURL}
             onSaved={onSaved} onSuccess={onSuccess} onError={onError}
           />
@@ -2248,5 +2255,246 @@ function QRSignInCard({ app, cardURL, onSaved, onError, onSuccess }: CardProps) 
 
       <SaveBar dirty={dirty} saving={saving} onSave={() => void save()} onDiscard={() => setEnabled(!!app.qrSignInEnabled)} />
     </Stack>
+  );
+}
+
+// =====================================================================
+// External IdPs - generic OIDC / OAuth2 providers (CRUD list + form)
+// =====================================================================
+
+type ExternalIDP = {
+  id: string;
+  slug: string;
+  displayName: string;
+  enabled: boolean;
+  mode: "oidc" | "oauth2";
+  issuerUrl?: string;
+  authorizeUrl?: string;
+  tokenUrl?: string;
+  userinfoUrl?: string;
+  jwksUrl?: string;
+  clientId: string;
+  hasClientSecret: boolean;
+  scopes: string;
+  subjectField: string;
+  emailField: string;
+  emailVerifiedField?: string;
+  nameField?: string;
+  buttonIcon?: string;
+  trustUnverifiedEmail: boolean;
+};
+
+function ExternalIDPsCard({ cardURL, onSuccess, onError }: CardProps) {
+  const baseURL = `${cardURL}/external-idps`;
+  const [list, setList] = React.useState<ExternalIDP[]>([]);
+  const [loading, setLoading] = React.useState(true);
+  const [editing, setEditing] = React.useState<ExternalIDP | "new" | null>(null);
+
+  const reload = React.useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await axios.get<{ externalIdps: ExternalIDP[] }>(baseURL);
+      setList(res.data.externalIdps ?? []);
+    } catch (e) {
+      onError(e);
+    } finally {
+      setLoading(false);
+    }
+  }, [baseURL, onError]);
+
+  React.useEffect(() => { void reload(); }, [reload]);
+
+  async function remove(idp: ExternalIDP) {
+    if (!window.confirm(`Delete "${idp.displayName}"? Users who signed in through it will need to re-link.`)) return;
+    try {
+      await axios.delete(`${baseURL}/${idp.id}`);
+      onSuccess();
+      void reload();
+    } catch (e) {
+      onError(e);
+    }
+  }
+
+  if (loading) return <Loader />;
+
+  return (
+    <Stack spacing={3} sx={{ maxWidth: 680 }}>
+      <Section
+        overline="SSO"
+        title="External identity providers"
+        desc="Let users sign in through any OIDC or OAuth2 provider — Okta, Auth0, Keycloak, Entra, GitLab, Discord, and more. Each appears as its own button on the sign-in screen."
+      >
+        {list.length === 0 && (
+          <Typography variant="body2" color="text.secondary">No external providers configured yet.</Typography>
+        )}
+        <Stack spacing={1}>
+          {list.map((idp) => (
+            <Box key={idp.id} sx={{ display: "flex", alignItems: "center", gap: 1, p: 1.5, border: 1, borderColor: "divider", borderRadius: 1 }}>
+              <Box sx={{ flex: 1, minWidth: 0 }}>
+                <Typography variant="body2" sx={{ fontWeight: 500 }}>{idp.displayName}</Typography>
+                <Typography variant="caption" color="text.secondary">/{idp.slug} · {idp.mode.toUpperCase()}</Typography>
+              </Box>
+              <Chip size="small" variant="outlined" color={idp.enabled ? "success" : "default"} label={idp.enabled ? "Enabled" : "Disabled"} />
+              <Button size="small" sx={{ textTransform: "none" }} onClick={() => setEditing(idp)}>Edit</Button>
+              <Tooltip title="Delete">
+                <IconButton size="small" color="error" onClick={() => void remove(idp)}><Trash2 size={16} /></IconButton>
+              </Tooltip>
+            </Box>
+          ))}
+        </Stack>
+        <Box>
+          <Button startIcon={<Plus size={16} />} sx={{ mt: 1, textTransform: "none" }} onClick={() => setEditing("new")}>Add provider</Button>
+        </Box>
+      </Section>
+
+      {editing && (
+        <ExternalIDPForm
+          baseURL={baseURL}
+          existing={editing === "new" ? null : editing}
+          onClose={() => setEditing(null)}
+          onSaved={() => { onSuccess(); setEditing(null); void reload(); }}
+          onError={onError}
+        />
+      )}
+    </Stack>
+  );
+}
+
+function ExternalIDPForm({
+  baseURL,
+  existing,
+  onClose,
+  onSaved,
+  onError,
+}: {
+  baseURL: string;
+  existing: ExternalIDP | null;
+  onClose: () => void;
+  onSaved: () => void;
+  onError: (e: unknown) => void;
+}) {
+  const isEdit = existing != null;
+  const [slug, setSlug] = React.useState(existing?.slug ?? "");
+  const [displayName, setDisplayName] = React.useState(existing?.displayName ?? "");
+  const [mode, setMode] = React.useState<"oidc" | "oauth2">(existing?.mode ?? "oidc");
+  const [enabled, setEnabled] = React.useState(existing?.enabled ?? false);
+  const [issuerUrl, setIssuerUrl] = React.useState(existing?.issuerUrl ?? "");
+  const [authorizeUrl, setAuthorizeUrl] = React.useState(existing?.authorizeUrl ?? "");
+  const [tokenUrl, setTokenUrl] = React.useState(existing?.tokenUrl ?? "");
+  const [userinfoUrl, setUserinfoUrl] = React.useState(existing?.userinfoUrl ?? "");
+  const [jwksUrl] = React.useState(existing?.jwksUrl ?? "");
+  const [clientId, setClientId] = React.useState(existing?.clientId ?? "");
+  const [clientSecret, setClientSecret] = React.useState("");
+  const [scopes, setScopes] = React.useState(existing?.scopes ?? "");
+  const [subjectField, setSubjectField] = React.useState(existing?.subjectField ?? "");
+  const [emailField, setEmailField] = React.useState(existing?.emailField ?? "");
+  const [emailVerifiedField, setEmailVerifiedField] = React.useState(existing?.emailVerifiedField ?? "");
+  const [nameField, setNameField] = React.useState(existing?.nameField ?? "");
+  const [buttonIcon, setButtonIcon] = React.useState(existing?.buttonIcon ?? "");
+  const [trustUnverified, setTrustUnverified] = React.useState(existing?.trustUnverifiedEmail ?? false);
+  const [saving, setSaving] = React.useState(false);
+  const [discovery, setDiscovery] = React.useState<string | null>(null);
+
+  async function fetchDiscovery() {
+    setDiscovery(null);
+    try {
+      const res = await axios.post<{ tokenUrl: string }>(`${baseURL}/validate-discovery`, { issuerUrl });
+      setDiscovery(`Discovery OK — token endpoint: ${res.data.tokenUrl}`);
+    } catch (e) {
+      onError(e);
+    }
+  }
+
+  async function save() {
+    setSaving(true);
+    try {
+      const body: Record<string, unknown> = {
+        slug, displayName, mode, enabled,
+        issuerUrl, authorizeUrl, tokenUrl, userinfoUrl, jwksUrl,
+        clientId, clientSecret, scopes,
+        subjectField, emailField, emailVerifiedField, nameField,
+        buttonIcon, trustUnverifiedEmail: trustUnverified,
+      };
+      if (isEdit) await axios.put(`${baseURL}/${existing.id}`, body);
+      else await axios.post(baseURL, body);
+      onSaved();
+    } catch (e) {
+      onError(e);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <Dialog open onClose={onClose} maxWidth="sm" fullWidth>
+      <DialogTitle>{isEdit ? "Edit external provider" : "Add external provider"}</DialogTitle>
+      <DialogContent dividers>
+        <Stack spacing={2} sx={{ mt: 0.5 }}>
+          <TextField size="small" fullWidth label="Display name" value={displayName} onChange={(e) => setDisplayName(e.target.value)} placeholder="Acme Okta" />
+          <TextField size="small" fullWidth label="Slug" value={slug} onChange={(e) => setSlug(e.target.value)} disabled={isEdit} placeholder="acme-okta" helperText="Lowercase letters, numbers, hyphens. Used in the URL and as the button id; can't change later." />
+
+          <FormControl>
+            <RadioGroup row value={mode} onChange={(e) => setMode(e.target.value as "oidc" | "oauth2")}>
+              <FormControlLabel value="oidc" control={<Radio size="small" />} label="OIDC (discovery + id_token)" />
+              <FormControlLabel value="oauth2" control={<Radio size="small" />} label="OAuth2 (userinfo)" />
+            </RadioGroup>
+          </FormControl>
+
+          {mode === "oidc" ? (
+            <>
+              <TextField size="small" fullWidth label="Issuer URL" value={issuerUrl} onChange={(e) => setIssuerUrl(e.target.value)} placeholder="https://acme.okta.com" helperText="We fetch /.well-known/openid-configuration from here. Must be https." />
+              <Box>
+                <Button size="small" sx={{ textTransform: "none" }} disabled={!issuerUrl.trim()} onClick={() => void fetchDiscovery()}>Fetch discovery</Button>
+              </Box>
+              {discovery && <Alert severity="success">{discovery}</Alert>}
+            </>
+          ) : (
+            <>
+              <TextField size="small" fullWidth label="Authorize URL" value={authorizeUrl} onChange={(e) => setAuthorizeUrl(e.target.value)} placeholder="https://provider/oauth2/authorize" />
+              <TextField size="small" fullWidth label="Token URL" value={tokenUrl} onChange={(e) => setTokenUrl(e.target.value)} placeholder="https://provider/oauth2/token" />
+              <TextField size="small" fullWidth label="Userinfo URL" value={userinfoUrl} onChange={(e) => setUserinfoUrl(e.target.value)} placeholder="https://provider/userinfo" />
+            </>
+          )}
+
+          <TextField size="small" fullWidth label="Client ID" value={clientId} onChange={(e) => setClientId(e.target.value)} />
+          <TextField size="small" fullWidth type="password" label="Client secret" value={clientSecret} onChange={(e) => setClientSecret(e.target.value)} placeholder={isEdit && existing.hasClientSecret ? "Leave blank to keep current" : "Required"} />
+          <TextField size="small" fullWidth label="Scopes" value={scopes} onChange={(e) => setScopes(e.target.value)} placeholder="openid email profile" helperText="Space-separated. Defaults to 'openid email profile' if blank." />
+
+          <Accordion disableGutters elevation={0} sx={{ "&:before": { display: "none" }, border: 1, borderColor: "divider", borderRadius: 1 }}>
+            <AccordionSummary expandIcon={<ChevronDown size={16} />}>
+              <Typography variant="body2">Claim mapping & button (advanced)</Typography>
+            </AccordionSummary>
+            <AccordionDetails>
+              <Stack spacing={2}>
+                <TextField size="small" fullWidth label="Subject field" value={subjectField} onChange={(e) => setSubjectField(e.target.value)} placeholder="sub" />
+                <TextField size="small" fullWidth label="Email field" value={emailField} onChange={(e) => setEmailField(e.target.value)} placeholder="email" />
+                <TextField size="small" fullWidth label="Email-verified field" value={emailVerifiedField} onChange={(e) => setEmailVerifiedField(e.target.value)} placeholder="email_verified" />
+                <TextField size="small" fullWidth label="Name field" value={nameField} onChange={(e) => setNameField(e.target.value)} placeholder="name" />
+                <TextField size="small" fullWidth label="Button icon" value={buttonIcon} onChange={(e) => setButtonIcon(e.target.value)} placeholder="key" helperText="Optional icon name (key, shield, lock, fingerprint, ...)." />
+              </Stack>
+            </AccordionDetails>
+          </Accordion>
+
+          <FormControlLabel
+            control={<Switch checked={trustUnverified} onChange={(e) => setTrustUnverified(e.target.checked)} />}
+            label="Trust unverified email"
+          />
+          {trustUnverified && (
+            <Alert severity="warning">
+              Only enable this for an IdP that verifies emails but doesn't send the <code>email_verified</code> claim. Enabling it for a provider where users can set arbitrary emails risks account takeover.
+            </Alert>
+          )}
+
+          <FormControlLabel
+            control={<Switch checked={enabled} onChange={(e) => setEnabled(e.target.checked)} />}
+            label="Enabled (show the sign-in button)"
+          />
+        </Stack>
+      </DialogContent>
+      <DialogActions>
+        <Button onClick={onClose} sx={{ textTransform: "none" }}>Cancel</Button>
+        <Button variant="contained" onClick={() => void save()} disabled={saving} sx={{ textTransform: "none" }}>{saving ? "Saving…" : "Save"}</Button>
+      </DialogActions>
+    </Dialog>
   );
 }
