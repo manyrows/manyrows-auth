@@ -27,17 +27,12 @@ type updateAppQRSignInConfigRequest struct {
 	Enabled *bool `json:"enabled,omitempty"`
 }
 
-// adminAppQRSignInResponse extends adminAppResponse with a
-// computed URL pattern so the admin UI can render the integration
-// snippet without having to know how to construct it itself.
-type adminAppQRSignInResponse struct {
-	adminAppResponse
-	QRSignInEnabled bool   `json:"qrSignInEnabled"`
-	QRSignInURL     string `json:"qrSignInUrl,omitempty"`
-}
-
 // HandleUpdateAppQRSignInConfig is PUT
-// /admin/.../products/{pid}/apps/{appId}/qr-sign-in-config.
+// /admin/.../products/{pid}/apps/{appId}/qr-sign-in-config. Returns
+// the standard adminAppResponse — which already carries qrSignInUrl
+// (added in the Phase 2 audit) and qrSignInEnabled (via embedded
+// core.App) — so the UI gets everything it needs without a separate
+// wrapper response shape.
 func (handler *RequestHandler) HandleUpdateAppQRSignInConfig(w http.ResponseWriter, r *http.Request) {
 	_, ws, ok := handler.adminAndWorkspace(w, r)
 	if !ok {
@@ -75,16 +70,5 @@ func (handler *RequestHandler) HandleUpdateAppQRSignInConfig(w http.ResponseWrit
 		}
 	}
 
-	base := handler.AppBaseURL(&out)
-	var qrURL string
-	if base != "" && out.QRSignInEnabled {
-		qrURL = base + "/x/" + ws.Slug + "/apps/" + out.ID.String() + "/qr-sign-in"
-	}
-
-	resp := adminAppQRSignInResponse{
-		adminAppResponse: handler.toAdminAppResponse(out, ws),
-		QRSignInEnabled:  out.QRSignInEnabled,
-		QRSignInURL:      qrURL,
-	}
-	utils.WriteJsonWithStatusCode(w, resp, http.StatusOK)
+	utils.WriteJsonWithStatusCode(w, handler.toAdminAppResponse(out, ws), http.StatusOK)
 }

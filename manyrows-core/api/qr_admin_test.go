@@ -144,6 +144,34 @@ func TestAdminQRConfig_URLSurfacedOnRegularGet(t *testing.T) {
 	}
 }
 
+// TestAdminQRConfig_URLPresentEvenWhenDisabled: the QR sign-in URL
+// is a static pattern — disabled apps still have one, it just 404s
+// when hit. After the Phase 2 audit cleanup, both GET and PUT
+// responses expose it the same way regardless of toggle state.
+func TestAdminQRConfig_URLPresentEvenWhenDisabled(t *testing.T) {
+	router := setupQRAdminRouter(t)
+	_, ws, project, appID, _, claims := createQRAppFixture(t)
+
+	// Default state: disabled, app_url unset.
+	rr := putQRConfig(t, router, ws, project, appID, claims, map[string]any{"enabled": false})
+	if rr.Code != http.StatusOK {
+		t.Fatalf("disable (no-op): %d (body=%s)", rr.Code, rr.Body.String())
+	}
+	var resp struct {
+		QRSignInEnabled bool   `json:"qrSignInEnabled"`
+		QRSignInURL     string `json:"qrSignInUrl"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if resp.QRSignInEnabled {
+		t.Fatalf("expected disabled, got enabled=true")
+	}
+	if resp.QRSignInURL == "" {
+		t.Fatalf("URL must be present even when toggle off (it's a static pattern); got empty")
+	}
+}
+
 func TestAdminQRConfig_DisableAlwaysAllowed(t *testing.T) {
 	router := setupQRAdminRouter(t)
 	_, ws, project, appID, _, claims := createQRAppFixture(t)
