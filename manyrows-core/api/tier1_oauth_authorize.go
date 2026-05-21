@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"net/http"
 	"net/url"
 	"strings"
@@ -27,6 +28,30 @@ func originFromBaseURL(rawURL string) string {
 		return ""
 	}
 	return u.Scheme + "://" + u.Host
+}
+
+// isOpenerOriginAllowed reports whether a popup opener origin may receive
+// this app's OAuth postMessage: it must be in the app's CORS allowlist,
+// or equal the install's own origin (ManyRows-served pages — the OIDC
+// /oidc/login shim, the QR /pair landing, the generic-IdP popup — run on
+// the auth host, which is never in the customer's CORS list). err is
+// non-nil only on a store failure. Shared by the bespoke Tier-1
+// authorize handler and the generic external-IdP authorize handler.
+func (handler *RequestHandler) isOpenerOriginAllowed(ctx context.Context, app *core.App, openerOrigin string) (bool, error) {
+	origins, err := handler.repo.GetCorsOrigins(ctx, app.ID)
+	if err != nil {
+		return false, err
+	}
+	for i := range origins {
+		if strings.EqualFold(strings.TrimSpace(origins[i].Origin), openerOrigin) {
+			return true, nil
+		}
+	}
+	if installOrigin := originFromBaseURL(handler.AppBaseURL(app)); installOrigin != "" &&
+		strings.EqualFold(installOrigin, openerOrigin) {
+		return true, nil
+	}
+	return false, nil
 }
 
 // tier1OAuthAuthorizeOpts is the per-provider configuration for the
@@ -142,32 +167,11 @@ func (handler *RequestHandler) workspaceOAuthAuthorize(
 		return
 	}
 	if openerOrigin != "" {
-		origins, err := handler.repo.GetCorsOrigins(r.Context(), ctxApp.ID)
+		allowed, err := handler.isOpenerOriginAllowed(r.Context(), ctxApp, openerOrigin)
 		if err != nil {
 			log.Err(err).Msgf("%s authorize: GetCorsOrigins failed", opts.Provider)
 			WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 			return
-		}
-		allowed := false
-		for i := range origins {
-			if strings.EqualFold(strings.TrimSpace(origins[i].Origin), openerOrigin) {
-				allowed = true
-				break
-			}
-		}
-		// Also allow the install's OWN origin. ManyRows serves AppKit
-		// itself on a few pages (the OIDC /oidc/login shim and the QR
-		// /pair landing), where window.location.origin is the auth
-		// host — never the customer app domain, so it isn't in the
-		// per-app CORS allowlist. Those pages are the IdP; trusting
-		// the install origin is safe (an attacker can't receive a
-		// postMessage targeted at the auth host unless their window is
-		// actually served from it, which only ManyRows pages are).
-		if !allowed {
-			if installOrigin := originFromBaseURL(handler.AppBaseURL(ctxApp)); installOrigin != "" &&
-				strings.EqualFold(installOrigin, openerOrigin) {
-				allowed = true
-			}
 		}
 		if !allowed {
 			WriteError(w, r, "error.invalidOrigin", http.StatusBadRequest)
