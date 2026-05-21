@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
 	"sync"
@@ -79,7 +80,7 @@ func Discover(ctx context.Context, issuer string) (Endpoints, error) {
 	}
 
 	var doc discoveryDoc
-	if err := json.NewDecoder(resp.Body).Decode(&doc); err != nil {
+	if err := json.NewDecoder(io.LimitReader(resp.Body, maxResponseBytes)).Decode(&doc); err != nil {
 		return Endpoints{}, fmt.Errorf("%w: decode: %v", ErrDiscovery, err)
 	}
 

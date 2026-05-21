@@ -16,6 +16,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"net/url"
@@ -42,6 +43,13 @@ var (
 // httpClient is shared by discovery, JWKS, token-exchange, and userinfo
 // calls. A 10s timeout matches the bespoke providers.
 var httpClient = &http.Client{Timeout: 10 * time.Second}
+
+// maxResponseBytes caps every external IdP response we decode. Discovery
+// docs, JWKS, token, and userinfo bodies are all a few KB in practice;
+// 1 MiB is generous headroom while preventing a malformed or hostile
+// endpoint from OOMing us with an unbounded body. Wrap resp.Body in
+// io.LimitReader(_, maxResponseBytes) before decoding.
+const maxResponseBytes = 1 << 20
 
 // signingMethods is the set we accept on an id_token. All RSA/PSS verify
 // with *rsa.PublicKey and all ES verify with *ecdsa.PublicKey, both of
@@ -301,7 +309,7 @@ func ExchangeCode(ctx context.Context, tokenEndpoint, clientID, clientSecret, co
 	defer resp.Body.Close()
 
 	var tr TokenResponse
-	if err := json.NewDecoder(resp.Body).Decode(&tr); err != nil {
+	if err := json.NewDecoder(io.LimitReader(resp.Body, maxResponseBytes)).Decode(&tr); err != nil {
 		return nil, fmt.Errorf("%w: decode: %v", ErrCodeExchange, err)
 	}
 	if tr.Error != "" {
@@ -322,6 +330,9 @@ func VerifyIDToken(ctx context.Context, idToken, issuer, jwksURL, clientID, expe
 		jwt.WithIssuer(issuer),
 		jwt.WithAudience(clientID),
 		jwt.WithExpirationRequired(),
+		// Tolerate small clock skew between the IdP and us so a freshly
+		// minted token isn't spuriously rejected at exp/nbf.
+		jwt.WithLeeway(60*time.Second),
 	)
 	claims := jwt.MapClaims{}
 	_, err := parser.ParseWithClaims(idToken, claims, func(t *jwt.Token) (any, error) {
@@ -372,7 +383,7 @@ func FetchUserinfo(ctx context.Context, userinfoURL, accessToken string, fields 
 	}
 	// UseNumber keeps numeric ids exact (a large user id would lose
 	// precision as float64); claimString turns json.Number into a string.
-	dec := json.NewDecoder(resp.Body)
+	dec := json.NewDecoder(io.LimitReader(resp.Body, maxResponseBytes))
 	dec.UseNumber()
 	var m map[string]any
 	if err := dec.Decode(&m); err != nil {

@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"math/big"
 	"net/http"
 	"sync"
@@ -104,7 +105,7 @@ func fetchJWKS(ctx context.Context, jwksURL string) (map[string]any, error) {
 	var doc struct {
 		Keys []jwk `json:"keys"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&doc); err != nil {
+	if err := json.NewDecoder(io.LimitReader(resp.Body, maxResponseBytes)).Decode(&doc); err != nil {
 		return nil, fmt.Errorf("jwks decode: %w", err)
 	}
 
