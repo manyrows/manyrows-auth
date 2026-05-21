@@ -158,13 +158,28 @@ func TestExternalIDP_E2E(t *testing.T) {
 		t.Fatalf("create provider: %v", err)
 	}
 
-	authzPath := "/x/" + ws.Slug + "/apps/" + app.ID.String() + "/auth/idp/mock/authorize"
-	cbPath := "/x/" + ws.Slug + "/apps/" + app.ID.String() + "/auth/idp/mock/callback"
+	// A second provider on the same mock IdP, opted into trusting
+	// unverified emails (e.g. an IdP that verifies but omits the claim).
+	trustedID := uuid.Must(uuid.NewV4())
+	trustedSecret, err := enc.EncryptToBytesWithAAD([]byte("client-secret-2"), crypto.AAD("external_idps", "client_secret_encrypted", trustedID))
+	if err != nil {
+		t.Fatalf("encrypt trusted secret: %v", err)
+	}
+	if err := testEnv.Repo.CreateExternalIDP(ctx, &core.ExternalIDP{
+		ID: trustedID, AppID: app.ID, Slug: "mock-trusted", DisplayName: "Mock Trusted", Enabled: true,
+		Mode: core.ExternalIDPModeOIDC, IssuerURL: idp.server.URL,
+		ClientID: "client-1", ClientSecretEncrypted: trustedSecret, TrustUnverifiedEmail: true,
+	}); err != nil {
+		t.Fatalf("create trusted provider: %v", err)
+	}
 
-	// authorizeAndCallback runs one full flow and returns the callback's
-	// (HTML-wrapped) response. emailVerified controls the id_token claim.
-	authorizeAndCallback := func(t *testing.T, signInEmail, sub string, emailVerified bool) *httptest.ResponseRecorder {
+	// authorizeAndCallback runs one full flow for the given provider slug
+	// and returns the callback's (HTML-wrapped) response. emailVerified
+	// controls the id_token claim.
+	authorizeAndCallback := func(t *testing.T, slug, signInEmail, sub string, emailVerified bool) *httptest.ResponseRecorder {
 		t.Helper()
+		authzPath := "/x/" + ws.Slug + "/apps/" + app.ID.String() + "/auth/idp/" + slug + "/authorize"
+		cbPath := "/x/" + ws.Slug + "/apps/" + app.ID.String() + "/auth/idp/" + slug + "/callback"
 		authzRR := httptest.NewRecorder()
 		r.ServeHTTP(authzRR, httptest.NewRequest(http.MethodGet, authzPath+"?openerOrigin="+url.QueryEscape(openerOrigin), nil))
 		if authzRR.Code != http.StatusOK {
@@ -212,7 +227,7 @@ func TestExternalIDP_E2E(t *testing.T) {
 	// --- Happy path: verified email → session + linked identity ---
 	t.Run("verified email signs in and links identity", func(t *testing.T) {
 		signInEmail := "e2e-ok-" + GenerateUniqueSlug("u") + "@example.com"
-		cbRR := authorizeAndCallback(t, signInEmail, "mock-sub-1", true)
+		cbRR := authorizeAndCallback(t, "mock", signInEmail, "mock-sub-1", true)
 		if strings.Contains(cbRR.Body.String(), "emailNotVerified") {
 			t.Fatalf("verified sign-in should not be rejected: %s", cbRR.Body.String())
 		}
@@ -240,13 +255,37 @@ func TestExternalIDP_E2E(t *testing.T) {
 	// --- Verified-email gate: unverified email is refused ---
 	t.Run("unverified email is rejected", func(t *testing.T) {
 		signInEmail := "e2e-unverified-" + GenerateUniqueSlug("u") + "@example.com"
-		cbRR := authorizeAndCallback(t, signInEmail, "mock-sub-2", false)
+		cbRR := authorizeAndCallback(t, "mock", signInEmail, "mock-sub-2", false)
 		if !strings.Contains(cbRR.Body.String(), "emailNotVerified") {
 			t.Fatalf("unverified email must be rejected with emailNotVerified, got: %s", cbRR.Body.String())
 		}
 		// And no account should have been created.
 		if user, _ := testEnv.Repo.GetUserByEmail(ctx, signInEmail, app); user != nil {
 			t.Fatal("no user should be created for an unverified-email sign-in")
+		}
+	})
+
+	// --- Opt-out: a trusted IdP accepts an unverified email ---
+	t.Run("trust_unverified_email accepts an unverified email", func(t *testing.T) {
+		signInEmail := "e2e-trusted-" + GenerateUniqueSlug("u") + "@example.com"
+		cbRR := authorizeAndCallback(t, "mock-trusted", signInEmail, "mock-sub-3", false)
+		if strings.Contains(cbRR.Body.String(), "emailNotVerified") {
+			t.Fatalf("trusted IdP should accept an unverified email: %s", cbRR.Body.String())
+		}
+		user, err := testEnv.Repo.GetUserByEmail(ctx, signInEmail, app)
+		if err != nil || user == nil {
+			t.Fatalf("user should be created via the trusted IdP: user=%v err=%v", user, err)
+		}
+		rows, _ := testEnv.Repo.ListUserIdentities(ctx, user.ID)
+		wantKey := core.ExternalIDPProviderKey(trustedID)
+		found := false
+		for _, row := range rows {
+			if string(row.Provider) == wantKey {
+				found = true
+			}
+		}
+		if !found {
+			t.Fatalf("expected identity %q, got %+v", wantKey, rows)
 		}
 	})
 }

@@ -1,6 +1,7 @@
 package core
 
 import (
+	"strings"
 	"time"
 
 	"github.com/gofrs/uuid/v5"
@@ -32,6 +33,13 @@ const (
 // — no colon).
 func ExternalIDPProviderKey(id uuid.UUID) string {
 	return "idp:" + id.String()
+}
+
+// IsExternalIDPProviderKey reports whether a user_identities.provider
+// value belongs to a generic external IdP (vs a bespoke provider like
+// "google"). Used to allow disconnecting these identities.
+func IsExternalIDPProviderKey(provider string) bool {
+	return strings.HasPrefix(provider, "idp:")
 }
 
 // ExternalIDP is one external identity provider configured for an app —
@@ -69,6 +77,12 @@ type ExternalIDP struct {
 	NameField          string `db:"name_field" json:"nameField,omitempty"`
 
 	ButtonIcon string `db:"button_icon" json:"buttonIcon,omitempty"`
+
+	// TrustUnverifiedEmail opts INTO accepting this IdP's email even when
+	// it isn't marked verified. Default false = require verified (safe);
+	// only set true for an IdP whose emails are trustworthy but which
+	// omits the email_verified claim. See the callback's verified gate.
+	TrustUnverifiedEmail bool `db:"trust_unverified_email" json:"trustUnverifiedEmail"`
 
 	CreatedAt time.Time `db:"created_at" json:"createdAt"`
 	UpdatedAt time.Time `db:"updated_at" json:"updatedAt"`

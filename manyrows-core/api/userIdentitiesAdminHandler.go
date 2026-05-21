@@ -93,8 +93,10 @@ func (handler *RequestHandler) HandleAdminDeleteUserIdentity(w http.ResponseWrit
 	case core.UserSourceGoogle, core.UserSourceApple,
 		core.UserSourceMicrosoft, core.UserSourceGithub:
 	default:
-		WriteError(w, r, "error.badRequest", http.StatusBadRequest)
-		return
+		if !core.IsExternalIDPProviderKey(string(provider)) {
+			WriteError(w, r, "error.badRequest", http.StatusBadRequest)
+			return
+		}
 	}
 	if err := handler.repo.DeleteUserIdentity(r.Context(), user.ID, provider); err != nil {
 		log.Err(err).Msg("Could not delete user identity (admin)")

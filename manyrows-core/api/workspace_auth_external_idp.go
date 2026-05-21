@@ -303,10 +303,10 @@ func (handler *RequestHandler) processExternalIDPCallback(w http.ResponseWriter,
 	// xms_edov), and the contract completeTier1OAuthLogin documents.
 	// Without this an external IdP that lets a user assert an arbitrary
 	// unverified email could hijack an existing account through the
-	// email-fallback link in ResolveOAuthSignInIdentity. Providers that
-	// don't emit email_verified will be rejected here until a per-IdP
-	// "trust unverified email" opt-out exists (tracked separately).
-	if !info.EmailVerified {
+	// email-fallback link in ResolveOAuthSignInIdentity. An admin can
+	// opt a trusted IdP out via TrustUnverifiedEmail (e.g. a corporate
+	// Okta that verifies emails but omits the email_verified claim).
+	if !idp.TrustUnverifiedEmail && !info.EmailVerified {
 		handler.writeAuthLogFromRequest(r, AuthLogInput{
 			WorkspaceID:   ws.ID,
 			AppID:         &app.ID,

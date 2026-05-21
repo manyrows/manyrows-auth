@@ -34,26 +34,27 @@ import (
 var slugPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,62}$`)
 
 type externalIDPResponse struct {
-	ID                 string `json:"id"`
-	Slug               string `json:"slug"`
-	DisplayName        string `json:"displayName"`
-	Enabled            bool   `json:"enabled"`
-	Mode               string `json:"mode"`
-	IssuerURL          string `json:"issuerUrl,omitempty"`
-	AuthorizeURL       string `json:"authorizeUrl,omitempty"`
-	TokenURL           string `json:"tokenUrl,omitempty"`
-	UserinfoURL        string `json:"userinfoUrl,omitempty"`
-	JWKSURL            string `json:"jwksUrl,omitempty"`
-	ClientID           string `json:"clientId"`
-	HasClientSecret    bool   `json:"hasClientSecret"`
-	Scopes             string `json:"scopes"`
-	SubjectField       string `json:"subjectField"`
-	EmailField         string `json:"emailField"`
-	EmailVerifiedField string `json:"emailVerifiedField,omitempty"`
-	NameField          string `json:"nameField,omitempty"`
-	ButtonIcon         string `json:"buttonIcon,omitempty"`
-	CreatedAt          string `json:"createdAt"`
-	UpdatedAt          string `json:"updatedAt"`
+	ID                   string `json:"id"`
+	Slug                 string `json:"slug"`
+	DisplayName          string `json:"displayName"`
+	Enabled              bool   `json:"enabled"`
+	Mode                 string `json:"mode"`
+	IssuerURL            string `json:"issuerUrl,omitempty"`
+	AuthorizeURL         string `json:"authorizeUrl,omitempty"`
+	TokenURL             string `json:"tokenUrl,omitempty"`
+	UserinfoURL          string `json:"userinfoUrl,omitempty"`
+	JWKSURL              string `json:"jwksUrl,omitempty"`
+	ClientID             string `json:"clientId"`
+	HasClientSecret      bool   `json:"hasClientSecret"`
+	Scopes               string `json:"scopes"`
+	SubjectField         string `json:"subjectField"`
+	EmailField           string `json:"emailField"`
+	EmailVerifiedField   string `json:"emailVerifiedField,omitempty"`
+	NameField            string `json:"nameField,omitempty"`
+	ButtonIcon           string `json:"buttonIcon,omitempty"`
+	TrustUnverifiedEmail bool   `json:"trustUnverifiedEmail"`
+	CreatedAt            string `json:"createdAt"`
+	UpdatedAt            string `json:"updatedAt"`
 }
 
 // toExternalIDPResponse never exposes the client secret — only whether
@@ -66,7 +67,8 @@ func toExternalIDPResponse(e *core.ExternalIDP) externalIDPResponse {
 		ClientID: e.ClientID, HasClientSecret: len(e.ClientSecretEncrypted) > 0,
 		Scopes: e.Scopes, SubjectField: e.SubjectField, EmailField: e.EmailField,
 		EmailVerifiedField: e.EmailVerifiedField, NameField: e.NameField, ButtonIcon: e.ButtonIcon,
-		CreatedAt: e.CreatedAt.Format(time.RFC3339), UpdatedAt: e.UpdatedAt.Format(time.RFC3339),
+		TrustUnverifiedEmail: e.TrustUnverifiedEmail,
+		CreatedAt:            e.CreatedAt.Format(time.RFC3339), UpdatedAt: e.UpdatedAt.Format(time.RFC3339),
 	}
 }
 
@@ -83,13 +85,14 @@ type externalIDPRequest struct {
 	ClientID     string `json:"clientId"`
 	// ClientSecret is plaintext in. On update, "" means "keep the stored
 	// secret" — so the UI never has to round-trip the secret back.
-	ClientSecret       string `json:"clientSecret"`
-	Scopes             string `json:"scopes"`
-	SubjectField       string `json:"subjectField"`
-	EmailField         string `json:"emailField"`
-	EmailVerifiedField string `json:"emailVerifiedField"`
-	NameField          string `json:"nameField"`
-	ButtonIcon         string `json:"buttonIcon"`
+	ClientSecret         string `json:"clientSecret"`
+	Scopes               string `json:"scopes"`
+	SubjectField         string `json:"subjectField"`
+	EmailField           string `json:"emailField"`
+	EmailVerifiedField   string `json:"emailVerifiedField"`
+	NameField            string `json:"nameField"`
+	ButtonIcon           string `json:"buttonIcon"`
+	TrustUnverifiedEmail bool   `json:"trustUnverifiedEmail"`
 }
 
 func (r *externalIDPRequest) normalize() {
@@ -163,6 +166,7 @@ func (req *externalIDPRequest) applyTo(e *core.ExternalIDP) {
 	e.EmailVerifiedField = strings.TrimSpace(req.EmailVerifiedField)
 	e.NameField = strings.TrimSpace(req.NameField)
 	e.ButtonIcon = strings.TrimSpace(req.ButtonIcon)
+	e.TrustUnverifiedEmail = req.TrustUnverifiedEmail
 }
 
 // adminAppForExternalIDP runs the admin auth + workspace + path-id +

@@ -18,7 +18,7 @@ var ErrExternalIDPNotFound = errors.New("external idp not found")
 // externalIDPColumns is the shared SELECT list. Optional text columns
 // are COALESCEd to "" so the model can use plain strings (empty =
 // absent); writes convert "" back to NULL via extNullText so the
-// per-mode CHECK constraint (which distinguishes NULL from '') holds.
+// per-mode CHECK constraint (which distinguishes NULL from ”) holds.
 const externalIDPColumns = `
   id, app_id, slug, display_name, enabled, mode,
   coalesce(issuer_url, '')           as issuer_url,
@@ -31,10 +31,11 @@ const externalIDPColumns = `
   coalesce(email_verified_field, '') as email_verified_field,
   coalesce(name_field, '')           as name_field,
   coalesce(button_icon, '')          as button_icon,
+  trust_unverified_email,
   created_at, updated_at`
 
 // extNullText maps "" to a SQL NULL. Optional URL/field columns stay
-// NULL when unset so external_idps_endpoints_per_mode (NULL vs '') works.
+// NULL when unset so external_idps_endpoints_per_mode (NULL vs ”) works.
 func extNullText(s string) any {
 	if s == "" {
 		return nil
@@ -50,7 +51,7 @@ func scanExternalIDP(row pgx.Row) (*core.ExternalIDP, error) {
 		&e.IssuerURL, &e.AuthorizeURL, &e.TokenURL, &e.UserinfoURL, &e.JWKSURL,
 		&e.ClientID, &e.ClientSecretEncrypted, &e.Scopes,
 		&e.SubjectField, &e.EmailField, &e.EmailVerifiedField, &e.NameField,
-		&e.ButtonIcon, &e.CreatedAt, &e.UpdatedAt,
+		&e.ButtonIcon, &e.TrustUnverifiedEmail, &e.CreatedAt, &e.UpdatedAt,
 	); err != nil {
 		return nil, err
 	}
@@ -104,15 +105,15 @@ insert into external_idps (
   issuer_url, authorize_url, token_url, userinfo_url, jwks_url,
   client_id, client_secret_encrypted, scopes,
   subject_field, email_field, email_verified_field, name_field, button_icon,
-  created_at, updated_at
-) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21);`
+  created_at, updated_at, trust_unverified_email
+) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22);`
 
 	_, err := r.db.Pool().Exec(ctx, q,
 		e.ID, e.AppID, e.Slug, e.DisplayName, e.Enabled, string(e.Mode),
 		extNullText(e.IssuerURL), extNullText(e.AuthorizeURL), extNullText(e.TokenURL), extNullText(e.UserinfoURL), extNullText(e.JWKSURL),
 		e.ClientID, e.ClientSecretEncrypted, e.Scopes,
 		e.SubjectField, e.EmailField, extNullText(e.EmailVerifiedField), extNullText(e.NameField), extNullText(e.ButtonIcon),
-		e.CreatedAt, e.UpdatedAt,
+		e.CreatedAt, e.UpdatedAt, e.TrustUnverifiedEmail,
 	)
 	return err
 }
@@ -137,7 +138,7 @@ update external_idps set
   issuer_url=$7, authorize_url=$8, token_url=$9, userinfo_url=$10, jwks_url=$11,
   client_id=$12, client_secret_encrypted=$13, scopes=$14,
   subject_field=$15, email_field=$16, email_verified_field=$17, name_field=$18, button_icon=$19,
-  updated_at=$20
+  updated_at=$20, trust_unverified_email=$21
 where app_id=$1 and id=$2;`
 
 	tag, err := r.db.Pool().Exec(ctx, q,
@@ -145,7 +146,7 @@ where app_id=$1 and id=$2;`
 		extNullText(e.IssuerURL), extNullText(e.AuthorizeURL), extNullText(e.TokenURL), extNullText(e.UserinfoURL), extNullText(e.JWKSURL),
 		e.ClientID, e.ClientSecretEncrypted, e.Scopes,
 		e.SubjectField, e.EmailField, extNullText(e.EmailVerifiedField), extNullText(e.NameField), extNullText(e.ButtonIcon),
-		e.UpdatedAt,
+		e.UpdatedAt, e.TrustUnverifiedEmail,
 	)
 	if err != nil {
 		return err
