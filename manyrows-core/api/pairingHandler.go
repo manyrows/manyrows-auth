@@ -775,6 +775,9 @@ var pairLandingTmpl = template.Must(template.New("pair_landing").Parse(`<!doctyp
             container: document.getElementById("root"),
             workspace: workspace,
             appId: appId,
+            // Already on the phone approving a phone sign-in — don't
+            // offer "sign in with phone" here (circular).
+            suppressQRSignIn: true,
             onJWT: function (jwt) { currentJWT = jwt; },
             onState: function (s) {
               if (s && s.status === "authenticated") {
