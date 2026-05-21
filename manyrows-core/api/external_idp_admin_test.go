@@ -156,6 +156,14 @@ func TestExternalIDPAdmin_Validation(t *testing.T) {
 			if rr.Code != http.StatusBadRequest {
 				t.Fatalf("%s: expected 400, got %d (%s)", c.name, rr.Code, rr.Body.String())
 			}
+			// The error code must be translated to a human message
+			// (message != code), or the admin UI would surface the raw
+			// "error.externalIdp*" key.
+			var body struct{ Error, Message string }
+			_ = json.Unmarshal(rr.Body.Bytes(), &body)
+			if body.Message == "" || body.Message == body.Error {
+				t.Errorf("%s: error %q lacks a translated message (got %q)", c.name, body.Error, body.Message)
+			}
 		})
 	}
 

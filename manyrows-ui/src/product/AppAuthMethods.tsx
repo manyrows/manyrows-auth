@@ -2442,7 +2442,7 @@ function ExternalIDPForm({
 
           {mode === "oidc" ? (
             <>
-              <TextField size="small" fullWidth label="Issuer URL" value={issuerUrl} onChange={(e) => setIssuerUrl(e.target.value)} placeholder="https://acme.okta.com" helperText="We fetch /.well-known/openid-configuration from here. Must be https." />
+              <TextField size="small" fullWidth label="Issuer URL" value={issuerUrl} onChange={(e) => { setIssuerUrl(e.target.value); setDiscovery(null); }} placeholder="https://acme.okta.com" helperText="We fetch /.well-known/openid-configuration from here. Must be https." />
               <Box>
                 <Button size="small" sx={{ textTransform: "none" }} disabled={!issuerUrl.trim()} onClick={() => void fetchDiscovery()}>Fetch discovery</Button>
               </Box>
