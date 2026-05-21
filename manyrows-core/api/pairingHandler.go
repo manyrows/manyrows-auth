@@ -560,13 +560,14 @@ var qrSignInTmpl = template.Must(template.New("qr_sign_in").Parse(`<!doctype htm
                   });
                 }
                 if (r.status === 425) return; // pending — keep polling
-                if (r.status === 410) {
-                  clearInterval(pollTimer); clearInterval(expiresTimer);
-                  setStatus("Cancelled or expired. Refresh to try again.", "expired");
-                  return;
-                }
+                if (r.status >= 500) return;  // transient — keep polling (deadline bounds it)
+                // 404 (toggle disabled mid-flight, app gone), 410
+                // (consumed/denied/expired), and any other 4xx are
+                // terminal — stop polling and surface the cliff.
+                clearInterval(pollTimer); clearInterval(expiresTimer);
+                setStatus("Cancelled or expired. Refresh to try again.", "expired");
               })
-              .catch(function () { /* transient — keep polling */ });
+              .catch(function () { /* network blip — keep polling */ });
           }, 1500);
         }
 
