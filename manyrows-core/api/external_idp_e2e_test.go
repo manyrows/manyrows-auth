@@ -1,6 +1,7 @@
 package api_test
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"crypto/rsa"
@@ -121,6 +122,7 @@ func TestExternalIDP_E2E(t *testing.T) {
 				next.ServeHTTP(w, req.WithContext(core.WithApp(req.Context(), &app)))
 			})
 		})
+		ar.Get("/", h.HandleGetAppForAppKit)
 		ar.Route("/auth", func(authR chi.Router) {
 			authR.Get("/idp/{providerSlug}/authorize", h.WorkspaceExternalIDPAuthorize)
 			authR.Get("/idp/{providerSlug}/callback", h.WorkspaceExternalIDPCallback)
@@ -171,6 +173,16 @@ func TestExternalIDP_E2E(t *testing.T) {
 		ClientID: "client-1", ClientSecretEncrypted: trustedSecret, TrustUnverifiedEmail: true,
 	}); err != nil {
 		t.Fatalf("create trusted provider: %v", err)
+	}
+
+	// A disabled provider — must NOT surface in the public AppKit config.
+	disabledID := uuid.Must(uuid.NewV4())
+	disabledSecret, _ := enc.EncryptToBytesWithAAD([]byte("x"), crypto.AAD("external_idps", "client_secret_encrypted", disabledID))
+	if err := testEnv.Repo.CreateExternalIDP(ctx, &core.ExternalIDP{
+		ID: disabledID, AppID: app.ID, Slug: "mock-disabled", DisplayName: "Mock Disabled", Enabled: false,
+		Mode: core.ExternalIDPModeOIDC, IssuerURL: idp.server.URL, ClientID: "client-1", ClientSecretEncrypted: disabledSecret,
+	}); err != nil {
+		t.Fatalf("create disabled provider: %v", err)
 	}
 
 	// authorizeAndCallback runs one full flow for the given provider slug
@@ -266,6 +278,38 @@ func TestExternalIDP_E2E(t *testing.T) {
 	})
 
 	// --- Opt-out: a trusted IdP accepts an unverified email ---
+	// --- Public AppKit config lists enabled providers only ---
+	t.Run("public config exposes enabled providers, hides disabled + secrets", func(t *testing.T) {
+		cfgRR := httptest.NewRecorder()
+		r.ServeHTTP(cfgRR, httptest.NewRequest(http.MethodGet, "/x/"+ws.Slug+"/apps/"+app.ID.String()+"/", nil))
+		if cfgRR.Code != http.StatusOK {
+			t.Fatalf("get app config: %d (%s)", cfgRR.Code, cfgRR.Body.String())
+		}
+		var cfg struct {
+			ExternalIdps []struct {
+				Slug        string `json:"slug"`
+				DisplayName string `json:"displayName"`
+			} `json:"externalIdps"`
+		}
+		if err := json.Unmarshal(cfgRR.Body.Bytes(), &cfg); err != nil {
+			t.Fatalf("unmarshal config: %v", err)
+		}
+		got := map[string]bool{}
+		for _, p := range cfg.ExternalIdps {
+			got[p.Slug] = true
+		}
+		if !got["mock"] || !got["mock-trusted"] {
+			t.Fatalf("enabled providers missing from config: %+v", cfg.ExternalIdps)
+		}
+		if got["mock-disabled"] {
+			t.Fatal("disabled provider must not appear in the public config")
+		}
+		// No secret/clientId fields are even present in the public shape.
+		if bytes.Contains(cfgRR.Body.Bytes(), []byte("client-1")) || bytes.Contains(cfgRR.Body.Bytes(), []byte("clientSecret")) {
+			t.Fatalf("public config leaked sensitive provider fields: %s", cfgRR.Body.String())
+		}
+	})
+
 	t.Run("trust_unverified_email accepts an unverified email", func(t *testing.T) {
 		signInEmail := "e2e-trusted-" + GenerateUniqueSlug("u") + "@example.com"
 		cbRR := authorizeAndCallback(t, "mock-trusted", signInEmail, "mock-sub-3", false)

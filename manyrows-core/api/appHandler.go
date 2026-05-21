@@ -363,6 +363,15 @@ func normalizeOrigin(rawURL string) string {
 	return u.Scheme + "://" + u.Host
 }
 
+// ExternalIDPPublic is the public-safe view of a configured external
+// IdP that AppKit needs to render its sign-in button and start the flow.
+// Deliberately omits everything sensitive (client id/secret, endpoints).
+type ExternalIDPPublic struct {
+	Slug        string `json:"slug"`
+	DisplayName string `json:"displayName"`
+	ButtonIcon  string `json:"buttonIcon,omitempty"`
+}
+
 type AppResource struct {
 	ID                        uuid.UUID `json:"id"`
 	Name                      string    `json:"name"`
@@ -388,6 +397,9 @@ type AppResource struct {
 	// configures fetch / storage behaviour accordingly — no client-side
 	// prop needed.
 	TransportMode string `json:"transportMode"`
+	// ExternalIDPs are the enabled generic OIDC/OAuth2 providers; AppKit
+	// renders one sign-in button per entry.
+	ExternalIDPs []ExternalIDPPublic `json:"externalIdps,omitempty"`
 }
 
 func (handler *RequestHandler) HandleGetAppForAppKit(w http.ResponseWriter, r *http.Request) {
@@ -444,6 +456,22 @@ func (handler *RequestHandler) HandleGetAppForAppKit(w http.ResponseWriter, r *h
 		transportMode = core.TransportModeLocal
 	}
 
+	// Enabled generic external IdPs (best-effort: a lookup failure must
+	// not break the whole AppKit boot — password/bespoke methods still
+	// work, so just log and omit them).
+	externalIDPs := []ExternalIDPPublic{}
+	if idps, idpErr := handler.repo.ListEnabledExternalIDPsByApp(r.Context(), a.ID); idpErr != nil {
+		log.Err(idpErr).Str("app_id", a.ID.String()).Msg("HandleGetAppForAppKit: list external idps failed")
+	} else {
+		for i := range idps {
+			externalIDPs = append(externalIDPs, ExternalIDPPublic{
+				Slug:        idps[i].Slug,
+				DisplayName: idps[i].DisplayName,
+				ButtonIcon:  idps[i].ButtonIcon,
+			})
+		}
+	}
+
 	ap := AppResource{
 		ID:                        a.ID,
 		Name:                      a.DisplayName(),
@@ -463,6 +491,7 @@ func (handler *RequestHandler) HandleGetAppForAppKit(w http.ResponseWriter, r *h
 		PasskeyEnabled:            passkeyEnabled,
 		QRSignInEnabled:           a.QRSignInEnabled,
 		TransportMode:             transportMode,
+		ExternalIDPs:              externalIDPs,
 	}
 
 	utils.WriteJsonWithStatusCode(w, ap, http.StatusOK)
@@ -1127,4 +1156,3 @@ func (handler *RequestHandler) HandleUpdateAppSessionCookieSameSite(w http.Respo
 	}
 	utils.WriteJsonWithStatusCode(w, handler.toAdminAppResponse(out, ws), http.StatusOK)
 }
-
