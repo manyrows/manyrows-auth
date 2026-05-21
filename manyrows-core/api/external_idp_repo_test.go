@@ -166,6 +166,60 @@ func TestExternalIDPState_SignVerifyRoundTrip(t *testing.T) {
 	}
 }
 
+// TestExternalIDP_DeleteLeavesIdentityOrphanedNotCascaded pins a
+// deliberate design choice: user_identities has no FK to external_idps,
+// so deleting a provider config does NOT delete users' identity links.
+// The orphaned "idp:<uuid>" rows are inert — no live flow ever queries a
+// deleted provider's key (the key is its UUID) — and we keep them rather
+// than destroy identity data as a side effect of a config change.
+func TestExternalIDP_DeleteLeavesIdentityOrphanedNotCascaded(t *testing.T) {
+	ctx := context.Background()
+	acc := testEnv.CreateTestAccount(t, "extidp-orphan-"+GenerateUniqueSlug("u")+"@example.com")
+	ws := testEnv.CreateTestWorkspace(t, acc, "Orphan WS", GenerateUniqueSlug("ws"))
+	app := testEnv.CreateTestApp(t, ws, acc)
+
+	idp := &core.ExternalIDP{
+		AppID: app.ID, Slug: "okta", DisplayName: "Okta", Enabled: true,
+		Mode: core.ExternalIDPModeOIDC, IssuerURL: "https://okta.example",
+		ClientID: "c", ClientSecretEncrypted: []byte("x"),
+	}
+	if err := testEnv.Repo.CreateExternalIDP(ctx, idp); err != nil {
+		t.Fatalf("create provider: %v", err)
+	}
+
+	email := "orphan-" + GenerateUniqueSlug("u") + "@example.com"
+	user, _, err := testEnv.Repo.GetOrCreateUser(ctx, email, app, core.UserSourceExternalIDP)
+	if err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	providerKey := core.UserSource(idp.ProviderKey())
+	if err := testEnv.Repo.UpsertUserIdentity(ctx, user.ID, app.UserPoolID, providerKey, "sub-1", email); err != nil {
+		t.Fatalf("link identity: %v", err)
+	}
+
+	if ok, err := testEnv.Repo.DeleteExternalIDP(ctx, app.ID, idp.ID); err != nil || !ok {
+		t.Fatalf("delete provider: ok=%v err=%v", ok, err)
+	}
+
+	// The identity link survives (orphaned, not cascaded); the user too.
+	rows, err := testEnv.Repo.ListUserIdentities(ctx, user.ID)
+	if err != nil {
+		t.Fatalf("list identities: %v", err)
+	}
+	found := false
+	for _, r := range rows {
+		if r.Provider == providerKey {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("identity link should survive provider deletion (no FK cascade); got %+v", rows)
+	}
+	if u, _ := testEnv.Repo.GetUserByID(ctx, user.ID); u == nil {
+		t.Fatal("user must not be affected by provider deletion")
+	}
+}
+
 // TestExternalIDPRepo_ModeConstraints validates the per-mode endpoint
 // CHECK and the slug-format CHECK from migration 00005.
 func TestExternalIDPRepo_ModeConstraints(t *testing.T) {

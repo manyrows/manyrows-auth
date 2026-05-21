@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -236,6 +237,61 @@ func TestOIDC_RejectsInsecureURLs(t *testing.T) {
 
 // Many providers return a NUMERIC user id from userinfo (GitHub-style).
 // The subject must be coerced to a string, not dropped.
+// A multi-audience id_token must carry azp == our client (OIDC
+// §3.1.3.7); otherwise a token minted for a different client that merely
+// co-lists ours would pass the plain audience check.
+func TestOIDC_Authenticate_MultiAudRequiresMatchingAzp(t *testing.T) {
+	cfg := func(idp *mockIDP) oidc.ProviderConfig {
+		return oidc.ProviderConfig{Mode: oidc.ModeOIDC, IssuerURL: idp.issuer(), ClientID: "client-123"}
+	}
+
+	// Multi-aud, azp belongs to a DIFFERENT client → rejected.
+	idp := newMockIDP(t)
+	c := baseClaims(idp.issuer(), "client-123", "n")
+	c["aud"] = []any{"client-123", "other-client"}
+	c["azp"] = "other-client"
+	idp.idClaims = c
+	if _, err := oidc.Authenticate(context.Background(), cfg(idp), "code", "https://app/cb", "v", "n"); err == nil {
+		t.Fatal("multi-aud token with azp for another client must be rejected")
+	}
+
+	// Multi-aud, azp is our client → accepted.
+	idp2 := newMockIDP(t)
+	c2 := baseClaims(idp2.issuer(), "client-123", "n2")
+	c2["aud"] = []any{"client-123", "other-client"}
+	c2["azp"] = "client-123"
+	idp2.idClaims = c2
+	if _, err := oidc.Authenticate(context.Background(), cfg(idp2), "code", "https://app/cb", "v", "n2"); err != nil {
+		t.Fatalf("multi-aud token with our azp should be accepted: %v", err)
+	}
+}
+
+// TestOIDC_ConcurrentAuthenticate_CacheSafe hammers Authenticate from
+// many goroutines against the same issuer, stressing the shared
+// discovery + JWKS caches. Meaningful under -race.
+func TestOIDC_ConcurrentAuthenticate_CacheSafe(t *testing.T) {
+	idp := newMockIDP(t)
+	idp.idClaims = baseClaims(idp.issuer(), "client-123", "n") // set once, only read concurrently
+	cfg := oidc.ProviderConfig{Mode: oidc.ModeOIDC, IssuerURL: idp.issuer(), ClientID: "client-123"}
+
+	var wg sync.WaitGroup
+	errs := make(chan error, 24)
+	for i := 0; i < 24; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if _, err := oidc.Authenticate(context.Background(), cfg, "code", "https://app/cb", "v", "n"); err != nil {
+				errs <- err
+			}
+		}()
+	}
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		t.Errorf("concurrent authenticate failed: %v", err)
+	}
+}
+
 func TestOIDC_Authenticate_NumericUserinfoSubject(t *testing.T) {
 	idp := newMockIDP(t)
 	idp.idClaims = nil

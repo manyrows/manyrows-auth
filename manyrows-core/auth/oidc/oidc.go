@@ -351,6 +351,18 @@ func VerifyIDToken(ctx context.Context, idToken, issuer, jwksURL, clientID, expe
 		}
 	}
 
+	// Multi-audience token: OIDC §3.1.3.7 requires the authorized-party
+	// (azp) claim to be present and equal to our client. WithAudience
+	// only checks our client is *among* the audiences; azp defends
+	// against a token minted for a different client that merely lists
+	// ours as a co-audience. Single-aud tokens (a JSON string) need no
+	// azp check.
+	if auds, ok := claims["aud"].([]any); ok && len(auds) > 1 {
+		if azp, _ := claims["azp"].(string); azp != clientID {
+			return nil, fmt.Errorf("%w: multi-audience token azp %q is not this client", ErrInvalidToken, azp)
+		}
+	}
+
 	sub := claimString(claims, fields.subject)
 	if sub == "" {
 		return nil, fmt.Errorf("%w: missing subject claim %q", ErrInvalidToken, fields.subject)
