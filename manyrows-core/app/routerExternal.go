@@ -51,6 +51,14 @@ func (a *AppService) externalAPIRouter(h *api.RequestHandler, corsMiddleware fun
 		// Public: app config for AppKit bootstrap
 		ar.Get("/", h.HandleGetAppForAppKit)
 
+		// Cross-device sign-in (QR) phone landing page. Browser opens
+		// this when the user scans the desktop's QR code.
+		ar.Get("/pair", h.HandlePairLandingPage)
+
+		// Desktop-side hosted QR page. Customers link to this with
+		// ?return_to=… to bootstrap the cross-device sign-in flow.
+		ar.Get("/qr-sign-in", h.HandleQRSignInPage)
+
 		// Auth routes (public POST routes)
 		ar.Route("/auth", func(auth chi.Router) {
 			auth.Post("/", h.WorkspaceLoginRequest)
@@ -78,6 +86,17 @@ func (a *AppService) externalAPIRouter(h *api.RequestHandler, corsMiddleware fun
 			auth.Post("/totp/setup-complete", h.HandleWorkspaceTOTPSetupComplete)
 			auth.Post("/passkey/login/begin", h.WorkspacePasskeyLoginBegin)
 			auth.Post("/passkey/login/finish", h.WorkspacePasskeyLoginFinish)
+
+			// Cross-device sign-in (QR pairing).
+			// /start and /wait are anonymous (the desktop holds the
+			// opaque pairing id from /start). /approve and /cancel
+			// require the phone's app session, which the handlers
+			// validate internally.
+			auth.Post("/pair/start", h.HandleAuthPairStart)
+			auth.Get("/pair/wait", h.HandleAuthPairWait)
+			auth.Post("/pair/approve", h.HandleAuthPairApprove)
+			auth.Post("/pair/cancel", h.HandleAuthPairCancel)
+			auth.Get("/pair/qr", h.HandleAuthPairQR)
 		})
 
 		// Authed routes (session JWT or cookie required).

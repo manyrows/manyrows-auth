@@ -194,6 +194,14 @@ type App struct {
 	// auth host without forcing the install itself onto any one of them.
 	AuthDomain *string `json:"authDomain,omitempty"`
 
+	// QRSignInEnabled gates the cross-device QR sign-in surface
+	// (/auth/pair/* + /qr-sign-in + /pair). Off-by-default so existing
+	// installs don't suddenly expose the feature on every app.
+	// Enabling requires AppURL to be set on the app (the QR flow
+	// hands tokens to the customer via a same-origin fragment redirect
+	// and the AppURL host is the allowlisted target).
+	QRSignInEnabled bool `json:"qrSignInEnabled"`
+
 	// Session TTL in minutes (nil = default 7 days). Absolute lifetime
 	// — the session dies at CreatedAt + this regardless of activity.
 	SessionTTLMinutes *int `json:"sessionTtlMinutes,omitempty"`

@@ -2,6 +2,7 @@ package api
 
 import (
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -12,6 +13,21 @@ import (
 	"github.com/gofrs/uuid/v5"
 	"github.com/rs/zerolog/log"
 )
+
+// originFromBaseURL reduces a base URL (which may carry a path) to
+// its bare scheme://host[:port] origin, matching the shape of a
+// browser's window.location.origin. Returns "" when the input isn't
+// a usable absolute URL.
+func originFromBaseURL(rawURL string) string {
+	if rawURL == "" {
+		return ""
+	}
+	u, err := url.Parse(rawURL)
+	if err != nil || u.Scheme == "" || u.Host == "" {
+		return ""
+	}
+	return u.Scheme + "://" + u.Host
+}
 
 // tier1OAuthAuthorizeOpts is the per-provider configuration for the
 // shared Authorize handler. Each provider's WorkspaceXxxAuthorize
@@ -137,6 +153,20 @@ func (handler *RequestHandler) workspaceOAuthAuthorize(
 			if strings.EqualFold(strings.TrimSpace(origins[i].Origin), openerOrigin) {
 				allowed = true
 				break
+			}
+		}
+		// Also allow the install's OWN origin. ManyRows serves AppKit
+		// itself on a few pages (the OIDC /oidc/login shim and the QR
+		// /pair landing), where window.location.origin is the auth
+		// host — never the customer app domain, so it isn't in the
+		// per-app CORS allowlist. Those pages are the IdP; trusting
+		// the install origin is safe (an attacker can't receive a
+		// postMessage targeted at the auth host unless their window is
+		// actually served from it, which only ManyRows pages are).
+		if !allowed {
+			if installOrigin := originFromBaseURL(handler.AppBaseURL(ctxApp)); installOrigin != "" &&
+				strings.EqualFold(installOrigin, openerOrigin) {
+				allowed = true
 			}
 		}
 		if !allowed {

@@ -87,6 +87,10 @@ export type App = {
   maxSessionsPerUser?: number | null;
   transportMode?: "local" | "cookie";
   sessionCookieSameSite?: "lax" | "strict";
+  qrSignInEnabled?: boolean;
+  // Server-computed QR sign-in URL (AppBaseURL + workspace slug +
+  // app id + /qr-sign-in). Present whenever BASE_URL is pinned.
+  qrSignInUrl?: string;
 };
 
 type RolesResponse = { roles: Role[] };
@@ -172,6 +176,7 @@ export default function AppAuthMethods({ project, appId }: Props) {
           <Tab label={t("apps.tab.oauth", { defaultValue: "OAuth" })} />
           <Tab label={t("apps.tab.passkeys", { defaultValue: "Passkeys" })} />
           <Tab label={t("apps.tab.oidc", { defaultValue: "OIDC" })} />
+          <Tab label={t("apps.tab.qr", { defaultValue: "QR sign-in" })} />
         </Tabs>
       </Box>
 
@@ -199,6 +204,12 @@ export default function AppAuthMethods({ project, appId }: Props) {
         )}
         {tab === 4 && (
           <OIDCProviderCard
+            app={app} cardURL={cardURL}
+            onSaved={onSaved} onSuccess={onSuccess} onError={onError}
+          />
+        )}
+        {tab === 5 && (
+          <QRSignInCard
             app={app} cardURL={cardURL}
             onSaved={onSaved} onSuccess={onSuccess} onError={onError}
           />
@@ -2112,6 +2123,130 @@ function UriListEditor({
           ))}
         </Stack>
       )}
+    </Stack>
+  );
+}
+
+// =====================================================================
+// QR sign-in — cross-device passwordless. ManyRows hosts the QR
+// display + phone approve flow; AppKit shows a "Sign in with phone"
+// button on the login screen when this is on.
+// =====================================================================
+
+function QRSignInCard({ app, cardURL, onSaved, onError, onSuccess }: CardProps) {
+  const { t } = useTranslation();
+  const { enqueueSnackbar } = useSnackbar();
+
+  const hasAppURL = !!app.appUrl && app.appUrl.trim().length > 0;
+  const [enabled, setEnabled] = React.useState(!!app.qrSignInEnabled);
+  const [saving, setSaving] = React.useState(false);
+
+  React.useEffect(() => { setEnabled(!!app.qrSignInEnabled); }, [app.qrSignInEnabled]);
+
+  const dirty = enabled !== !!app.qrSignInEnabled;
+
+  // The hosted /qr-sign-in URL pattern. Server-computed (lives at the
+  // PUBLIC per-app path /x/<slug>/apps/<id>/qr-sign-in, NOT under
+  // /admin/) so the UI doesn't try to derive it from cardURL.
+  // Customers link their "Sign in with phone" entry-point here; AppKit
+  // auto-renders a button once enabled, but customers integrating
+  // without AppKit need the URL.
+  const qrSignInURL = app.qrSignInUrl || "";
+
+  async function copyToClipboard(text: string, label: string) {
+    try {
+      await navigator.clipboard.writeText(text);
+      enqueueSnackbar(t("apps.copied", { label }), { variant: "success" });
+    } catch {
+      enqueueSnackbar(t("apps.copyFailed", { defaultValue: "Copy failed" }), { variant: "error" });
+    }
+  }
+
+  async function save() {
+    if (enabled && !hasAppURL) {
+      onError(new Error(t("apps.qr.appUrlRequired", { defaultValue: "Set App URL under General → App URL before enabling QR sign-in." })));
+      return;
+    }
+    setSaving(true);
+    try {
+      const res = await axios.put<App>(`${cardURL}/qr-sign-in-config`, { enabled });
+      onSaved(res.data);
+      onSuccess();
+    } catch (e) {
+      onError(e);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <Stack
+      divider={<Box sx={{ height: "1px", bgcolor: "divider", my: 1 }} />}
+      spacing={3.5}
+      sx={{ maxWidth: 680 }}
+    >
+      <Section
+        overline={t("apps.sectionOverline.qrSignIn", { defaultValue: "QR sign-in" })}
+        title={t("apps.qr.title", { defaultValue: "Cross-device sign-in (QR)" })}
+        desc={t("apps.qr.desc", {
+          defaultValue:
+            "Lets users sign in on a desktop by scanning a QR code with their phone. The phone (already signed in) approves; the desktop receives tokens. AppKit renders a 'Sign in with phone' button on the login screen when this is on.",
+        })}
+      >
+        {!hasAppURL && (
+          <Alert severity="warning" sx={{ mb: 1 }}>
+            {t("apps.qr.appUrlRequiredHint", {
+              defaultValue:
+                "QR sign-in requires App URL to be set (under General → App URL). The desktop success flow redirects there with tokens in the URL fragment; without it there's nowhere safe to land.",
+            })}
+          </Alert>
+        )}
+        <FormControlLabel
+          control={
+            <Switch
+              checked={enabled}
+              onChange={(e) => setEnabled(e.target.checked)}
+              disabled={saving || (!hasAppURL && !app.qrSignInEnabled)}
+            />
+          }
+          label={
+            <Typography variant="body2" sx={{ fontWeight: 500 }}>
+              {t("apps.qr.enableLabel", { defaultValue: "Enable QR sign-in for this app" })}
+            </Typography>
+          }
+          sx={{ ml: 0 }}
+        />
+      </Section>
+
+      <Section
+        overline={t("apps.sectionOverline.qrIntegrate", { defaultValue: "Integrate" })}
+        title={t("apps.qr.integrateTitle", { defaultValue: "Hosted sign-in URL" })}
+        desc={t("apps.qr.integrateDesc", {
+          defaultValue:
+            "Link to this from your app to bootstrap the QR flow. After the user scans + approves on their phone, tokens land in the URL fragment at the return_to target.",
+        })}
+      >
+        {qrSignInURL ? (
+          <CopyableUri
+            label={t("apps.qr.urlLabel", { defaultValue: "QR sign-in URL" })}
+            uri={qrSignInURL}
+            onCopy={() => copyToClipboard(qrSignInURL, "QR URL")}
+            help={t("apps.qr.urlHelp", {
+              defaultValue:
+                "Append ?return_to=<your-callback> when linking. return_to host must match App URL.",
+            })}
+            copyTitle={t("apps.copyQRUrl", { defaultValue: "Copy QR URL" })}
+          />
+        ) : (
+          <Typography variant="caption" color="text.secondary">
+            {t("apps.qr.urlPending", {
+              defaultValue: "URL will appear once MANYROWS_BASE_URL is pinned (happens on first admin register).",
+            })}
+          </Typography>
+        )}
+      </Section>
+
+      <SaveBar dirty={dirty} saving={saving} onSave={() => void save()} onDiscard={() => setEnabled(!!app.qrSignInEnabled)} />
     </Stack>
   );
 }

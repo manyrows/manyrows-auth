@@ -122,6 +122,13 @@ export interface AppKitOptions extends ManyRowsAppKitCallbacks {
   // like the conditional-mediation passkey prompt.
   hideAuthUI?: boolean;
 
+  // OPTIONAL: suppress the "Sign in with phone" (QR) button on the
+  // login screen even when the app has qr_sign_in_enabled. Set by the
+  // QR /pair landing page itself — the user is already on their phone
+  // approving a phone sign-in, so offering "sign in with phone" there
+  // is circular.
+  suppressQRSignIn?: boolean;
+
   // Logging behavior
   silent?: boolean; // true => no console warnings/errors
   throwOnError?: boolean; // true => throw errors instead of (or in addition to) callbacks/logging
@@ -496,6 +503,7 @@ export function initManyRowsAppKit(options: AppKitOptions): ManyRowsAppKitHandle
         onScreenChange={options.onScreenChange}
         embedded={options.embedded}
         hideAuthUI={options.hideAuthUI}
+        suppressQRSignIn={options.suppressQRSignIn}
         registerApi={registerApi}
         onSnapshot={onSnapshot}
       />

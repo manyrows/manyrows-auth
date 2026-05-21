@@ -35,6 +35,11 @@ type adminAppResponse struct {
 	HasMicrosoftClientSecret  bool   `json:"hasMicrosoftClientSecret"`
 	GithubOAuthRedirectURI    string `json:"githubOAuthRedirectUri,omitempty"`
 	HasGithubClientSecret     bool   `json:"hasGithubClientSecret"`
+	// QRSignInURL is the customer-facing /qr-sign-in entry-point.
+	// Server-computed (AppBaseURL + workspace.Slug + app.ID) so the
+	// admin UI doesn't have to build it client-side. Empty when the
+	// install BASE_URL isn't pinned yet.
+	QRSignInURL string `json:"qrSignInUrl,omitempty"`
 }
 
 // AppBaseURL returns the base URL the OAuth providers should redirect to
@@ -70,6 +75,7 @@ func (handler *RequestHandler) toAdminAppResponse(a core.App, ws *core.Workspace
 		resp.AppleOAuthRedirectURI = baseURL + "/x/" + ws.Slug + "/apps/" + a.ID.String() + "/auth/apple/callback"
 		resp.MicrosoftOAuthRedirectURI = baseURL + "/x/" + ws.Slug + "/apps/" + a.ID.String() + "/auth/microsoft/callback"
 		resp.GithubOAuthRedirectURI = baseURL + "/x/" + ws.Slug + "/apps/" + a.ID.String() + "/auth/github/callback"
+		resp.QRSignInURL = baseURL + "/x/" + ws.Slug + "/apps/" + a.ID.String() + "/qr-sign-in"
 	}
 	return resp
 }
@@ -374,6 +380,9 @@ type AppResource struct {
 	Require2FA                bool      `json:"require2fa"`
 	HideBranding              bool      `json:"hideBranding,omitempty"`
 	PasskeyEnabled            bool      `json:"passkeyEnabled,omitempty"`
+	// QRSignInEnabled gates the "Sign in with phone" button on
+	// AppKit's login screen. Read from app.QRSignInEnabled.
+	QRSignInEnabled bool `json:"qrSignInEnabled,omitempty"`
 	// TransportMode is the explicit selector for how the session token
 	// is delivered ("local" / "cookie"). AppKit reads this on boot and
 	// configures fetch / storage behaviour accordingly — no client-side
@@ -452,6 +461,7 @@ func (handler *RequestHandler) HandleGetAppForAppKit(w http.ResponseWriter, r *h
 		Require2FA:                a.Require2FA,
 		HideBranding:              hideBranding,
 		PasskeyEnabled:            passkeyEnabled,
+		QRSignInEnabled:           a.QRSignInEnabled,
 		TransportMode:             transportMode,
 	}
 
