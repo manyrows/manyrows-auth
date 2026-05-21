@@ -233,6 +233,17 @@ func (handler *RequestHandler) HandleAuthPairWait(w http.ResponseWriter, r *http
 	// sign-in. Same pattern as the OAuth flows.
 	handler.writeAuthLogForPairing(r, ws.ID, app.ID, approverUserID, ses.ID)
 
+	// Cookie-mode delivery. The desktop's /qr-sign-in page fetches this
+	// endpoint same-origin (the auth host), so the browser stores these
+	// Set-Cookie headers; with a parent-domain cookie_domain (e.g.
+	// .example.com) they're then visible to the customer app host the
+	// page redirects to. Without this, cookie-mode apps can't establish
+	// a session from the URL fragment alone — JS can't set HttpOnly
+	// cookies — so the desktop lands back logged out. Bearer/local-mode
+	// apps ignore these and read the tokens from the fragment instead.
+	// Mirrors the magic-link flow, which likewise sets both.
+	handler.setSessionCookies(w, r, ws, app, tokenPair, effectiveSessionTTL(app, false))
+
 	// Token pair travels in the body. Standard /token cache posture.
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Pragma", "no-cache")

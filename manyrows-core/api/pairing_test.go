@@ -278,6 +278,66 @@ func TestPair_HappyPath_StartApproveWaitMintsTokens(t *testing.T) {
 	}
 }
 
+// TestPair_WaitSetsSessionCookies guards the cookie-mode delivery
+// path. A cookie-mode app can't establish a session from the URL
+// fragment alone — JS can't set HttpOnly cookies — so /wait must
+// emit Set-Cookie for the session, exactly like the magic-link flow.
+// The desktop reaches /wait via a same-origin fetch, so the browser
+// stores these; a parent-domain cookie_domain then carries them to
+// the customer app host. Without this, the desktop redirected home
+// still logged out (the originally reported bug).
+func TestPair_WaitSetsSessionCookies(t *testing.T) {
+	e := setupPairingRouter(t)
+	id, code, _ := startPairing(t, e)
+	_, accessJWT := e.seedPhoneSession(t)
+
+	if rr := approve(t, e, accessJWT, code); rr.Code != http.StatusNoContent {
+		t.Fatalf("approve: %d (body=%s)", rr.Code, rr.Body.String())
+	}
+	rr := waitOnce(t, e, id)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("wait expected 200, got %d (body=%s)", rr.Code, rr.Body.String())
+	}
+
+	var pair struct {
+		AccessToken  string `json:"accessToken"`
+		RefreshToken string `json:"refreshToken"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &pair); err != nil {
+		t.Fatalf("unmarshal token pair: %v (body=%s)", err, rr.Body.String())
+	}
+
+	accessName := client.AccessCookieName(e.app.ID)
+	refreshName := client.RefreshCookieName(e.app.ID)
+	var gotAccess, gotRefresh *http.Cookie
+	for _, c := range rr.Result().Cookies() {
+		switch c.Name {
+		case accessName:
+			gotAccess = c
+		case refreshName:
+			gotRefresh = c
+		}
+	}
+	if gotAccess == nil {
+		t.Fatalf("/wait must Set-Cookie %q for cookie-mode delivery; got cookies=%v", accessName, rr.Result().Cookies())
+	}
+	if gotRefresh == nil {
+		t.Fatalf("/wait must Set-Cookie %q for cookie-mode delivery; got cookies=%v", refreshName, rr.Result().Cookies())
+	}
+	// Cookie values must carry the same tokens returned in the body.
+	if gotAccess.Value != pair.AccessToken {
+		t.Fatalf("access cookie value must equal body access token")
+	}
+	if gotRefresh.Value != pair.RefreshToken {
+		t.Fatalf("refresh cookie value must equal body refresh token")
+	}
+	// Session cookies are the whole point of cookie mode — JS must not
+	// be able to read or forge them.
+	if !gotAccess.HttpOnly || !gotRefresh.HttpOnly {
+		t.Fatalf("session cookies must be HttpOnly (access=%v refresh=%v)", gotAccess.HttpOnly, gotRefresh.HttpOnly)
+	}
+}
+
 func TestPair_DoubleConsumeReturns410(t *testing.T) {
 	e := setupPairingRouter(t)
 	id, code, _ := startPairing(t, e)
