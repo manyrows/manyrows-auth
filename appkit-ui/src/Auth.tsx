@@ -347,6 +347,7 @@ export default function Auth(props: {
   appleEnabled?: boolean;
   microsoftEnabled?: boolean;
   githubEnabled?: boolean;
+  externalIdps?: { slug: string; displayName: string; buttonIcon?: string }[];
   passkeyEnabled?: boolean;
   qrSignInEnabled?: boolean;
   require2fa?: boolean;
@@ -561,11 +562,15 @@ export default function Auth(props: {
   const appleCleanupRef = React.useRef<(() => void) | null>(null);
   const microsoftCleanupRef = React.useRef<(() => void) | null>(null);
   const githubCleanupRef = React.useRef<(() => void) | null>(null);
+  // One generic external-IdP popup at a time; track which slug is busy.
+  const [externalLoadingSlug, setExternalLoadingSlug] = React.useState<string | null>(null);
+  const externalCleanupRef = React.useRef<(() => void) | null>(null);
   React.useEffect(() => () => {
     googleCleanupRef.current?.();
     appleCleanupRef.current?.();
     microsoftCleanupRef.current?.();
     githubCleanupRef.current?.();
+    externalCleanupRef.current?.();
   }, []);
 
   // OAuth popup flow — same logic for all four providers. Opens a popup
@@ -581,7 +586,12 @@ export default function Auth(props: {
   // Promise with an axios-shaped error so extractErrMsg can read it.
   type OAuthProvider = "google" | "apple" | "microsoft" | "github";
   type RunOAuthArgs = {
-    provider: OAuthProvider;
+    // Bespoke providers pass `provider`; generic external IdPs pass the
+    // explicit name/authorizePath/callbackType overrides instead.
+    provider?: OAuthProvider;
+    name?: string;
+    authorizePath?: string;
+    callbackType?: string;
     enabled: boolean;
     setLoading: (b: boolean) => void;
     cleanupRef: React.MutableRefObject<(() => void) | null>;
@@ -592,6 +602,12 @@ export default function Auth(props: {
     cfg.setLoading(true);
     setErrorMsg(null);
     setSuccessMsg(null);
+
+    // Bespoke providers derive these from `provider`; generic external
+    // IdPs supply explicit overrides.
+    const flowName = cfg.name ?? cfg.provider ?? "oauth";
+    const authorizePath = cfg.authorizePath ?? `auth/${cfg.provider}/authorize`;
+    const callbackType = cfg.callbackType ?? `${cfg.provider}-oauth-callback`;
 
     let popup: Window | null = null;
     let listener: ((e: MessageEvent) => void) | null = null;
@@ -607,7 +623,7 @@ export default function Auth(props: {
     try {
       // Pre-open the popup synchronously to dodge pop-up blockers; we
       // navigate it once the authorize URL comes back.
-      popup = window.open("about:blank", `manyrows-${cfg.provider}-signin`, "width=520,height=640");
+      popup = window.open("about:blank", `manyrows-${flowName}-signin`, "width=520,height=640");
       if (!popup) {
         cleanup();
         cfg.setLoading(false);
@@ -615,7 +631,7 @@ export default function Auth(props: {
       }
 
       const authzRes = await axios.get<{ url: string }>(
-        `${baseUrl}/auth/${cfg.provider}/authorize`,
+        `${baseUrl}/${authorizePath}`,
         {
           responseType: "json",
           withCredentials: false,
@@ -626,8 +642,7 @@ export default function Auth(props: {
       );
       popup.location.href = safePopupUrl(authzRes.data.url);
 
-      const callbackType = `${cfg.provider}-oauth-callback`;
-      const errorTag = `${cfg.provider}_signin_failed`;
+      const errorTag = `${flowName}_signin_failed`;
 
       const result = await new Promise<any>((resolve, reject) => {
         listener = (e: MessageEvent) => {
@@ -711,6 +726,14 @@ export default function Auth(props: {
     enabled: showGithub,
     setLoading: setGithubLoading,
     cleanupRef: githubCleanupRef,
+  });
+  const onExternalClick = (slug: string) => runPopupOAuth({
+    name: `idp-${slug}`,
+    authorizePath: `auth/idp/${slug}/authorize`,
+    callbackType: "external-idp-oauth-callback",
+    enabled: true,
+    setLoading: (b) => setExternalLoadingSlug(b ? slug : null),
+    cleanupRef: externalCleanupRef,
   });
 
 
@@ -2038,7 +2061,7 @@ export default function Auth(props: {
               below the primary form. Shown on login (password/email) and
               register; passkey button is suppressed on register because
               passkeys can't sign up — there's no account yet to bind to. */}
-          <Collapse show={(view === "password" || view === "email" || view === "register") && (showGoogle || showApple || showMicrosoft || showGithub || (view !== "register" && (!!(props.passkeyEnabled && isPasskeySupported()) || showQRSignIn)))}>
+          <Collapse show={(view === "password" || view === "email" || view === "register") && (showGoogle || showApple || showMicrosoft || showGithub || (props.externalIdps != null && props.externalIdps.length > 0) || (view !== "register" && (!!(props.passkeyEnabled && isPasskeySupported()) || showQRSignIn)))}>
             <div className="ak-card-actions">
               <div className="ak-stack ak-gap-4">
                 {!googleOnly && (showPassword || view === "email" || view === "register") && (
@@ -2112,6 +2135,20 @@ export default function Auth(props: {
                       GitHub
                     </button>
                   )}
+
+                  {(props.externalIdps ?? []).map((idp) => (
+                    <button
+                      key={idp.slug}
+                      className="ak-btn ak-btn-outlined"
+                      disabled={externalLoadingSlug === idp.slug}
+                      onClick={() => onExternalClick(idp.slug)}
+                      style={{ borderColor: "var(--ak-color-divider)", color: "var(--ak-color-text)" }}
+                      aria-label={`Sign in with ${idp.displayName}`}
+                    >
+                      {externalLoadingSlug === idp.slug ? <Spinner size={16} /> : <Icon name={idp.buttonIcon || "key"} size={16} />}
+                      {idp.displayName}
+                    </button>
+                  ))}
 
                   {view !== "register" && showQRSignIn && (
                     <button
