@@ -91,6 +91,7 @@ class CreateUserResult:
     user: User = field(default_factory=User)
     created: bool = False
     roles: list[str] = field(default_factory=list)
+    invited: bool = False
 
 
 @dataclass

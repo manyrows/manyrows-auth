@@ -68,6 +68,7 @@ var apiTranslations = map[string]map[string]string{
 		"error.permissionsInvalid":    "One or more permissions are invalid",
 		"error.invalidEmail":          "Invalid email address",
 		"error.batchTooLarge":         "Batch too large (max %d users per request)",
+		"error.appUrlRequired":        "An App URL must be configured to send invite emails",
 
 		// ID errors
 		"error.missingProductId":     "Missing project ID",

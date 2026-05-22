@@ -108,6 +108,8 @@ export interface CreateUserInput {
   emailVerified?: boolean;
   /** Role slugs to assign in this app. */
   roles?: string[];
+  /** Email the user a branded invitation after provisioning (requires an App URL). */
+  sendInvite?: boolean;
 }
 
 export interface CreateUserResult {
@@ -115,6 +117,8 @@ export interface CreateUserResult {
   /** True when a new identity was created; false when an existing one was reused. */
   created: boolean;
   roles: string[];
+  /** True when sendInvite was requested and the email was sent. */
+  invited?: boolean;
 }
 
 export interface BatchUserResult {

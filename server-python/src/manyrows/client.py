@@ -124,14 +124,25 @@ class ManyRowsServer:
         return from_dict(ServerUser, self._request("GET", f"/users/{urllib.parse.quote(user_id, safe='')}"))
 
     def create_user(
-        self, *, email: str, email_verified: bool = False, roles: Optional[list[str]] = None
+        self,
+        *,
+        email: str,
+        email_verified: bool = False,
+        roles: Optional[list[str]] = None,
+        send_invite: bool = False,
     ) -> CreateUserResult:
-        """Provision a user: create-or-find by email in the pool and add to the app. Idempotent."""
+        """Provision a user: create-or-find by email in the pool and add to the app. Idempotent.
+
+        Set ``send_invite=True`` to email the user a branded invitation
+        (requires the app to have an App URL configured).
+        """
         body: dict[str, Any] = {"email": email}
         if email_verified:
             body["emailVerified"] = True
         if roles is not None:
             body["roles"] = roles
+        if send_invite:
+            body["sendInvite"] = True
         return from_dict(CreateUserResult, self._request("POST", "/users", body=body))
 
     def batch_create_users(

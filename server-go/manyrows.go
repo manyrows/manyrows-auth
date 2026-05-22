@@ -153,12 +153,17 @@ type CreateUserInput struct {
 	Email         string   `json:"email"`
 	EmailVerified bool     `json:"emailVerified,omitempty"`
 	Roles         []string `json:"roles,omitempty"`
+	// SendInvite emails the user a branded invitation after provisioning
+	// (requires the app to have an App URL configured).
+	SendInvite bool `json:"sendInvite,omitempty"`
 }
 
 type CreateUserResult struct {
 	User    User     `json:"user"`
 	Created bool     `json:"created"`
 	Roles   []string `json:"roles"`
+	// Invited is true when SendInvite was requested and the email was sent.
+	Invited bool `json:"invited,omitempty"`
 }
 
 type UserStatus struct {

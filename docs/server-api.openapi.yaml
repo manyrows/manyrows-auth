@@ -882,6 +882,9 @@ components:
           type: array
           items: { type: string }
           description: Role slugs to assign in this app.
+        sendInvite:
+          type: boolean
+          description: Email the user a branded invitation after provisioning. Requires an App URL configured (400 otherwise).
 
     CreateUserResponse:
       type: object
@@ -889,6 +892,7 @@ components:
         user: { $ref: "#/components/schemas/UserResource" }
         created: { type: boolean, description: True when a new identity was created. }
         roles: { type: array, items: { type: string } }
+        invited: { type: boolean, description: True when sendInvite was requested and the email was sent. }
 
     BatchCreateUsersRequest:
       type: object

@@ -281,12 +281,17 @@ type ServerCreateUserRequest struct {
 	// creates the user unverified.
 	EmailVerified bool     `json:"emailVerified"`
 	Roles         []string `json:"roles"`
+	// SendInvite emails the user a branded invitation after provisioning.
+	// Requires the app to have an App URL configured.
+	SendInvite bool `json:"sendInvite"`
 }
 
 type ServerCreateUserResponse struct {
 	User    *core.UserResource `json:"user"`
 	Created bool               `json:"created"`
 	Roles   []string           `json:"roles"`
+	// Invited is true when SendInvite was requested and the email was sent.
+	Invited bool `json:"invited,omitempty"`
 }
 
 // ServerCreateUser provisions a user into the app's pool and adds them to the
@@ -326,6 +331,13 @@ func (handler *RequestHandler) ServerCreateUser(w http.ResponseWriter, r *http.R
 		return
 	}
 
+	// An invite email links to the app, so it needs an App URL. Fail fast
+	// before provisioning rather than create-then-can't-notify.
+	if req.SendInvite && (app.AppURL == nil || strings.TrimSpace(*app.AppURL) == "") {
+		WriteError(w, r, "error.appUrlRequired", http.StatusBadRequest)
+		return
+	}
+
 	user, created, err := handler.provisionUser(r, project, app, email, req.EmailVerified, roleIDs)
 	if err != nil {
 		if errors.Is(err, repo.ErrBadRequest) {
@@ -337,6 +349,17 @@ func (handler *RequestHandler) ServerCreateUser(w http.ResponseWriter, r *http.R
 		return
 	}
 
+	// Best-effort invite email: the user is provisioned regardless, so a send
+	// failure is logged and reflected in `invited`, not surfaced as an error.
+	invited := false
+	if req.SendInvite {
+		if err := handler.sendUserInviteEmail(ctx, app.WorkspaceID, user.Email, app.DisplayName(), *app.AppURL, GetLanguageFromRequest(r)); err != nil {
+			log.Err(err).Msg("ServerCreateUser: sendUserInviteEmail failed")
+		} else {
+			invited = true
+		}
+	}
+
 	status := http.StatusOK
 	if created {
 		status = http.StatusCreated
@@ -345,6 +368,7 @@ func (handler *RequestHandler) ServerCreateUser(w http.ResponseWriter, r *http.R
 		User:    core.ToUserResource(user),
 		Created: created,
 		Roles:   slugs,
+		Invited: invited,
 	}, status)
 }
 

@@ -3031,6 +3031,55 @@ func TestServerAccountRecoveryAndCredentials(t *testing.T) {
 	}
 }
 
+func TestServerCreateUser_SendInvite(t *testing.T) {
+	router := setupServerAPIRouter(t)
+
+	acc := testEnv.CreateTestAccount(t, "srv-inv-"+GenerateUniqueSlug("test")+"@example.com")
+	ws := testEnv.CreateTestWorkspace(t, acc, "Test WS", GenerateUniqueSlug("ws"))
+	project := testEnv.CreateTestProduct(t, ws, acc, "Test Product", GenerateUniqueSlug("proj"))
+	appID := createTestApp(t, ws.ID, project.ID, uuid.Nil, "Test App")
+
+	fixtures := &TestFixtures{Account: acc, Workspace: ws, Products: []core.Product{*project}}
+	defer testEnv.CleanupTestData(t, fixtures)
+	email2 := "inv2-" + GenerateUniqueSlug("u") + "@example.com"
+	defer func() {
+		pool := testEnv.DB.Pool()
+		_, _ = pool.Exec(context.Background(), "DELETE FROM users WHERE lower(email) = lower($1)", email2)
+		_, _ = pool.Exec(context.Background(), "DELETE FROM apps WHERE id = $1", appID)
+	}()
+
+	base := "/x/" + ws.Slug + "/api/v1/apps/" + appID.String() + "/users"
+
+	// sendInvite without an App URL configured → 400.
+	body, _ := json.Marshal(api.ServerCreateUserRequest{Email: "inv1-" + GenerateUniqueSlug("u") + "@example.com", SendInvite: true})
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, httptest.NewRequest(http.MethodPost, base, bytes.NewReader(body)))
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("sendInvite without App URL: expected 400, got %d: %s", rr.Code, rr.Body.String())
+	}
+
+	// With an App URL configured, provisioning succeeds (email is best-effort).
+	appRow, err := testEnv.Repo.GetAppByID(context.Background(), appID)
+	if err != nil {
+		t.Fatalf("GetAppByID: %v", err)
+	}
+	configureAppForMagicLink(t, &appRow) // sets AppURL (+ magic-link primary)
+
+	body, _ = json.Marshal(api.ServerCreateUserRequest{Email: email2, SendInvite: true})
+	rr = httptest.NewRecorder()
+	router.ServeHTTP(rr, httptest.NewRequest(http.MethodPost, base, bytes.NewReader(body)))
+	if rr.Code != http.StatusOK && rr.Code != http.StatusCreated {
+		t.Fatalf("sendInvite with App URL: expected 200/201, got %d: %s", rr.Code, rr.Body.String())
+	}
+	var resp api.ServerCreateUserResponse
+	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if resp.User == nil || resp.User.Email != email2 {
+		t.Fatalf("expected provisioned user %s, got %+v", email2, resp.User)
+	}
+}
+
 // =====================
 // Server API magic-link tests
 // =====================
