@@ -2961,9 +2961,15 @@ func TestServerConfigAndFlagManagement(t *testing.T) {
 		return d
 	}
 
-	// Set a public config value → 204.
-	if rr := put("/config/GREETING", api.ServerSetConfigValueRequest{Value: json.RawMessage(`"hello"`)}); rr.Code != http.StatusNoContent {
-		t.Fatalf("set config: expected 204, got %d: %s", rr.Code, rr.Body.String())
+	// Set a public config value → 200 echoing the stored value.
+	if rr := put("/config/GREETING", api.ServerSetConfigValueRequest{Value: json.RawMessage(`"hello"`)}); rr.Code != http.StatusOK {
+		t.Fatalf("set config: expected 200, got %d: %s", rr.Code, rr.Body.String())
+	} else {
+		var cv api.ServerConfigValueResponse
+		_ = json.Unmarshal(rr.Body.Bytes(), &cv)
+		if cv.Key != "GREETING" || string(cv.Value) != `"hello"` {
+			t.Fatalf("set config echo: got %+v", cv)
+		}
 	}
 	// Secret key is rejected.
 	if rr := put("/config/API_SECRET", api.ServerSetConfigValueRequest{Value: json.RawMessage(`"x"`)}); rr.Code != http.StatusBadRequest {
@@ -2973,9 +2979,15 @@ func TestServerConfigAndFlagManagement(t *testing.T) {
 	if rr := put("/config/NOPE", api.ServerSetConfigValueRequest{Value: json.RawMessage(`"x"`)}); rr.Code != http.StatusNotFound {
 		t.Fatalf("unknown config key: expected 404, got %d", rr.Code)
 	}
-	// Enable a feature flag (targeted at no roles) → 204.
-	if rr := put("/features/new_ui", api.ServerSetFeatureFlagRequest{Enabled: true}); rr.Code != http.StatusNoContent {
-		t.Fatalf("set flag: expected 204, got %d: %s", rr.Code, rr.Body.String())
+	// Enable a feature flag (targeted at no roles) → 200 echoing the override.
+	if rr := put("/features/new_ui", api.ServerSetFeatureFlagRequest{Enabled: true}); rr.Code != http.StatusOK {
+		t.Fatalf("set flag: expected 200, got %d: %s", rr.Code, rr.Body.String())
+	} else {
+		var ov api.ServerFeatureOverrideResponse
+		_ = json.Unmarshal(rr.Body.Bytes(), &ov)
+		if !ov.Enabled || ov.Status != "active" {
+			t.Fatalf("set flag echo: got %+v", ov)
+		}
 	}
 
 	// Read back the raw value/override via the GET endpoints (M4).

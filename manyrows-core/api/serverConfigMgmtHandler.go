@@ -93,7 +93,8 @@ func (handler *RequestHandler) ServerSetConfigValue(w http.ResponseWriter, r *ht
 		return
 	}
 
-	w.WriteHeader(http.StatusNoContent)
+	// Echo the stored value (200), consistent with the other value-setting PUTs.
+	utils.WriteJson(w, ServerConfigValueResponse{Key: ck.Key, Value: req.Value})
 }
 
 // ServerDeleteConfigValue clears this app's value for a config key (the key
@@ -204,7 +205,12 @@ func (handler *RequestHandler) ServerSetFeatureFlag(w http.ResponseWriter, r *ht
 		return
 	}
 
-	w.WriteHeader(http.StatusNoContent)
+	// Echo the resulting override (200), with the targeted roles as slugs.
+	roles := req.Roles
+	if roles == nil {
+		roles = []string{}
+	}
+	utils.WriteJson(w, ServerFeatureOverrideResponse{Enabled: req.Enabled, Roles: roles, Status: "active"})
 }
 
 // ServerDeleteFeatureFlag clears this app's override for a flag, so it falls

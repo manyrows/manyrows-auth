@@ -621,11 +621,14 @@ export class ManyRowsServer {
   }
 
   /** Set this app's value for a public/private config key (read back via getDelivery). */
-  setConfigValue(configKey: string, value: unknown): Promise<void> {
-    return this.request("PUT", `/config/${encodeURIComponent(configKey)}`, {
-      body: { value },
-      expectNoContent: true,
-    });
+  /** Set this app's value for a config key; returns the stored value. */
+  async setConfigValue(configKey: string, value: unknown): Promise<unknown> {
+    const { value: stored } = await this.request<{ key: string; value: unknown }>(
+      "PUT",
+      `/config/${encodeURIComponent(configKey)}`,
+      { body: { value } },
+    );
+    return stored;
   }
 
   /** Read this app's value for a config key (throws 404 if unset; secret keys 400). */
@@ -647,11 +650,10 @@ export class ManyRowsServer {
     return this.request("DELETE", `/config/${encodeURIComponent(configKey)}`, { expectNoContent: true });
   }
 
-  /** Set this app's feature-flag override, optionally targeting role slugs. */
-  setFeatureFlagOverride(flagKey: string, enabled: boolean, roles?: string[]): Promise<void> {
+  /** Set this app's feature-flag override (optionally targeting role slugs); returns the resulting override. */
+  setFeatureFlagOverride(flagKey: string, enabled: boolean, roles?: string[]): Promise<FeatureFlagOverride> {
     return this.request("PUT", `/features/${encodeURIComponent(flagKey)}`, {
       body: { enabled, roles },
-      expectNoContent: true,
     });
   }
 

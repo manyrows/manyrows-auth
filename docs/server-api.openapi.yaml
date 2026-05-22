@@ -286,7 +286,11 @@ paths:
           application/json:
             schema: { $ref: "#/components/schemas/SetConfigValueRequest" }
       responses:
-        "204": { description: Set. }
+        "200":
+          description: The stored value.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ConfigValueResponse" }
         "400": { $ref: "#/components/responses/BadRequest" }
         "404": { $ref: "#/components/responses/NotFound" }
     delete:
@@ -328,7 +332,11 @@ paths:
           application/json:
             schema: { $ref: "#/components/schemas/SetFeatureFlagRequest" }
       responses:
-        "204": { description: Set. }
+        "200":
+          description: The resulting override.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/FeatureFlagOverrideResponse" }
         "400": { $ref: "#/components/responses/BadRequest" }
         "404": { $ref: "#/components/responses/NotFound" }
     delete:

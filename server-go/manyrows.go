@@ -713,11 +713,15 @@ func (c *Client) DeleteUserFieldValue(ctx context.Context, fieldID, userID strin
 	return c.do(ctx, http.MethodDelete, path, nil, nil, nil)
 }
 
-// SetConfigValue sets this app's value for a public/private config key (read it
-// back via GetDelivery). value is JSON-encoded as sent.
-func (c *Client) SetConfigValue(ctx context.Context, configKey string, value any) error {
+// SetConfigValue sets this app's value for a public/private config key and
+// returns the stored value as raw JSON. value is JSON-encoded as sent.
+func (c *Client) SetConfigValue(ctx context.Context, configKey string, value any) (json.RawMessage, error) {
 	body := map[string]any{"value": value}
-	return c.do(ctx, http.MethodPut, "/config/"+url.PathEscape(configKey), nil, body, nil)
+	var out struct {
+		Key   string          `json:"key"`
+		Value json.RawMessage `json:"value"`
+	}
+	return out.Value, c.do(ctx, http.MethodPut, "/config/"+url.PathEscape(configKey), nil, body, &out)
 }
 
 // FeatureFlagOverride is this app's override for a feature flag.
@@ -750,13 +754,15 @@ func (c *Client) DeleteConfigValue(ctx context.Context, configKey string) error 
 }
 
 // SetFeatureFlagOverride sets this app's override for a feature flag, optionally
-// targeting a set of role slugs (nil/empty applies to everyone).
-func (c *Client) SetFeatureFlagOverride(ctx context.Context, flagKey string, enabled bool, roles []string) error {
+// targeting a set of role slugs (nil/empty applies to everyone), and returns the
+// resulting override.
+func (c *Client) SetFeatureFlagOverride(ctx context.Context, flagKey string, enabled bool, roles []string) (*FeatureFlagOverride, error) {
 	body := map[string]any{"enabled": enabled}
 	if roles != nil {
 		body["roles"] = roles
 	}
-	return c.do(ctx, http.MethodPut, "/features/"+url.PathEscape(flagKey), nil, body, nil)
+	var out FeatureFlagOverride
+	return &out, c.do(ctx, http.MethodPut, "/features/"+url.PathEscape(flagKey), nil, body, &out)
 }
 
 // ClearFeatureFlagOverride clears this app's override for a flag (falls back to default).
