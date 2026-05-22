@@ -192,6 +192,20 @@ export interface Passkey {
   lastUsedAt?: string;
 }
 
+export interface Webhook {
+  id: string;
+  appId: string;
+  url: string;
+  /** HMAC signing secret — present only in the create response. */
+  secret?: string;
+  events: string[];
+  status: "active" | "disabled";
+  description: string;
+  createdAt: string;
+  updatedAt: string;
+  createdBy: string;
+}
+
 export interface UserField {
   id: string;
   userPoolId: string;
@@ -385,6 +399,35 @@ export class ManyRowsServer {
     return this.request("GET", "/auth-logs", {
       query: { since: opts.since, until: opts.until, outcome: opts.outcome, page: opts.page, pageSize: opts.pageSize },
     });
+  }
+
+  /** List the app's webhook subscriptions (signing secrets redacted). */
+  async listWebhooks(): Promise<Webhook[]> {
+    const { webhooks } = await this.request<{ webhooks: Webhook[] }>("GET", "/webhooks");
+    return webhooks;
+  }
+
+  /** Register a webhook. The returned `secret` is shown only here — store it. */
+  createWebhook(input: { url: string; events: string[]; description?: string }): Promise<Webhook> {
+    return this.request("POST", "/webhooks", { body: input });
+  }
+
+  /** Get one webhook (secret redacted). */
+  getWebhook(webhookId: string): Promise<Webhook> {
+    return this.request("GET", `/webhooks/${encodeURIComponent(webhookId)}`);
+  }
+
+  /** Update a webhook (URL, events, status, description). */
+  updateWebhook(
+    webhookId: string,
+    patch: { url?: string; events?: string[]; status?: "active" | "disabled"; description?: string },
+  ): Promise<Webhook> {
+    return this.request("PATCH", `/webhooks/${encodeURIComponent(webhookId)}`, { body: patch });
+  }
+
+  /** Delete a webhook. */
+  deleteWebhook(webhookId: string): Promise<void> {
+    return this.request("DELETE", `/webhooks/${encodeURIComponent(webhookId)}`, { expectNoContent: true });
   }
 
   /** Force-logout: revoke all of a member's sessions for this app. */

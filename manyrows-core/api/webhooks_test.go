@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"manyrows-core/api"
 	"manyrows-core/auth"
 	"manyrows-core/auth/client"
@@ -1088,10 +1089,10 @@ func TestCreateWebhook_LimitReached(t *testing.T) {
 		_, _ = pool.Exec(context.Background(), "DELETE FROM apps WHERE id = $1", appID)
 	}()
 
-	// Create 1 webhook (the limit)
-	{
+	// Create webhooks up to the per-app limit (maxWebhooksPerApp = 10).
+	for i := 0; i < 10; i++ {
 		body := map[string]any{
-			"url":    "https://example.com/webhook-0",
+			"url":    fmt.Sprintf("https://example.com/webhook-%d", i),
 			"events": []string{"user.login"},
 		}
 		bodyBytes, _ := json.Marshal(body)
@@ -1101,7 +1102,7 @@ func TestCreateWebhook_LimitReached(t *testing.T) {
 		rr := httptest.NewRecorder()
 		router.ServeHTTP(rr, req)
 		if rr.Code != http.StatusCreated {
-			t.Fatalf("first webhook: expected %d, got %d: %s", http.StatusCreated, rr.Code, rr.Body.String())
+			t.Fatalf("webhook %d: expected %d, got %d: %s", i, http.StatusCreated, rr.Code, rr.Body.String())
 		}
 	}
 

@@ -226,6 +226,34 @@ type Passkey struct {
 	LastUsedAt string   `json:"lastUsedAt,omitempty"`
 }
 
+type Webhook struct {
+	ID          string   `json:"id"`
+	AppID       string   `json:"appId"`
+	URL         string   `json:"url"`
+	Secret      string   `json:"secret,omitempty"` // present only on create
+	Events      []string `json:"events"`
+	Status      string   `json:"status"`
+	Description string   `json:"description"`
+	CreatedAt   string   `json:"createdAt"`
+	UpdatedAt   string   `json:"updatedAt"`
+	CreatedBy   string   `json:"createdBy"`
+}
+
+// WebhookInput registers a webhook.
+type WebhookInput struct {
+	URL         string   `json:"url"`
+	Events      []string `json:"events"`
+	Description string   `json:"description,omitempty"`
+}
+
+// WebhookUpdate patches a webhook; nil fields are left unchanged.
+type WebhookUpdate struct {
+	URL         *string  `json:"url,omitempty"`
+	Events      []string `json:"events,omitempty"`
+	Status      *string  `json:"status,omitempty"`
+	Description *string  `json:"description,omitempty"`
+}
+
 type UserField struct {
 	ID           string `json:"id"`
 	UserPoolID   string `json:"userPoolId"`
@@ -467,6 +495,38 @@ func (c *Client) ListAuthLogs(ctx context.Context, p AuthLogsParams) (*AuthLogsP
 	}
 	var out AuthLogsPage
 	return &out, c.do(ctx, http.MethodGet, "/auth-logs", q, nil, &out)
+}
+
+// ListWebhooks lists the app's webhook subscriptions (signing secrets redacted).
+func (c *Client) ListWebhooks(ctx context.Context) ([]Webhook, error) {
+	var out struct {
+		Webhooks []Webhook `json:"webhooks"`
+	}
+	return out.Webhooks, c.do(ctx, http.MethodGet, "/webhooks", nil, nil, &out)
+}
+
+// CreateWebhook registers a webhook. The returned Webhook.Secret is populated
+// only here — store it; it's redacted on every later read.
+func (c *Client) CreateWebhook(ctx context.Context, in WebhookInput) (*Webhook, error) {
+	var out Webhook
+	return &out, c.do(ctx, http.MethodPost, "/webhooks", nil, in, &out)
+}
+
+// GetWebhook fetches one webhook (secret redacted).
+func (c *Client) GetWebhook(ctx context.Context, webhookID string) (*Webhook, error) {
+	var out Webhook
+	return &out, c.do(ctx, http.MethodGet, "/webhooks/"+url.PathEscape(webhookID), nil, nil, &out)
+}
+
+// UpdateWebhook patches a webhook (URL, events, status, description).
+func (c *Client) UpdateWebhook(ctx context.Context, webhookID string, patch WebhookUpdate) (*Webhook, error) {
+	var out Webhook
+	return &out, c.do(ctx, http.MethodPatch, "/webhooks/"+url.PathEscape(webhookID), nil, patch, &out)
+}
+
+// DeleteWebhook removes a webhook.
+func (c *Client) DeleteWebhook(ctx context.Context, webhookID string) error {
+	return c.do(ctx, http.MethodDelete, "/webhooks/"+url.PathEscape(webhookID), nil, nil, nil)
 }
 
 // RevokeUserSessions force-logs-out a member from this app and returns the count revoked.

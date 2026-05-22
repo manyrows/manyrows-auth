@@ -318,6 +318,11 @@ func setupServerAPIRouter(t *testing.T) *chi.Mux {
 	appRouter.Get("/roles", requestHandler.ServerListRoles)
 	appRouter.Get("/permissions", requestHandler.ServerListPermissions)
 	appRouter.Get("/auth-logs", requestHandler.ServerListAppAuthLogs)
+	appRouter.Get("/webhooks", requestHandler.ServerListWebhooks)
+	appRouter.Post("/webhooks", requestHandler.ServerCreateWebhook)
+	appRouter.Get("/webhooks/{webhookId}", requestHandler.ServerGetWebhook)
+	appRouter.Patch("/webhooks/{webhookId}", requestHandler.ServerUpdateWebhook)
+	appRouter.Delete("/webhooks/{webhookId}", requestHandler.ServerDeleteWebhook)
 	appRouter.Put("/config/{configKey}", requestHandler.ServerSetConfigValue)
 	appRouter.Delete("/config/{configKey}", requestHandler.ServerDeleteConfigValue)
 	appRouter.Put("/features/{flagKey}", requestHandler.ServerSetFeatureFlag)
@@ -3077,6 +3082,85 @@ func TestServerCreateUser_SendInvite(t *testing.T) {
 	}
 	if resp.User == nil || resp.User.Email != email2 {
 		t.Fatalf("expected provisioned user %s, got %+v", email2, resp.User)
+	}
+}
+
+func TestServerWebhookCRUD(t *testing.T) {
+	router := setupServerAPIRouter(t)
+
+	acc := testEnv.CreateTestAccount(t, "srv-wh-"+GenerateUniqueSlug("test")+"@example.com")
+	ws := testEnv.CreateTestWorkspace(t, acc, "Test WS", GenerateUniqueSlug("ws"))
+	project := testEnv.CreateTestProduct(t, ws, acc, "Test Product", GenerateUniqueSlug("proj"))
+	appID := createTestApp(t, ws.ID, project.ID, uuid.Nil, "Test App")
+
+	fixtures := &TestFixtures{Account: acc, Workspace: ws, Products: []core.Product{*project}}
+	defer testEnv.CleanupTestData(t, fixtures)
+	defer func() {
+		pool := testEnv.DB.Pool()
+		_, _ = pool.Exec(context.Background(), "DELETE FROM webhooks WHERE app_id = $1", appID)
+		_, _ = pool.Exec(context.Background(), "DELETE FROM apps WHERE id = $1", appID)
+	}()
+
+	base := "/x/" + ws.Slug + "/api/v1/apps/" + appID.String() + "/webhooks"
+	send := func(method, path, body string) *httptest.ResponseRecorder {
+		var rdr *bytes.Reader
+		if body != "" {
+			rdr = bytes.NewReader([]byte(body))
+		} else {
+			rdr = bytes.NewReader(nil)
+		}
+		rr := httptest.NewRecorder()
+		router.ServeHTTP(rr, httptest.NewRequest(method, path, rdr))
+		return rr
+	}
+
+	// Create → 201 with the signing secret visible (once).
+	rr := send(http.MethodPost, base, `{"url":"https://example.com/hook","events":["user.created","user.login"]}`)
+	if rr.Code != http.StatusCreated {
+		t.Fatalf("create webhook: expected 201, got %d: %s", rr.Code, rr.Body.String())
+	}
+	var created core.Webhook
+	if err := json.Unmarshal(rr.Body.Bytes(), &created); err != nil {
+		t.Fatalf("parse created: %v", err)
+	}
+	if created.ID == uuid.Nil || created.Secret == "" {
+		t.Fatalf("expected id + secret on create, got %+v", created)
+	}
+	whID := created.ID.String()
+
+	// List → secret redacted.
+	rr = send(http.MethodGet, base, "")
+	var listResp api.ServerWebhooksResponse
+	_ = json.Unmarshal(rr.Body.Bytes(), &listResp)
+	if len(listResp.Webhooks) != 1 || listResp.Webhooks[0].Secret != "" {
+		t.Fatalf("list: expected 1 webhook with redacted secret, got %+v", listResp.Webhooks)
+	}
+
+	// Patch status → disabled.
+	rr = send(http.MethodPatch, base+"/"+whID, `{"status":"disabled"}`)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("patch: expected 200, got %d: %s", rr.Code, rr.Body.String())
+	}
+	var updated core.Webhook
+	_ = json.Unmarshal(rr.Body.Bytes(), &updated)
+	if updated.Status != "disabled" || updated.Secret != "" {
+		t.Fatalf("patch: expected disabled + redacted secret, got %+v", updated)
+	}
+
+	// Invalid event → 400.
+	rr = send(http.MethodPost, base, `{"url":"https://example.com/h2","events":["not.an.event"]}`)
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("bad event: expected 400, got %d", rr.Code)
+	}
+
+	// Delete → 204; then get → 404.
+	rr = send(http.MethodDelete, base+"/"+whID, "")
+	if rr.Code != http.StatusNoContent {
+		t.Fatalf("delete: expected 204, got %d", rr.Code)
+	}
+	rr = send(http.MethodGet, base+"/"+whID, "")
+	if rr.Code != http.StatusNotFound {
+		t.Fatalf("get after delete: expected 404, got %d", rr.Code)
 	}
 }
 

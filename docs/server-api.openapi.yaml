@@ -37,6 +37,8 @@ tags:
     description: Read and write per-user metadata.
   - name: Config and flags
     description: Manage config values and feature-flag overrides (read via delivery).
+  - name: Webhooks
+    description: Manage the endpoints ManyRows POSTs auth events to.
 
 paths:
   /apps/{appId}:
@@ -477,6 +479,90 @@ paths:
       responses:
         "204": { description: Updated. }
         "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /apps/{appId}/webhooks:
+    parameters:
+      - $ref: "#/components/parameters/AppId"
+    get:
+      tags: [Webhooks]
+      summary: List webhook subscriptions
+      description: The app's registered webhook endpoints. Signing secrets are redacted.
+      operationId: listWebhooks
+      responses:
+        "200":
+          description: The app's webhooks.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/WebhooksListResponse" }
+    post:
+      tags: [Webhooks]
+      summary: Register a webhook
+      description: >
+        Register an endpoint to receive auth events. The response includes the
+        signing secret **once** — store it; it's redacted on every later read.
+        Up to 10 per app.
+      operationId: createWebhook
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateWebhookRequest" }
+      responses:
+        "201":
+          description: Created (includes the signing secret).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Webhook" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "409":
+          description: Per-app webhook limit reached.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /apps/{appId}/webhooks/{webhookId}:
+    parameters:
+      - $ref: "#/components/parameters/AppId"
+      - name: webhookId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      tags: [Webhooks]
+      summary: Get a webhook
+      operationId: getWebhook
+      responses:
+        "200":
+          description: The webhook (secret redacted).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Webhook" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    patch:
+      tags: [Webhooks]
+      summary: Update a webhook
+      description: Patch the URL, subscribed events, status, or description.
+      operationId: updateWebhook
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UpdateWebhookRequest" }
+      responses:
+        "200":
+          description: The updated webhook (secret redacted).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Webhook" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      tags: [Webhooks]
+      summary: Delete a webhook
+      operationId: deleteWebhook
+      responses:
+        "204": { description: Deleted. }
         "404": { $ref: "#/components/responses/NotFound" }
 
   /apps/{appId}/auth-logs:
@@ -1006,6 +1092,44 @@ components:
       type: object
       properties:
         passkeys: { type: array, items: { $ref: "#/components/schemas/Passkey" } }
+
+    Webhook:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        appId: { type: string, format: uuid }
+        url: { type: string, format: uri }
+        secret: { type: string, description: "HMAC signing secret — present only in the create response." }
+        events: { type: array, items: { type: string } }
+        status: { type: string, enum: [active, disabled] }
+        description: { type: string }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        createdBy: { type: string, format: uuid }
+
+    WebhooksListResponse:
+      type: object
+      properties:
+        webhooks: { type: array, items: { $ref: "#/components/schemas/Webhook" } }
+
+    CreateWebhookRequest:
+      type: object
+      required: [url, events]
+      properties:
+        url: { type: string, format: uri }
+        events:
+          type: array
+          items: { type: string }
+          description: "Events to subscribe to — e.g. user.created, user.login, user.password_change."
+        description: { type: string }
+
+    UpdateWebhookRequest:
+      type: object
+      properties:
+        url: { type: string, format: uri }
+        events: { type: array, items: { type: string } }
+        status: { type: string, enum: [active, disabled] }
+        description: { type: string }
 
     AuthLogsResponse:
       type: object

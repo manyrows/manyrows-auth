@@ -19,7 +19,17 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
-const maxWebhooksPerApp = 1
+const maxWebhooksPerApp = 10
+
+// generateWebhookSecret returns a random 256-bit hex secret used to sign
+// webhook deliveries (HMAC). Shared by the admin and S2S create paths.
+func generateWebhookSecret() (string, error) {
+	b := make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(b), nil
+}
 
 // validWebhookEvents is the allowlist of event names that can be subscribed to.
 // Currently limited to auth-related events only.
@@ -188,14 +198,12 @@ func (handler *RequestHandler) HandleCreateWebhook(w http.ResponseWriter, r *htt
 		return
 	}
 
-	// Generate secret
-	secretBytes := make([]byte, 32)
-	if _, err := rand.Read(secretBytes); err != nil {
+	secret, err := generateWebhookSecret()
+	if err != nil {
 		log.Err(err).Msg("failed to generate webhook secret")
 		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 		return
 	}
-	secret := hex.EncodeToString(secretBytes)
 
 	now := time.Now().UTC()
 	wh := core.Webhook{

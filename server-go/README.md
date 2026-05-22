@@ -80,6 +80,8 @@ if errors.As(err, &apiErr) && apiErr.Status == http.StatusNotFound {
 | `CreateMagicLink(ctx, userID, rememberMe)` | `POST /users/{id}/magic-link` |
 | `GetUserAuthLogs(ctx, userID, page, pageSize)` | `GET /users/{id}/auth-logs` |
 | `ListAuthLogs(ctx, AuthLogsParams{…})` | `GET /auth-logs` |
+| `ListWebhooks(ctx)` / `CreateWebhook(ctx, WebhookInput{…})` | `GET` · `POST /webhooks` |
+| `GetWebhook(ctx, id)` / `UpdateWebhook(ctx, id, WebhookUpdate{…})` / `DeleteWebhook(ctx, id)` | `GET` · `PATCH` · `DELETE /webhooks/{id}` |
 | `ListUserFields(ctx)` | `GET /user-fields` |
 | `GetUserFieldValues(ctx, userID)` | `GET /user-fields/users/{id}` |
 | `SetUserFieldValue(ctx, fieldID, userID, value)` | `PUT /user-fields/{fieldId}/users/{id}` |

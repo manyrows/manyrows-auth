@@ -171,6 +171,20 @@ class Passkey:
 
 
 @dataclass
+class Webhook:
+    id: str = ""
+    app_id: str = ""
+    url: str = ""
+    secret: str = ""  # present only in the create response
+    events: list[str] = field(default_factory=list)
+    status: str = ""
+    description: str = ""
+    created_at: str = ""
+    updated_at: str = ""
+    created_by: str = ""
+
+
+@dataclass
 class UserField:
     id: str = ""
     user_pool_id: str = ""

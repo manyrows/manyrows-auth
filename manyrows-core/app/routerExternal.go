@@ -166,6 +166,12 @@ func (a *AppService) serverAPIRouter(h *api.RequestHandler) *chi.Mux {
 	appRouter.Get("/permissions", h.ServerListPermissions)
 	// App-wide auth-event history (all users), for SIEM/analytics ingestion.
 	appRouter.Get("/auth-logs", h.ServerListAppAuthLogs)
+	// Webhook self-service: manage where ManyRows POSTs auth events.
+	appRouter.Get("/webhooks", h.ServerListWebhooks)
+	appRouter.Post("/webhooks", h.ServerCreateWebhook)
+	appRouter.Get("/webhooks/{webhookId}", h.ServerGetWebhook)
+	appRouter.Patch("/webhooks/{webhookId}", h.ServerUpdateWebhook)
+	appRouter.Delete("/webhooks/{webhookId}", h.ServerDeleteWebhook)
 
 	// Config-value + feature-flag management (read via the delivery endpoint).
 	appRouter.Put("/config/{configKey}", h.ServerSetConfigValue)

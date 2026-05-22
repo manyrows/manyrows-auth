@@ -26,6 +26,7 @@ from .models import (
     UserField,
     UserFieldValue,
     UserStatus,
+    Webhook,
     from_dict,
 )
 
@@ -224,6 +225,47 @@ class ManyRowsServer:
         if page_size:
             query["pageSize"] = page_size
         return from_dict(AuthLogsPage, self._request("GET", "/auth-logs", query=query))
+
+    def list_webhooks(self) -> list[Webhook]:
+        """The app's webhook subscriptions (signing secrets redacted)."""
+        data = self._request("GET", "/webhooks")
+        return [from_dict(Webhook, w) for w in data.get("webhooks", [])]
+
+    def create_webhook(self, *, url: str, events: list[str], description: Optional[str] = None) -> Webhook:
+        """Register a webhook. The returned ``secret`` is shown only here — store it."""
+        body: dict[str, Any] = {"url": url, "events": events}
+        if description is not None:
+            body["description"] = description
+        return from_dict(Webhook, self._request("POST", "/webhooks", body=body))
+
+    def get_webhook(self, webhook_id: str) -> Webhook:
+        """Get one webhook (secret redacted)."""
+        return from_dict(Webhook, self._request("GET", f"/webhooks/{urllib.parse.quote(webhook_id, safe='')}"))
+
+    def update_webhook(
+        self,
+        webhook_id: str,
+        *,
+        url: Optional[str] = None,
+        events: Optional[list[str]] = None,
+        status: Optional[str] = None,
+        description: Optional[str] = None,
+    ) -> Webhook:
+        """Patch a webhook (URL, events, status, description)."""
+        body: dict[str, Any] = {}
+        if url is not None:
+            body["url"] = url
+        if events is not None:
+            body["events"] = events
+        if status is not None:
+            body["status"] = status
+        if description is not None:
+            body["description"] = description
+        return from_dict(Webhook, self._request("PATCH", f"/webhooks/{urllib.parse.quote(webhook_id, safe='')}", body=body))
+
+    def delete_webhook(self, webhook_id: str) -> None:
+        """Delete a webhook."""
+        self._request("DELETE", f"/webhooks/{urllib.parse.quote(webhook_id, safe='')}")
 
     def revoke_user_sessions(self, user_id: str) -> int:
         """Force-logout: revoke all of a member's sessions for this app. Returns the count revoked."""

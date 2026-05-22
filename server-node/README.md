@@ -80,6 +80,8 @@ try {
 | `createMagicLink(userId, { rememberMe? })` | `POST /users/{id}/magic-link` |
 | `getUserAuthLogs(userId, { page?, pageSize? })` | `GET /users/{id}/auth-logs` |
 | `listAuthLogs({ since?, until?, outcome?, page?, pageSize? })` | `GET /auth-logs` |
+| `listWebhooks()` / `createWebhook({ url, events, description? })` | `GET` · `POST /webhooks` |
+| `getWebhook(id)` / `updateWebhook(id, patch)` / `deleteWebhook(id)` | `GET` · `PATCH` · `DELETE /webhooks/{id}` |
 | `listUserFields()` | `GET /user-fields` |
 | `getUserFieldValues(userId)` | `GET /user-fields/users/{id}` |
 | `setUserFieldValue(fieldId, userId, value)` | `PUT /user-fields/{fieldId}/users/{id}` |

@@ -24,6 +24,7 @@ from .models import (
     Session,
     User,
     UserField,
+    Webhook,
     UserFieldValue,
     UserStatus,
 )
@@ -57,4 +58,5 @@ __all__ = [
     "UserField",
     "UserFieldValue",
     "UserStatus",
+    "Webhook",
 ]
