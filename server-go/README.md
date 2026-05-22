@@ -65,6 +65,8 @@ if errors.As(err, &apiErr) && apiErr.Status == http.StatusNotFound {
 | `GetDelivery(ctx)` | `GET /` |
 | `CheckPermission(ctx, userID, permission)` | `GET /check-permission` |
 | `ListRoles(ctx)` / `ListPermissions(ctx)` | `GET /roles` · `/permissions` |
+| `CreateRole` / `UpdateRole` / `DeleteRole` | `POST /roles` · `PATCH`·`DELETE /roles/{slug}` |
+| `CreatePermission` / `UpdatePermission` / `DeletePermission` | `POST /permissions` · `PATCH`·`DELETE /permissions/{slug}` |
 | `ListUsers(ctx, ListUsersParams{…})` | `GET /users` |
 | `GetUserByEmail(ctx, email)` / `GetUser(ctx, userID)` | `GET /users` |
 | `CreateUser(ctx, CreateUserInput{…})` | `POST /users` |

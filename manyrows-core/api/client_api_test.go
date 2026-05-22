@@ -317,6 +317,12 @@ func setupServerAPIRouter(t *testing.T) *chi.Mux {
 	appRouter.Get("/check-permission", requestHandler.ServerCheckPermission)
 	appRouter.Get("/roles", requestHandler.ServerListRoles)
 	appRouter.Get("/permissions", requestHandler.ServerListPermissions)
+	appRouter.Post("/roles", requestHandler.ServerCreateRole)
+	appRouter.Patch("/roles/{slug}", requestHandler.ServerUpdateRole)
+	appRouter.Delete("/roles/{slug}", requestHandler.ServerDeleteRole)
+	appRouter.Post("/permissions", requestHandler.ServerCreatePermission)
+	appRouter.Patch("/permissions/{slug}", requestHandler.ServerUpdatePermission)
+	appRouter.Delete("/permissions/{slug}", requestHandler.ServerDeletePermission)
 	appRouter.Get("/auth-logs", requestHandler.ServerListAppAuthLogs)
 	appRouter.Get("/webhooks", requestHandler.ServerListWebhooks)
 	appRouter.Post("/webhooks", requestHandler.ServerCreateWebhook)
@@ -3443,6 +3449,89 @@ func TestServerChangeUserEmail(t *testing.T) {
 	router.ServeHTTP(rr, httptest.NewRequest(http.MethodPut, base, bytes.NewReader(body)))
 	if rr.Code != http.StatusBadRequest {
 		t.Fatalf("invalid email: expected 400, got %d", rr.Code)
+	}
+}
+
+func TestServerRbacCrud(t *testing.T) {
+	router := setupServerAPIRouter(t)
+
+	acc := testEnv.CreateTestAccount(t, "srv-rbac-"+GenerateUniqueSlug("test")+"@example.com")
+	ws := testEnv.CreateTestWorkspace(t, acc, "Test WS", GenerateUniqueSlug("ws"))
+	project := testEnv.CreateTestProduct(t, ws, acc, "Test Product", GenerateUniqueSlug("proj"))
+	appID := createTestApp(t, ws.ID, project.ID, uuid.Nil, "Test App")
+
+	fixtures := &TestFixtures{Account: acc, Workspace: ws, Products: []core.Product{*project}}
+	defer testEnv.CleanupTestData(t, fixtures)
+	defer func() {
+		pool := testEnv.DB.Pool()
+		ctx := context.Background()
+		_, _ = pool.Exec(ctx, "DELETE FROM role_permissions WHERE role_id IN (SELECT id FROM roles WHERE product_id = $1)", project.ID)
+		_, _ = pool.Exec(ctx, "DELETE FROM roles WHERE product_id = $1", project.ID)
+		_, _ = pool.Exec(ctx, "DELETE FROM permissions WHERE product_id = $1", project.ID)
+		_, _ = pool.Exec(ctx, "DELETE FROM apps WHERE id = $1", appID)
+	}()
+
+	base := "/x/" + ws.Slug + "/api/v1/apps/" + appID.String()
+	send := func(method, path, body string) *httptest.ResponseRecorder {
+		var rdr *bytes.Reader
+		if body != "" {
+			rdr = bytes.NewReader([]byte(body))
+		} else {
+			rdr = bytes.NewReader(nil)
+		}
+		rr := httptest.NewRecorder()
+		router.ServeHTTP(rr, httptest.NewRequest(method, base+path, rdr))
+		return rr
+	}
+
+	// Create two permissions; duplicate slug → 409.
+	if rr := send(http.MethodPost, "/permissions", `{"slug":"posts:read","name":"Read posts"}`); rr.Code != http.StatusCreated {
+		t.Fatalf("create perm read: %d %s", rr.Code, rr.Body.String())
+	}
+	if rr := send(http.MethodPost, "/permissions", `{"slug":"posts:write","name":"Write posts"}`); rr.Code != http.StatusCreated {
+		t.Fatalf("create perm write: %d", rr.Code)
+	}
+	if rr := send(http.MethodPost, "/permissions", `{"slug":"posts:read","name":"dup"}`); rr.Code != http.StatusConflict {
+		t.Fatalf("dup perm: expected 409, got %d", rr.Code)
+	}
+
+	// Create a role with one permission.
+	rr := send(http.MethodPost, "/roles", `{"slug":"editor","name":"Editor","permissions":["posts:read"]}`)
+	if rr.Code != http.StatusCreated {
+		t.Fatalf("create role: %d %s", rr.Code, rr.Body.String())
+	}
+	var role api.ServerRoleSummary
+	_ = json.Unmarshal(rr.Body.Bytes(), &role)
+	if role.Slug != "editor" || len(role.Permissions) != 1 || role.Permissions[0] != "posts:read" {
+		t.Fatalf("created role mismatch: %+v", role)
+	}
+
+	// Update role: rename + replace permissions.
+	rr = send(http.MethodPatch, "/roles/editor", `{"name":"Editor v2","permissions":["posts:read","posts:write"]}`)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("update role: %d %s", rr.Code, rr.Body.String())
+	}
+	_ = json.Unmarshal(rr.Body.Bytes(), &role)
+	if role.Name != "Editor v2" || len(role.Permissions) != 2 {
+		t.Fatalf("updated role mismatch: %+v", role)
+	}
+
+	// Rename a permission.
+	if rr := send(http.MethodPatch, "/permissions/posts:read", `{"name":"Read all posts"}`); rr.Code != http.StatusOK {
+		t.Fatalf("update perm: %d %s", rr.Code, rr.Body.String())
+	}
+
+	// Update a non-existent role → 400 (unknown slug).
+	if rr := send(http.MethodPatch, "/roles/ghost", `{"name":"x"}`); rr.Code != http.StatusBadRequest {
+		t.Fatalf("update ghost role: expected 400, got %d", rr.Code)
+	}
+
+	// Delete role + permission.
+	if rr := send(http.MethodDelete, "/roles/editor", ""); rr.Code != http.StatusNoContent {
+		t.Fatalf("delete role: %d", rr.Code)
+	}
+	if rr := send(http.MethodDelete, "/permissions/posts:write", ""); rr.Code != http.StatusNoContent {
+		t.Fatalf("delete perm: %d", rr.Code)
 	}
 }
 

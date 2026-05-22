@@ -106,6 +106,60 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/RolesListResponse" }
         "401": { $ref: "#/components/responses/Unauthorized" }
+    post:
+      tags: [Authorization]
+      summary: Define a role
+      description: Create a role in the product, optionally with permission slugs.
+      operationId: createRole
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateRoleRequest" }
+      responses:
+        "201":
+          description: The created role.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RoleSummary" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "409":
+          description: A role with that slug already exists.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /apps/{appId}/roles/{slug}:
+    parameters:
+      - $ref: "#/components/parameters/AppId"
+      - name: slug
+        in: path
+        required: true
+        schema: { type: string }
+    patch:
+      tags: [Authorization]
+      summary: Update a role
+      description: Update the role's name and/or its granted permission slugs (omit a field to leave it unchanged).
+      operationId: updateRole
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UpdateRoleRequest" }
+      responses:
+        "200":
+          description: The updated role.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RoleSummary" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+    delete:
+      tags: [Authorization]
+      summary: Delete a role
+      operationId: deleteRole
+      responses:
+        "204": { description: Deleted. }
+        "400": { $ref: "#/components/responses/BadRequest" }
 
   /apps/{appId}/permissions:
     parameters:
@@ -121,6 +175,58 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/PermissionsListResponse" }
         "401": { $ref: "#/components/responses/Unauthorized" }
+    post:
+      tags: [Authorization]
+      summary: Define a permission
+      operationId: createPermission
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreatePermissionRequest" }
+      responses:
+        "201":
+          description: The created permission.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PermissionSummary" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "409":
+          description: A permission with that slug already exists.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /apps/{appId}/permissions/{slug}:
+    parameters:
+      - $ref: "#/components/parameters/AppId"
+      - name: slug
+        in: path
+        required: true
+        schema: { type: string }
+    patch:
+      tags: [Authorization]
+      summary: Rename a permission
+      operationId: updatePermission
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UpdatePermissionRequest" }
+      responses:
+        "200":
+          description: The updated permission.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PermissionSummary" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+    delete:
+      tags: [Authorization]
+      summary: Delete a permission
+      operationId: deletePermission
+      responses:
+        "204": { description: Deleted. }
+        "400": { $ref: "#/components/responses/BadRequest" }
 
   /apps/{appId}/config/{configKey}:
     parameters:
@@ -1015,6 +1121,36 @@ components:
           type: array
           items: { type: string }
           description: Permission slugs this role grants.
+
+    CreateRoleRequest:
+      type: object
+      required: [slug, name]
+      properties:
+        slug: { type: string }
+        name: { type: string }
+        permissions: { type: array, items: { type: string }, description: Permission slugs to grant. }
+
+    UpdateRoleRequest:
+      type: object
+      properties:
+        name: { type: string }
+        permissions:
+          type: array
+          items: { type: string }
+          description: If present, replaces the role's granted permission slugs.
+
+    CreatePermissionRequest:
+      type: object
+      required: [slug, name]
+      properties:
+        slug: { type: string }
+        name: { type: string }
+
+    UpdatePermissionRequest:
+      type: object
+      required: [name]
+      properties:
+        name: { type: string }
 
     RolesListResponse:
       type: object

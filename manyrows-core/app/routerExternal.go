@@ -164,6 +164,13 @@ func (a *AppService) serverAPIRouter(h *api.RequestHandler) *chi.Mux {
 	// Authorization catalog: the assignable role/permission slugs for the app.
 	appRouter.Get("/roles", h.ServerListRoles)
 	appRouter.Get("/permissions", h.ServerListPermissions)
+	// RBAC definition management (create/update/delete roles & permissions).
+	appRouter.Post("/roles", h.ServerCreateRole)
+	appRouter.Patch("/roles/{slug}", h.ServerUpdateRole)
+	appRouter.Delete("/roles/{slug}", h.ServerDeleteRole)
+	appRouter.Post("/permissions", h.ServerCreatePermission)
+	appRouter.Patch("/permissions/{slug}", h.ServerUpdatePermission)
+	appRouter.Delete("/permissions/{slug}", h.ServerDeletePermission)
 	// App-wide auth-event history (all users), for SIEM/analytics ingestion.
 	appRouter.Get("/auth-logs", h.ServerListAppAuthLogs)
 	// Webhook self-service: manage where ManyRows POSTs auth events.

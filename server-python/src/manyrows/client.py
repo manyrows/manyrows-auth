@@ -101,6 +101,41 @@ class ManyRowsServer:
         data = self._request("GET", "/permissions")
         return [from_dict(PermissionSummary, p) for p in data.get("permissions", [])]
 
+    def create_role(self, *, slug: str, name: str, permissions: Optional[list[str]] = None) -> RoleSummary:
+        """Define a new role, optionally with permission slugs."""
+        body: dict[str, Any] = {"slug": slug, "name": name}
+        if permissions is not None:
+            body["permissions"] = permissions
+        return from_dict(RoleSummary, self._request("POST", "/roles", body=body))
+
+    def update_role(
+        self, slug: str, *, name: Optional[str] = None, permissions: Optional[list[str]] = None
+    ) -> RoleSummary:
+        """Update a role's name and/or permissions (omit a field to leave it unchanged)."""
+        body: dict[str, Any] = {}
+        if name is not None:
+            body["name"] = name
+        if permissions is not None:
+            body["permissions"] = permissions
+        return from_dict(RoleSummary, self._request("PATCH", f"/roles/{urllib.parse.quote(slug, safe='')}", body=body))
+
+    def delete_role(self, slug: str) -> None:
+        """Delete a role."""
+        self._request("DELETE", f"/roles/{urllib.parse.quote(slug, safe='')}")
+
+    def create_permission(self, *, slug: str, name: str) -> PermissionSummary:
+        """Define a new permission."""
+        return from_dict(PermissionSummary, self._request("POST", "/permissions", body={"slug": slug, "name": name}))
+
+    def update_permission(self, slug: str, name: str) -> PermissionSummary:
+        """Rename a permission."""
+        data = self._request("PATCH", f"/permissions/{urllib.parse.quote(slug, safe='')}", body={"name": name})
+        return from_dict(PermissionSummary, data)
+
+    def delete_permission(self, slug: str) -> None:
+        """Delete a permission."""
+        self._request("DELETE", f"/permissions/{urllib.parse.quote(slug, safe='')}")
+
     # ---- Users ----
 
     def list_users(

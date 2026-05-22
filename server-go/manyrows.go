@@ -331,6 +331,54 @@ func (c *Client) ListPermissions(ctx context.Context) ([]PermissionSummary, erro
 	return out.Permissions, c.do(ctx, http.MethodGet, "/permissions", nil, nil, &out)
 }
 
+// CreateRole defines a new role, optionally with permission slugs.
+func (c *Client) CreateRole(ctx context.Context, slug, name string, permissions []string) (*RoleSummary, error) {
+	body := map[string]any{"slug": slug, "name": name}
+	if permissions != nil {
+		body["permissions"] = permissions
+	}
+	var out RoleSummary
+	return &out, c.do(ctx, http.MethodPost, "/roles", nil, body, &out)
+}
+
+// UpdateRole updates a role's name and/or permissions. A nil arg leaves that
+// field unchanged; a non-nil (even empty) permissions slice replaces the set.
+func (c *Client) UpdateRole(ctx context.Context, slug string, name *string, permissions []string) (*RoleSummary, error) {
+	body := map[string]any{}
+	if name != nil {
+		body["name"] = *name
+	}
+	if permissions != nil {
+		body["permissions"] = permissions
+	}
+	var out RoleSummary
+	return &out, c.do(ctx, http.MethodPatch, "/roles/"+url.PathEscape(slug), nil, body, &out)
+}
+
+// DeleteRole deletes a role.
+func (c *Client) DeleteRole(ctx context.Context, slug string) error {
+	return c.do(ctx, http.MethodDelete, "/roles/"+url.PathEscape(slug), nil, nil, nil)
+}
+
+// CreatePermission defines a new permission.
+func (c *Client) CreatePermission(ctx context.Context, slug, name string) (*PermissionSummary, error) {
+	body := map[string]string{"slug": slug, "name": name}
+	var out PermissionSummary
+	return &out, c.do(ctx, http.MethodPost, "/permissions", nil, body, &out)
+}
+
+// UpdatePermission renames a permission.
+func (c *Client) UpdatePermission(ctx context.Context, slug, name string) (*PermissionSummary, error) {
+	body := map[string]string{"name": name}
+	var out PermissionSummary
+	return &out, c.do(ctx, http.MethodPatch, "/permissions/"+url.PathEscape(slug), nil, body, &out)
+}
+
+// DeletePermission deletes a permission.
+func (c *Client) DeletePermission(ctx context.Context, slug string) error {
+	return c.do(ctx, http.MethodDelete, "/permissions/"+url.PathEscape(slug), nil, nil, nil)
+}
+
 // ---- Users ----
 
 // ListUsersParams filters the member list. Zero values are omitted.

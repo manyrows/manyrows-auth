@@ -65,6 +65,8 @@ try {
 | `getDelivery()` | `GET /` |
 | `checkPermission(userId, permission)` | `GET /check-permission` |
 | `listRoles()` / `listPermissions()` | `GET /roles` · `/permissions` |
+| `createRole({slug,name,permissions?})` / `updateRole(slug, patch)` / `deleteRole(slug)` | `POST /roles` · `PATCH`·`DELETE /roles/{slug}` |
+| `createPermission({slug,name})` / `updatePermission(slug,name)` / `deletePermission(slug)` | `POST /permissions` · `PATCH`·`DELETE /permissions/{slug}` |
 | `listUsers({ search?, page?, pageSize? })` | `GET /users` |
 | `getUserByEmail(email)` / `getUser(userId)` | `GET /users` |
 | `createUser({ email, emailVerified?, roles? })` | `POST /users` |

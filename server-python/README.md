@@ -62,6 +62,8 @@ except ManyRowsServerError as err:
 | `get_delivery()` | `GET /` |
 | `check_permission(user_id, permission)` | `GET /check-permission` |
 | `list_roles()` / `list_permissions()` | `GET /roles` · `/permissions` |
+| `create_role(...)` / `update_role(slug, ...)` / `delete_role(slug)` | `POST /roles` · `PATCH`·`DELETE /roles/{slug}` |
+| `create_permission(...)` / `update_permission(slug, name)` / `delete_permission(slug)` | `POST /permissions` · `PATCH`·`DELETE /permissions/{slug}` |
 | `list_users(search=…, page=…, page_size=…)` | `GET /users` |
 | `get_user_by_email(email)` / `get_user(user_id)` | `GET /users` |
 | `create_user(email=…, email_verified=…, roles=…)` | `POST /users` |

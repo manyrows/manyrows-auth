@@ -312,6 +312,39 @@ export class ManyRowsServer {
     return permissions;
   }
 
+  /** Define a new role, optionally with permission slugs. */
+  createRole(input: { slug: string; name: string; permissions?: string[] }): Promise<RoleSummary> {
+    return this.request("POST", "/roles", { body: input });
+  }
+
+  /** Update a role's name and/or permissions (omit a field to leave it unchanged). */
+  updateRole(
+    slug: string,
+    patch: { name?: string; permissions?: string[] },
+  ): Promise<RoleSummary> {
+    return this.request("PATCH", `/roles/${encodeURIComponent(slug)}`, { body: patch });
+  }
+
+  /** Delete a role. */
+  deleteRole(slug: string): Promise<void> {
+    return this.request("DELETE", `/roles/${encodeURIComponent(slug)}`, { expectNoContent: true });
+  }
+
+  /** Define a new permission. */
+  createPermission(input: { slug: string; name: string }): Promise<PermissionSummary> {
+    return this.request("POST", "/permissions", { body: input });
+  }
+
+  /** Rename a permission. */
+  updatePermission(slug: string, name: string): Promise<PermissionSummary> {
+    return this.request("PATCH", `/permissions/${encodeURIComponent(slug)}`, { body: { name } });
+  }
+
+  /** Delete a permission. */
+  deletePermission(slug: string): Promise<void> {
+    return this.request("DELETE", `/permissions/${encodeURIComponent(slug)}`, { expectNoContent: true });
+  }
+
   // ---- Users ----
 
   /** List the app's members (paginated; `search` is an email substring filter). */
