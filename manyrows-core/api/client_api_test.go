@@ -317,6 +317,7 @@ func setupServerAPIRouter(t *testing.T) *chi.Mux {
 	appRouter.Get("/check-permission", requestHandler.ServerCheckPermission)
 	appRouter.Get("/roles", requestHandler.ServerListRoles)
 	appRouter.Get("/permissions", requestHandler.ServerListPermissions)
+	appRouter.Get("/auth-logs", requestHandler.ServerListAppAuthLogs)
 	appRouter.Put("/config/{configKey}", requestHandler.ServerSetConfigValue)
 	appRouter.Delete("/config/{configKey}", requestHandler.ServerDeleteConfigValue)
 	appRouter.Put("/features/{flagKey}", requestHandler.ServerSetFeatureFlag)
@@ -2688,6 +2689,29 @@ func TestServerGetUserAuthLogs(t *testing.T) {
 	}
 	if resp.Logs[0].Event != string(core.AuthEventLoginSuccess) {
 		t.Fatalf("expected event login.success, got %q", resp.Logs[0].Event)
+	}
+
+	// App-wide auth-log endpoint (no user filter) returns the same event.
+	rr = httptest.NewRecorder()
+	router.ServeHTTP(rr, httptest.NewRequest(http.MethodGet,
+		"/x/"+ws.Slug+"/api/v1/apps/"+appID.String()+"/auth-logs?pageSize=10", nil))
+	if rr.Code != http.StatusOK {
+		t.Fatalf("app auth-logs: expected 200, got %d: %s", rr.Code, rr.Body.String())
+	}
+	var appResp api.ServerAuthLogsResponse
+	if err := json.Unmarshal(rr.Body.Bytes(), &appResp); err != nil {
+		t.Fatalf("parse app auth-logs: %v", err)
+	}
+	if appResp.Total < 1 || len(appResp.Logs) < 1 {
+		t.Fatalf("app auth-logs: expected at least one log, got total=%d len=%d", appResp.Total, len(appResp.Logs))
+	}
+
+	// A bad `since` is a 400.
+	rr = httptest.NewRecorder()
+	router.ServeHTTP(rr, httptest.NewRequest(http.MethodGet,
+		"/x/"+ws.Slug+"/api/v1/apps/"+appID.String()+"/auth-logs?since=not-a-date", nil))
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("app auth-logs bad since: expected 400, got %d", rr.Code)
 	}
 }
 

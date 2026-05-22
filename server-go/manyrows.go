@@ -431,6 +431,39 @@ func (c *Client) GetUserAuthLogs(ctx context.Context, userID string, page, pageS
 	return &out, c.do(ctx, http.MethodGet, "/users/"+url.PathEscape(userID)+"/auth-logs", q, nil, &out)
 }
 
+// AuthLogsParams filters the app-wide auth-log query. Zero values are omitted.
+// Since/Until are RFC3339; Outcome is "success" or "failure".
+type AuthLogsParams struct {
+	Since    string
+	Until    string
+	Outcome  string
+	Page     int
+	PageSize int
+}
+
+// ListAuthLogs returns the app's auth-event history (all users), newest first —
+// for ingesting into a SIEM/analytics pipeline (use Since/Until for incremental pulls).
+func (c *Client) ListAuthLogs(ctx context.Context, p AuthLogsParams) (*AuthLogsPage, error) {
+	q := url.Values{}
+	if p.Since != "" {
+		q.Set("since", p.Since)
+	}
+	if p.Until != "" {
+		q.Set("until", p.Until)
+	}
+	if p.Outcome != "" {
+		q.Set("outcome", p.Outcome)
+	}
+	if p.Page > 0 {
+		q.Set("page", strconv.Itoa(p.Page))
+	}
+	if p.PageSize > 0 {
+		q.Set("pageSize", strconv.Itoa(p.PageSize))
+	}
+	var out AuthLogsPage
+	return &out, c.do(ctx, http.MethodGet, "/auth-logs", q, nil, &out)
+}
+
 // RevokeUserSessions force-logs-out a member from this app and returns the count revoked.
 func (c *Client) RevokeUserSessions(ctx context.Context, userID string) (int64, error) {
 	var out struct {

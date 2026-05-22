@@ -76,6 +76,7 @@ except ManyRowsServerError as err:
 | `set_user_email_verified(user_id, verified)` | `PUT /users/{id}/email-verified` |
 | `create_magic_link(user_id, remember_me=…)` | `POST /users/{id}/magic-link` |
 | `get_user_auth_logs(user_id, page=…, page_size=…)` | `GET /users/{id}/auth-logs` |
+| `list_auth_logs(since=…, until=…, outcome=…, …)` | `GET /auth-logs` |
 | `list_user_fields()` | `GET /user-fields` |
 | `get_user_field_values(user_id)` | `GET /user-fields/users/{id}` |
 | `set_user_field_value(field_id, user_id, value)` | `PUT /user-fields/{fieldId}/users/{id}` |

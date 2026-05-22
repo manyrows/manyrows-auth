@@ -374,6 +374,15 @@ export class ManyRowsServer {
     });
   }
 
+  /** App-wide auth-event history (all users), for SIEM/analytics ingestion. */
+  listAuthLogs(
+    opts: { since?: string; until?: string; outcome?: "success" | "failure"; page?: number; pageSize?: number } = {},
+  ): Promise<AuthLogsPage> {
+    return this.request("GET", "/auth-logs", {
+      query: { since: opts.since, until: opts.until, outcome: opts.outcome, page: opts.page, pageSize: opts.pageSize },
+    });
+  }
+
   /** Force-logout: revoke all of a member's sessions for this app. */
   revokeUserSessions(userId: string): Promise<{ revoked: number }> {
     return this.request("DELETE", `/users/${encodeURIComponent(userId)}/sessions`);

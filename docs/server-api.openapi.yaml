@@ -479,6 +479,42 @@ paths:
         "400": { $ref: "#/components/responses/BadRequest" }
         "404": { $ref: "#/components/responses/NotFound" }
 
+  /apps/{appId}/auth-logs:
+    parameters:
+      - $ref: "#/components/parameters/AppId"
+    get:
+      tags: [Users]
+      summary: App-wide authentication-event history
+      description: >
+        All users' auth events for the app, newest first — for ingesting into a
+        SIEM/analytics pipeline. Use `since`/`until` for incremental pulls.
+      operationId: listAppAuthLogs
+      parameters:
+        - name: since
+          in: query
+          description: RFC3339 lower bound (inclusive).
+          schema: { type: string, format: date-time }
+        - name: until
+          in: query
+          description: RFC3339 upper bound (exclusive).
+          schema: { type: string, format: date-time }
+        - name: outcome
+          in: query
+          schema: { type: string, enum: [success, failure] }
+        - name: page
+          in: query
+          schema: { type: integer, default: 0, minimum: 0 }
+        - name: pageSize
+          in: query
+          schema: { type: integer, default: 50, maximum: 200 }
+      responses:
+        "200":
+          description: A page of auth-log entries.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AuthLogsResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+
   /apps/{appId}/users/{userId}/auth-logs:
     parameters:
       - $ref: "#/components/parameters/AppId"

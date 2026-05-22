@@ -79,6 +79,7 @@ if errors.As(err, &apiErr) && apiErr.Status == http.StatusNotFound {
 | `SetUserEmailVerified(ctx, userID, verified)` | `PUT /users/{id}/email-verified` |
 | `CreateMagicLink(ctx, userID, rememberMe)` | `POST /users/{id}/magic-link` |
 | `GetUserAuthLogs(ctx, userID, page, pageSize)` | `GET /users/{id}/auth-logs` |
+| `ListAuthLogs(ctx, AuthLogsParams{…})` | `GET /auth-logs` |
 | `ListUserFields(ctx)` | `GET /user-fields` |
 | `GetUserFieldValues(ctx, userID)` | `GET /user-fields/users/{id}` |
 | `SetUserFieldValue(ctx, fieldID, userID, value)` | `PUT /user-fields/{fieldId}/users/{id}` |

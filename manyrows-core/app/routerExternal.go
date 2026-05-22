@@ -164,6 +164,8 @@ func (a *AppService) serverAPIRouter(h *api.RequestHandler) *chi.Mux {
 	// Authorization catalog: the assignable role/permission slugs for the app.
 	appRouter.Get("/roles", h.ServerListRoles)
 	appRouter.Get("/permissions", h.ServerListPermissions)
+	// App-wide auth-event history (all users), for SIEM/analytics ingestion.
+	appRouter.Get("/auth-logs", h.ServerListAppAuthLogs)
 
 	// Config-value + feature-flag management (read via the delivery endpoint).
 	appRouter.Put("/config/{configKey}", h.ServerSetConfigValue)

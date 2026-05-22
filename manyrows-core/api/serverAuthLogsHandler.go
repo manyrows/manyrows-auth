@@ -2,6 +2,7 @@ package api
 
 import (
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -33,6 +34,66 @@ type ServerAuthLogsResponse struct {
 	PageSize int                  `json:"pageSize"`
 }
 
+// ServerListAppAuthLogs returns the app's authentication-event history (all
+// users), newest first, paginated — for backends ingesting auth events into a
+// SIEM/analytics pipeline. Supports incremental pulls via `since`/`until`
+// (RFC3339) and an optional `outcome` filter (success|failure).
+// GET /x/{workspaceSlug}/api/v1/apps/{appId}/auth-logs
+func (handler *RequestHandler) ServerListAppAuthLogs(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	ws, ok := core.WorkspaceFromContext(ctx)
+	if !ok || ws == nil {
+		WriteError(w, r, "error.unauthorized", http.StatusUnauthorized)
+		return
+	}
+	app, ok := core.AppFromContext(ctx)
+	if !ok || app == nil {
+		WriteError(w, r, "error.appNotFound", http.StatusNotFound)
+		return
+	}
+
+	q := r.URL.Query()
+	page, pageSize, ok := parseAuthLogPaging(w, r, q)
+	if !ok {
+		return
+	}
+
+	params := repo.ListAuthLogsParams{
+		WorkspaceID: ws.ID,
+		AppID:       &app.ID,
+		Page:        page,
+		PageSize:    pageSize,
+	}
+	if v := strings.TrimSpace(q.Get("since")); v != "" {
+		t, err := time.Parse(time.RFC3339, v)
+		if err != nil {
+			WriteError(w, r, "error.badRequest", http.StatusBadRequest)
+			return
+		}
+		params.Since = &t
+	}
+	if v := strings.TrimSpace(q.Get("until")); v != "" {
+		t, err := time.Parse(time.RFC3339, v)
+		if err != nil {
+			WriteError(w, r, "error.badRequest", http.StatusBadRequest)
+			return
+		}
+		params.Until = &t
+	}
+	if v := strings.TrimSpace(q.Get("outcome")); v != "" {
+		params.Outcome = core.AuthLogOutcome(v)
+	}
+
+	logs, total, err := handler.repo.ListAuthLogs(ctx, params)
+	if err != nil {
+		log.Err(err).Msg("ServerListAppAuthLogs: ListAuthLogs failed")
+		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
+		return
+	}
+	utils.WriteJson(w, ServerAuthLogsResponse{Logs: toServerAuthLogEntries(logs), Total: total, Page: page, PageSize: pageSize})
+}
+
 // ServerGetUserAuthLogs returns a member's authentication-event history for
 // this app (sign-ins, password changes, status changes, etc.), newest first,
 // paginated.
@@ -58,34 +119,15 @@ func (handler *RequestHandler) ServerGetUserAuthLogs(w http.ResponseWriter, r *h
 		return
 	}
 
-	q := r.URL.Query()
-	page := 0
-	if v := strings.TrimSpace(q.Get("page")); v != "" {
-		n, err := strconv.Atoi(v)
-		if err != nil || n < 0 {
-			WriteError(w, r, "error.invalidPage", http.StatusBadRequest)
-			return
-		}
-		page = n
-	}
-	pageSize := 50
-	if v := strings.TrimSpace(q.Get("pageSize")); v != "" {
-		n, err := strconv.Atoi(v)
-		if err != nil || n <= 0 {
-			WriteError(w, r, "error.invalidPageSize", http.StatusBadRequest)
-			return
-		}
-		if n > 200 {
-			n = 200
-		}
-		pageSize = n
+	page, pageSize, ok := parseAuthLogPaging(w, r, r.URL.Query())
+	if !ok {
+		return
 	}
 
-	appID := app.ID
 	uid := userID
 	logs, total, err := handler.repo.ListAuthLogs(ctx, repo.ListAuthLogsParams{
 		WorkspaceID:   ws.ID,
-		AppID:         &appID,
+		AppID:         &app.ID,
 		SubjectUserID: &uid,
 		Page:          page,
 		PageSize:      pageSize,
@@ -95,7 +137,37 @@ func (handler *RequestHandler) ServerGetUserAuthLogs(w http.ResponseWriter, r *h
 		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 		return
 	}
+	utils.WriteJson(w, ServerAuthLogsResponse{Logs: toServerAuthLogEntries(logs), Total: total, Page: page, PageSize: pageSize})
+}
 
+// parseAuthLogPaging reads page/pageSize query params (page>=0, pageSize 1..200,
+// default 50). On a bad value it writes a 400 and returns ok=false.
+func parseAuthLogPaging(w http.ResponseWriter, r *http.Request, q url.Values) (page, pageSize int, ok bool) {
+	page = 0
+	if v := strings.TrimSpace(q.Get("page")); v != "" {
+		n, err := strconv.Atoi(v)
+		if err != nil || n < 0 {
+			WriteError(w, r, "error.invalidPage", http.StatusBadRequest)
+			return 0, 0, false
+		}
+		page = n
+	}
+	pageSize = 50
+	if v := strings.TrimSpace(q.Get("pageSize")); v != "" {
+		n, err := strconv.Atoi(v)
+		if err != nil || n <= 0 {
+			WriteError(w, r, "error.invalidPageSize", http.StatusBadRequest)
+			return 0, 0, false
+		}
+		if n > 200 {
+			n = 200
+		}
+		pageSize = n
+	}
+	return page, pageSize, true
+}
+
+func toServerAuthLogEntries(logs []core.AuthLog) []ServerAuthLogEntry {
 	out := make([]ServerAuthLogEntry, 0, len(logs))
 	for _, l := range logs {
 		e := ServerAuthLogEntry{
@@ -114,6 +186,5 @@ func (handler *RequestHandler) ServerGetUserAuthLogs(w http.ResponseWriter, r *h
 		}
 		out = append(out, e)
 	}
-
-	utils.WriteJson(w, ServerAuthLogsResponse{Logs: out, Total: total, Page: page, PageSize: pageSize})
+	return out
 }

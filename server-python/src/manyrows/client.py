@@ -188,6 +188,32 @@ class ManyRowsServer:
         data = self._request("GET", f"/users/{urllib.parse.quote(user_id, safe='')}/auth-logs", query=query)
         return from_dict(AuthLogsPage, data)
 
+    def list_auth_logs(
+        self,
+        *,
+        since: Optional[str] = None,
+        until: Optional[str] = None,
+        outcome: Optional[str] = None,
+        page: Optional[int] = None,
+        page_size: Optional[int] = None,
+    ) -> AuthLogsPage:
+        """App-wide auth-event history (all users), for SIEM/analytics ingestion.
+
+        ``since``/``until`` are RFC3339 timestamps for incremental pulls.
+        """
+        query: dict[str, Any] = {}
+        if since:
+            query["since"] = since
+        if until:
+            query["until"] = until
+        if outcome:
+            query["outcome"] = outcome
+        if page:
+            query["page"] = page
+        if page_size:
+            query["pageSize"] = page_size
+        return from_dict(AuthLogsPage, self._request("GET", "/auth-logs", query=query))
+
     def revoke_user_sessions(self, user_id: str) -> int:
         """Force-logout: revoke all of a member's sessions for this app. Returns the count revoked."""
         data = self._request("DELETE", f"/users/{urllib.parse.quote(user_id, safe='')}/sessions")
