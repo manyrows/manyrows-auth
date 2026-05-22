@@ -992,8 +992,10 @@ export default function AppUsers({ project, appId: appIdProp }: Props) {
   };
 
   const closeInfoDialog = () => {
+    // Only trigger the exit animation here; clearing infoMember is deferred to
+    // the Dialog's onExited so the content doesn't unmount mid-fade (which
+    // leaves the static title flashing on its own).
     setInfoOpen(false);
-    setInfoMember(null);
   };
 
   const saveAllUserFields = async () => {
@@ -2147,7 +2149,13 @@ export default function AppUsers({ project, appId: appIdProp }: Props) {
       />
 
       {/* User info dialog */}
-      <Dialog open={infoOpen} onClose={closeInfoDialog} fullWidth maxWidth="xs">
+      <Dialog
+        open={infoOpen}
+        onClose={closeInfoDialog}
+        fullWidth
+        maxWidth="sm"
+        TransitionProps={{ onExited: () => setInfoMember(null) }}
+      >
         <DialogTitle>{t("projectMembers.userInfo", "User Info")}</DialogTitle>
         <DialogContent>
           {infoMember && (
