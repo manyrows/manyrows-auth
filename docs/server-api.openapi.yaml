@@ -764,6 +764,26 @@ paths:
         "204": { description: Deleted. }
         "404": { $ref: "#/components/responses/NotFound" }
 
+  /apps/{appId}/webhooks/{webhookId}/rotate-secret:
+    parameters:
+      - $ref: "#/components/parameters/AppId"
+      - name: webhookId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      tags: [Webhooks]
+      summary: Rotate a webhook's signing secret
+      description: Issues a fresh signing secret; the response includes it once (redacted everywhere else).
+      operationId: rotateWebhookSecret
+      responses:
+        "200":
+          description: The webhook with its new secret.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Webhook" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
   /apps/{appId}/auth-logs:
     parameters:
       - $ref: "#/components/parameters/AppId"

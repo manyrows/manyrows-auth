@@ -179,6 +179,7 @@ func (a *AppService) serverAPIRouter(h *api.RequestHandler) *chi.Mux {
 	appRouter.Get("/webhooks/{webhookId}", h.ServerGetWebhook)
 	appRouter.Patch("/webhooks/{webhookId}", h.ServerUpdateWebhook)
 	appRouter.Delete("/webhooks/{webhookId}", h.ServerDeleteWebhook)
+	appRouter.Post("/webhooks/{webhookId}/rotate-secret", h.ServerRotateWebhookSecret)
 
 	// Config-value + feature-flag management (read via the delivery endpoint).
 	appRouter.Put("/config/{configKey}", h.ServerSetConfigValue)

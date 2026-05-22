@@ -205,6 +205,19 @@ func (r *Repo) UpdateWebhook(ctx context.Context, w core.Webhook) error {
 	return err
 }
 
+// RotateWebhookSecret replaces a webhook's signing secret (app-scoped).
+func (r *Repo) RotateWebhookSecret(ctx context.Context, webhookID, appID uuid.UUID, secret string) error {
+	const q = `UPDATE webhooks SET secret = $1, updated_at = now() WHERE id = $2 AND app_id = $3`
+	ct, err := r.db.Pool().Exec(ctx, q, secret, webhookID, appID)
+	if err != nil {
+		return err
+	}
+	if ct.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
 func (r *Repo) DeleteWebhook(ctx context.Context, webhookID, appID uuid.UUID) error {
 	const q = `
 		DELETE FROM webhooks

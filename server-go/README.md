@@ -87,6 +87,7 @@ if errors.As(err, &apiErr) && apiErr.Status == http.StatusNotFound {
 | `ListAuthLogs(ctx, AuthLogsParams{…})` | `GET /auth-logs` |
 | `ListWebhooks(ctx)` / `CreateWebhook(ctx, WebhookInput{…})` | `GET` · `POST /webhooks` |
 | `GetWebhook(ctx, id)` / `UpdateWebhook(ctx, id, WebhookUpdate{…})` / `DeleteWebhook(ctx, id)` | `GET` · `PATCH` · `DELETE /webhooks/{id}` |
+| `RotateWebhookSecret(ctx, id)` | `POST /webhooks/{id}/rotate-secret` |
 | `ListUserFields(ctx)` | `GET /user-fields` |
 | `GetUserFieldValues(ctx, userID)` | `GET /user-fields/users/{id}` |
 | `SetUserFieldValue(ctx, fieldID, userID, value)` | `PUT /user-fields/{fieldId}/users/{id}` |

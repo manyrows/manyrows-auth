@@ -481,6 +481,11 @@ export class ManyRowsServer {
     return this.request("DELETE", `/webhooks/${encodeURIComponent(webhookId)}`, { expectNoContent: true });
   }
 
+  /** Issue a fresh signing secret for a webhook; the returned `secret` is shown only here. */
+  rotateWebhookSecret(webhookId: string): Promise<Webhook> {
+    return this.request("POST", `/webhooks/${encodeURIComponent(webhookId)}/rotate-secret`);
+  }
+
   /** Force-logout: revoke all of a member's sessions for this app. */
   revokeUserSessions(userId: string): Promise<{ revoked: number }> {
     return this.request("DELETE", `/users/${encodeURIComponent(userId)}/sessions`);

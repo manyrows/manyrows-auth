@@ -329,6 +329,7 @@ func setupServerAPIRouter(t *testing.T) *chi.Mux {
 	appRouter.Get("/webhooks/{webhookId}", requestHandler.ServerGetWebhook)
 	appRouter.Patch("/webhooks/{webhookId}", requestHandler.ServerUpdateWebhook)
 	appRouter.Delete("/webhooks/{webhookId}", requestHandler.ServerDeleteWebhook)
+	appRouter.Post("/webhooks/{webhookId}/rotate-secret", requestHandler.ServerRotateWebhookSecret)
 	appRouter.Put("/config/{configKey}", requestHandler.ServerSetConfigValue)
 	appRouter.Delete("/config/{configKey}", requestHandler.ServerDeleteConfigValue)
 	appRouter.Put("/features/{flagKey}", requestHandler.ServerSetFeatureFlag)
@@ -3144,6 +3145,17 @@ func TestServerWebhookCRUD(t *testing.T) {
 	_ = json.Unmarshal(rr.Body.Bytes(), &listResp)
 	if len(listResp.Webhooks) != 1 || listResp.Webhooks[0].Secret != "" {
 		t.Fatalf("list: expected 1 webhook with redacted secret, got %+v", listResp.Webhooks)
+	}
+
+	// Rotate secret → 200 with a fresh secret different from the original.
+	rr = send(http.MethodPost, base+"/"+whID+"/rotate-secret", "")
+	if rr.Code != http.StatusOK {
+		t.Fatalf("rotate secret: expected 200, got %d: %s", rr.Code, rr.Body.String())
+	}
+	var rotated core.Webhook
+	_ = json.Unmarshal(rr.Body.Bytes(), &rotated)
+	if rotated.Secret == "" || rotated.Secret == created.Secret {
+		t.Fatalf("rotate should return a new secret, got %q (orig %q)", rotated.Secret, created.Secret)
 	}
 
 	// Patch status → disabled.

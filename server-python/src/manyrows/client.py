@@ -312,6 +312,11 @@ class ManyRowsServer:
         """Delete a webhook."""
         self._request("DELETE", f"/webhooks/{urllib.parse.quote(webhook_id, safe='')}")
 
+    def rotate_webhook_secret(self, webhook_id: str) -> Webhook:
+        """Issue a fresh signing secret; the returned ``secret`` is shown only here."""
+        path = f"/webhooks/{urllib.parse.quote(webhook_id, safe='')}/rotate-secret"
+        return from_dict(Webhook, self._request("POST", path))
+
     def revoke_user_sessions(self, user_id: str) -> int:
         """Force-logout: revoke all of a member's sessions for this app. Returns the count revoked."""
         data = self._request("DELETE", f"/users/{urllib.parse.quote(user_id, safe='')}/sessions")

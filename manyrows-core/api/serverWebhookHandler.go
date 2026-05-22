@@ -210,6 +210,45 @@ func (handler *RequestHandler) ServerUpdateWebhook(w http.ResponseWriter, r *htt
 	utils.WriteJson(w, wh)
 }
 
+// ServerRotateWebhookSecret issues a fresh signing secret for a webhook and
+// returns it ONCE (redacted everywhere else). Use after a suspected leak.
+// POST /x/{workspaceSlug}/api/v1/apps/{appId}/webhooks/{webhookId}/rotate-secret
+func (handler *RequestHandler) ServerRotateWebhookSecret(w http.ResponseWriter, r *http.Request) {
+	app, ok := handler.serverWebhookApp(w, r)
+	if !ok {
+		return
+	}
+	id, err := uuid.FromString(chi.URLParam(r, "webhookId"))
+	if err != nil {
+		WriteError(w, r, "error.badRequest", http.StatusBadRequest)
+		return
+	}
+	wh, found, err := handler.repo.GetWebhookByID(r.Context(), id, app.ID)
+	if err != nil {
+		log.Err(err).Msg("ServerRotateWebhookSecret: lookup failed")
+		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
+		return
+	}
+	if !found {
+		WriteError(w, r, "error.notFound", http.StatusNotFound)
+		return
+	}
+	secret, err := generateWebhookSecret()
+	if err != nil {
+		log.Err(err).Msg("ServerRotateWebhookSecret: secret generation failed")
+		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
+		return
+	}
+	if err := handler.repo.RotateWebhookSecret(r.Context(), id, app.ID, secret); err != nil {
+		log.Err(err).Msg("ServerRotateWebhookSecret: rotate failed")
+		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
+		return
+	}
+	wh.Secret = secret
+	wh.UpdatedAt = time.Now().UTC()
+	utils.WriteJson(w, wh)
+}
+
 // ServerDeleteWebhook removes a webhook subscription.
 // DELETE /x/{workspaceSlug}/api/v1/apps/{appId}/webhooks/{webhookId}
 func (handler *RequestHandler) ServerDeleteWebhook(w http.ResponseWriter, r *http.Request) {

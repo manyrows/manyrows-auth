@@ -597,6 +597,13 @@ func (c *Client) DeleteWebhook(ctx context.Context, webhookID string) error {
 	return c.do(ctx, http.MethodDelete, "/webhooks/"+url.PathEscape(webhookID), nil, nil, nil)
 }
 
+// RotateWebhookSecret issues a fresh signing secret; the returned Webhook.Secret
+// is populated only here.
+func (c *Client) RotateWebhookSecret(ctx context.Context, webhookID string) (*Webhook, error) {
+	var out Webhook
+	return &out, c.do(ctx, http.MethodPost, "/webhooks/"+url.PathEscape(webhookID)+"/rotate-secret", nil, nil, &out)
+}
+
 // RevokeUserSessions force-logs-out a member from this app and returns the count revoked.
 func (c *Client) RevokeUserSessions(ctx context.Context, userID string) (int64, error) {
 	var out struct {

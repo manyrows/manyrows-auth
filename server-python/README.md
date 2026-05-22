@@ -84,6 +84,7 @@ except ManyRowsServerError as err:
 | `list_auth_logs(since=…, until=…, outcome=…, …)` | `GET /auth-logs` |
 | `list_webhooks()` / `create_webhook(url=…, events=…)` | `GET` · `POST /webhooks` |
 | `get_webhook(id)` / `update_webhook(id, …)` / `delete_webhook(id)` | `GET` · `PATCH` · `DELETE /webhooks/{id}` |
+| `rotate_webhook_secret(id)` | `POST /webhooks/{id}/rotate-secret` |
 | `list_user_fields()` | `GET /user-fields` |
 | `get_user_field_values(user_id)` | `GET /user-fields/users/{id}` |
 | `set_user_field_value(field_id, user_id, value)` | `PUT /user-fields/{fieldId}/users/{id}` |

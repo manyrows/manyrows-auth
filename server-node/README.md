@@ -87,6 +87,7 @@ try {
 | `listAuthLogs({ since?, until?, outcome?, page?, pageSize? })` | `GET /auth-logs` |
 | `listWebhooks()` / `createWebhook({ url, events, description? })` | `GET` · `POST /webhooks` |
 | `getWebhook(id)` / `updateWebhook(id, patch)` / `deleteWebhook(id)` | `GET` · `PATCH` · `DELETE /webhooks/{id}` |
+| `rotateWebhookSecret(id)` | `POST /webhooks/{id}/rotate-secret` |
 | `listUserFields()` | `GET /user-fields` |
 | `getUserFieldValues(userId)` | `GET /user-fields/users/{id}` |
 | `setUserFieldValue(fieldId, userId, value)` | `PUT /user-fields/{fieldId}/users/{id}` |
