@@ -503,6 +503,99 @@ paths:
               schema: { $ref: "#/components/schemas/AuthLogsResponse" }
         "404": { $ref: "#/components/responses/NotFound" }
 
+  /apps/{appId}/users/{userId}/totp:
+    parameters:
+      - $ref: "#/components/parameters/AppId"
+      - $ref: "#/components/parameters/UserId"
+    delete:
+      tags: [Users]
+      summary: Reset (disable) a user's 2FA
+      description: Clears the member's TOTP so a user who lost their authenticator can re-enroll.
+      operationId: resetUserTotp
+      responses:
+        "204": { description: TOTP cleared. }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /apps/{appId}/users/{userId}/unlock:
+    parameters:
+      - $ref: "#/components/parameters/AppId"
+      - $ref: "#/components/parameters/UserId"
+    post:
+      tags: [Users]
+      summary: Clear a failed-login lockout
+      description: Restores sign-in immediately for a member locked out by repeated failed logins.
+      operationId: unlockUser
+      responses:
+        "204": { description: Unlocked. }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /apps/{appId}/users/{userId}/identities:
+    parameters:
+      - $ref: "#/components/parameters/AppId"
+      - $ref: "#/components/parameters/UserId"
+    get:
+      tags: [Users]
+      summary: List linked SSO identities
+      description: The member's connected SSO/OAuth providers (pool-level).
+      operationId: listUserIdentities
+      responses:
+        "200":
+          description: Linked identities.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/IdentitiesResponse" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /apps/{appId}/users/{userId}/identities/{provider}:
+    parameters:
+      - $ref: "#/components/parameters/AppId"
+      - $ref: "#/components/parameters/UserId"
+      - name: provider
+        in: path
+        required: true
+        description: Provider key, e.g. google, apple, microsoft, github.
+        schema: { type: string }
+    delete:
+      tags: [Users]
+      summary: Unlink an SSO identity
+      operationId: deleteUserIdentity
+      responses:
+        "204": { description: Unlinked (idempotent). }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /apps/{appId}/users/{userId}/passkeys:
+    parameters:
+      - $ref: "#/components/parameters/AppId"
+      - $ref: "#/components/parameters/UserId"
+    get:
+      tags: [Users]
+      summary: List a user's passkeys
+      operationId: listUserPasskeys
+      responses:
+        "200":
+          description: The member's WebAuthn credentials for this app.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PasskeysResponse" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /apps/{appId}/users/{userId}/passkeys/{passkeyId}:
+    parameters:
+      - $ref: "#/components/parameters/AppId"
+      - $ref: "#/components/parameters/UserId"
+      - name: passkeyId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    delete:
+      tags: [Users]
+      summary: Remove a passkey
+      operationId: deleteUserPasskey
+      responses:
+        "204": { description: Removed (idempotent). }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
   /apps/{appId}/users/{userId}/magic-link:
     parameters:
       - $ref: "#/components/parameters/AppId"
@@ -845,6 +938,34 @@ components:
         ip: { type: string }
         userAgent: { type: string }
         requestId: { type: string }
+
+    Identity:
+      type: object
+      properties:
+        provider: { type: string, description: "google | apple | microsoft | github | …" }
+        providerSubject: { type: string }
+        providerEmail: { type: string }
+        createdAt: { type: string, format: date-time }
+        lastLoginAt: { type: string, format: date-time }
+
+    IdentitiesResponse:
+      type: object
+      properties:
+        identities: { type: array, items: { $ref: "#/components/schemas/Identity" } }
+
+    Passkey:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        transports: { type: array, items: { type: string } }
+        createdAt: { type: string, format: date-time }
+        lastUsedAt: { type: string, format: date-time }
+
+    PasskeysResponse:
+      type: object
+      properties:
+        passkeys: { type: array, items: { $ref: "#/components/schemas/Passkey" } }
 
     AuthLogsResponse:
       type: object

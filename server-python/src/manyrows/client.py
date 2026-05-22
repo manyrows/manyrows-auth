@@ -19,6 +19,8 @@ from .models import (
     RoleSummary,
     AuthLogsPage,
     BatchUserResult,
+    Identity,
+    Passkey,
     ServerUser,
     Session,
     UserField,
@@ -263,6 +265,34 @@ class ManyRowsServer:
     def delete_feature_flag(self, flag_key: str) -> None:
         """Clear this app's feature-flag override (falls back to the flag's default)."""
         self._request("DELETE", f"/features/{urllib.parse.quote(flag_key, safe='')}")
+
+    def reset_user_totp(self, user_id: str) -> None:
+        """Reset (disable) a member's 2FA — for a user who lost their authenticator."""
+        self._request("DELETE", f"/users/{urllib.parse.quote(user_id, safe='')}/totp")
+
+    def unlock_user(self, user_id: str) -> None:
+        """Clear a failed-login lockout on a member."""
+        self._request("POST", f"/users/{urllib.parse.quote(user_id, safe='')}/unlock")
+
+    def list_user_identities(self, user_id: str) -> list[Identity]:
+        """A member's linked SSO/OAuth identities."""
+        data = self._request("GET", f"/users/{urllib.parse.quote(user_id, safe='')}/identities")
+        return [from_dict(Identity, i) for i in data.get("identities", [])]
+
+    def delete_user_identity(self, user_id: str, provider: str) -> None:
+        """Unlink a member's SSO identity for a provider (e.g. 'google')."""
+        path = f"/users/{urllib.parse.quote(user_id, safe='')}/identities/{urllib.parse.quote(provider, safe='')}"
+        self._request("DELETE", path)
+
+    def list_user_passkeys(self, user_id: str) -> list[Passkey]:
+        """A member's passkeys (WebAuthn credentials) for this app."""
+        data = self._request("GET", f"/users/{urllib.parse.quote(user_id, safe='')}/passkeys")
+        return [from_dict(Passkey, p) for p in data.get("passkeys", [])]
+
+    def delete_user_passkey(self, user_id: str, passkey_id: str) -> None:
+        """Remove one of a member's passkeys."""
+        path = f"/users/{urllib.parse.quote(user_id, safe='')}/passkeys/{urllib.parse.quote(passkey_id, safe='')}"
+        self._request("DELETE", path)
 
     # ---- internal ----
 

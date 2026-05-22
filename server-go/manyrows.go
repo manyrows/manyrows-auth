@@ -205,6 +205,22 @@ type AuthLogsPage struct {
 	PageSize int            `json:"pageSize"`
 }
 
+type Identity struct {
+	Provider        string `json:"provider"`
+	ProviderSubject string `json:"providerSubject,omitempty"`
+	ProviderEmail   string `json:"providerEmail,omitempty"`
+	CreatedAt       string `json:"createdAt"`
+	LastLoginAt     string `json:"lastLoginAt"`
+}
+
+type Passkey struct {
+	ID         string   `json:"id"`
+	Name       string   `json:"name,omitempty"`
+	Transports []string `json:"transports,omitempty"`
+	CreatedAt  string   `json:"createdAt"`
+	LastUsedAt string   `json:"lastUsedAt,omitempty"`
+}
+
 type UserField struct {
 	ID           string `json:"id"`
 	UserPoolID   string `json:"userPoolId"`
@@ -523,6 +539,42 @@ func (c *Client) SetFeatureFlag(ctx context.Context, flagKey string, enabled boo
 // DeleteFeatureFlag clears this app's override for a flag (falls back to default).
 func (c *Client) DeleteFeatureFlag(ctx context.Context, flagKey string) error {
 	return c.do(ctx, http.MethodDelete, "/features/"+url.PathEscape(flagKey), nil, nil, nil)
+}
+
+// ResetUserTOTP disables a member's 2FA (for a user who lost their authenticator).
+func (c *Client) ResetUserTOTP(ctx context.Context, userID string) error {
+	return c.do(ctx, http.MethodDelete, "/users/"+url.PathEscape(userID)+"/totp", nil, nil, nil)
+}
+
+// UnlockUser clears a failed-login lockout on a member.
+func (c *Client) UnlockUser(ctx context.Context, userID string) error {
+	return c.do(ctx, http.MethodPost, "/users/"+url.PathEscape(userID)+"/unlock", nil, nil, nil)
+}
+
+// ListUserIdentities returns a member's linked SSO/OAuth identities.
+func (c *Client) ListUserIdentities(ctx context.Context, userID string) ([]Identity, error) {
+	var out struct {
+		Identities []Identity `json:"identities"`
+	}
+	return out.Identities, c.do(ctx, http.MethodGet, "/users/"+url.PathEscape(userID)+"/identities", nil, nil, &out)
+}
+
+// DeleteUserIdentity unlinks a member's SSO identity for a provider (e.g. "google").
+func (c *Client) DeleteUserIdentity(ctx context.Context, userID, provider string) error {
+	return c.do(ctx, http.MethodDelete, "/users/"+url.PathEscape(userID)+"/identities/"+url.PathEscape(provider), nil, nil, nil)
+}
+
+// ListUserPasskeys returns a member's passkeys (WebAuthn credentials) for this app.
+func (c *Client) ListUserPasskeys(ctx context.Context, userID string) ([]Passkey, error) {
+	var out struct {
+		Passkeys []Passkey `json:"passkeys"`
+	}
+	return out.Passkeys, c.do(ctx, http.MethodGet, "/users/"+url.PathEscape(userID)+"/passkeys", nil, nil, &out)
+}
+
+// DeleteUserPasskey removes one of a member's passkeys.
+func (c *Client) DeleteUserPasskey(ctx context.Context, userID, passkeyID string) error {
+	return c.do(ctx, http.MethodDelete, "/users/"+url.PathEscape(userID)+"/passkeys/"+url.PathEscape(passkeyID), nil, nil, nil)
 }
 
 // ---- internal ----

@@ -85,6 +85,9 @@ if errors.As(err, &apiErr) && apiErr.Status == http.StatusNotFound {
 | `DeleteUserFieldValue(ctx, fieldID, userID)` | `DELETE /user-fields/{fieldId}/users/{id}` |
 | `SetConfigValue(ctx, configKey, value)` / `DeleteConfigValue(ctx, configKey)` | `PUT` · `DELETE /config/{key}` |
 | `SetFeatureFlag(ctx, flagKey, enabled, roles)` / `DeleteFeatureFlag(ctx, flagKey)` | `PUT` · `DELETE /features/{key}` |
+| `ResetUserTOTP(ctx, userID)` / `UnlockUser(ctx, userID)` | `DELETE /users/{id}/totp` · `POST .../unlock` |
+| `ListUserIdentities(ctx, userID)` / `DeleteUserIdentity(ctx, userID, provider)` | `GET` · `DELETE /users/{id}/identities[/{provider}]` |
+| `ListUserPasskeys(ctx, userID)` / `DeleteUserPasskey(ctx, userID, passkeyID)` | `GET` · `DELETE /users/{id}/passkeys[/{pid}]` |
 
 The full HTTP contract is in [`docs/server-api.openapi.yaml`](../docs/server-api.openapi.yaml).
 

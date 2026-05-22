@@ -205,6 +205,13 @@ func (a *AppService) serverAPIRouter(h *api.RequestHandler) *chi.Mux {
 	appRouter.Delete("/users/{userId}/password", h.ServerClearUserPassword)
 	// Email verification.
 	appRouter.Put("/users/{userId}/email-verified", h.ServerSetUserEmailVerified)
+	// Account recovery + credential management.
+	appRouter.Delete("/users/{userId}/totp", h.ServerResetUserTOTP)
+	appRouter.Post("/users/{userId}/unlock", h.ServerUnlockUser)
+	appRouter.Get("/users/{userId}/identities", h.ServerListUserIdentities)
+	appRouter.Delete("/users/{userId}/identities/{provider}", h.ServerDeleteUserIdentity)
+	appRouter.Get("/users/{userId}/passkeys", h.ServerListUserPasskeys)
+	appRouter.Delete("/users/{userId}/passkeys/{passkeyId}", h.ServerDeleteUserPasskey)
 	// Remove a user from this app; prunes the pool identity if the user is
 	// left with no app memberships.
 	appRouter.Delete("/users/{userId}", h.ServerRemoveUser)

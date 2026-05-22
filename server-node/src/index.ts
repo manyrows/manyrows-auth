@@ -172,6 +172,22 @@ export interface AuthLogsPage {
   pageSize: number;
 }
 
+export interface Identity {
+  provider: string;
+  providerSubject?: string;
+  providerEmail?: string;
+  createdAt: string;
+  lastLoginAt: string;
+}
+
+export interface Passkey {
+  id: string;
+  name?: string;
+  transports?: string[];
+  createdAt: string;
+  lastUsedAt?: string;
+}
+
 export interface UserField {
   id: string;
   userPoolId: string;
@@ -467,6 +483,52 @@ export class ManyRowsServer {
   /** Clear this app's feature-flag override (falls back to the flag's default). */
   deleteFeatureFlag(flagKey: string): Promise<void> {
     return this.request("DELETE", `/features/${encodeURIComponent(flagKey)}`, { expectNoContent: true });
+  }
+
+  /** Reset (disable) a member's 2FA — for a user who lost their authenticator. */
+  resetUserTotp(userId: string): Promise<void> {
+    return this.request("DELETE", `/users/${encodeURIComponent(userId)}/totp`, { expectNoContent: true });
+  }
+
+  /** Clear a failed-login lockout on a member. */
+  unlockUser(userId: string): Promise<void> {
+    return this.request("POST", `/users/${encodeURIComponent(userId)}/unlock`, { expectNoContent: true });
+  }
+
+  /** A member's linked SSO/OAuth identities. */
+  async listUserIdentities(userId: string): Promise<Identity[]> {
+    const { identities } = await this.request<{ identities: Identity[] }>(
+      "GET",
+      `/users/${encodeURIComponent(userId)}/identities`,
+    );
+    return identities;
+  }
+
+  /** Unlink a member's SSO identity for a provider (e.g. "google"). */
+  deleteUserIdentity(userId: string, provider: string): Promise<void> {
+    return this.request(
+      "DELETE",
+      `/users/${encodeURIComponent(userId)}/identities/${encodeURIComponent(provider)}`,
+      { expectNoContent: true },
+    );
+  }
+
+  /** A member's passkeys (WebAuthn credentials) for this app. */
+  async listUserPasskeys(userId: string): Promise<Passkey[]> {
+    const { passkeys } = await this.request<{ passkeys: Passkey[] }>(
+      "GET",
+      `/users/${encodeURIComponent(userId)}/passkeys`,
+    );
+    return passkeys;
+  }
+
+  /** Remove one of a member's passkeys. */
+  deleteUserPasskey(userId: string, passkeyId: string): Promise<void> {
+    return this.request(
+      "DELETE",
+      `/users/${encodeURIComponent(userId)}/passkeys/${encodeURIComponent(passkeyId)}`,
+      { expectNoContent: true },
+    );
   }
 
   // ---- internal ----

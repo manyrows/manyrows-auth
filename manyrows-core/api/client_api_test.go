@@ -341,6 +341,12 @@ func setupServerAPIRouter(t *testing.T) *chi.Mux {
 	appRouter.Put("/users/{userId}/password", requestHandler.ServerSetUserPassword)
 	appRouter.Delete("/users/{userId}/password", requestHandler.ServerClearUserPassword)
 	appRouter.Put("/users/{userId}/email-verified", requestHandler.ServerSetUserEmailVerified)
+	appRouter.Delete("/users/{userId}/totp", requestHandler.ServerResetUserTOTP)
+	appRouter.Post("/users/{userId}/unlock", requestHandler.ServerUnlockUser)
+	appRouter.Get("/users/{userId}/identities", requestHandler.ServerListUserIdentities)
+	appRouter.Delete("/users/{userId}/identities/{provider}", requestHandler.ServerDeleteUserIdentity)
+	appRouter.Get("/users/{userId}/passkeys", requestHandler.ServerListUserPasskeys)
+	appRouter.Delete("/users/{userId}/passkeys/{passkeyId}", requestHandler.ServerDeleteUserPasskey)
 	appRouter.Delete("/users/{userId}", requestHandler.ServerRemoveUser)
 
 	serverRouter.Mount("/v1/apps/{appId}", appRouter)
@@ -2911,6 +2917,90 @@ func TestServerConfigAndFlagManagement(t *testing.T) {
 		if it.Key == "GREETING" && len(it.Value) > 0 {
 			t.Fatalf("GREETING value should be cleared after delete, got %s", it.Value)
 		}
+	}
+}
+
+func TestServerAccountRecoveryAndCredentials(t *testing.T) {
+	router := setupServerAPIRouter(t)
+
+	acc := testEnv.CreateTestAccount(t, "srv-rec-"+GenerateUniqueSlug("test")+"@example.com")
+	ws := testEnv.CreateTestWorkspace(t, acc, "Test WS", GenerateUniqueSlug("ws"))
+	project := testEnv.CreateTestProduct(t, ws, acc, "Test Product", GenerateUniqueSlug("proj"))
+	appID := createTestApp(t, ws.ID, project.ID, uuid.Nil, "Test App")
+
+	fixtures := &TestFixtures{Account: acc, Workspace: ws, Products: []core.Product{*project}}
+	defer testEnv.CleanupTestData(t, fixtures)
+	defer func() {
+		pool := testEnv.DB.Pool()
+		_, _ = pool.Exec(context.Background(), "DELETE FROM apps WHERE id = $1", appID)
+	}()
+
+	ctx := context.Background()
+	user, _, err := testEnv.GetOrCreateUserWithMembership(ctx, acc.Email, &core.App{ID: appID}, core.UserSourceInvited)
+	if err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	defer func() {
+		pool := testEnv.DB.Pool()
+		_, _ = pool.Exec(ctx, "DELETE FROM users WHERE id = $1", user.ID)
+	}()
+
+	base := "/x/" + ws.Slug + "/api/v1/apps/" + appID.String() + "/users/" + user.ID.String()
+	do := func(method, path string) *httptest.ResponseRecorder {
+		rr := httptest.NewRecorder()
+		router.ServeHTTP(rr, httptest.NewRequest(method, base+path, nil))
+		return rr
+	}
+
+	// TOTP reset + account unlock → 204.
+	if rr := do(http.MethodDelete, "/totp"); rr.Code != http.StatusNoContent {
+		t.Fatalf("reset totp: expected 204, got %d: %s", rr.Code, rr.Body.String())
+	}
+	if rr := do(http.MethodPost, "/unlock"); rr.Code != http.StatusNoContent {
+		t.Fatalf("unlock: expected 204, got %d: %s", rr.Code, rr.Body.String())
+	}
+
+	// Identities: list (empty) + idempotent unlink.
+	rr := do(http.MethodGet, "/identities")
+	if rr.Code != http.StatusOK {
+		t.Fatalf("list identities: expected 200, got %d: %s", rr.Code, rr.Body.String())
+	}
+	var ids api.ServerIdentitiesResponse
+	if err := json.Unmarshal(rr.Body.Bytes(), &ids); err != nil {
+		t.Fatalf("parse identities: %v", err)
+	}
+	if len(ids.Identities) != 0 {
+		t.Fatalf("expected no identities, got %d", len(ids.Identities))
+	}
+	if rr := do(http.MethodDelete, "/identities/google"); rr.Code != http.StatusNoContent {
+		t.Fatalf("unlink identity: expected 204, got %d", rr.Code)
+	}
+
+	// Passkeys: list (empty) + delete by id (idempotent) + bad id → 400.
+	rr = do(http.MethodGet, "/passkeys")
+	if rr.Code != http.StatusOK {
+		t.Fatalf("list passkeys: expected 200, got %d: %s", rr.Code, rr.Body.String())
+	}
+	var pks api.ServerPasskeysResponse
+	if err := json.Unmarshal(rr.Body.Bytes(), &pks); err != nil {
+		t.Fatalf("parse passkeys: %v", err)
+	}
+	if len(pks.Passkeys) != 0 {
+		t.Fatalf("expected no passkeys, got %d", len(pks.Passkeys))
+	}
+	if rr := do(http.MethodDelete, "/passkeys/"+uuid.Must(uuid.NewV4()).String()); rr.Code != http.StatusNoContent {
+		t.Fatalf("delete passkey: expected 204, got %d", rr.Code)
+	}
+	if rr := do(http.MethodDelete, "/passkeys/not-a-uuid"); rr.Code != http.StatusBadRequest {
+		t.Fatalf("bad passkey id: expected 400, got %d", rr.Code)
+	}
+
+	// Non-member is gated (404) — spot-check one endpoint.
+	stranger := "/x/" + ws.Slug + "/api/v1/apps/" + appID.String() + "/users/" + uuid.Must(uuid.NewV4()).String() + "/identities"
+	rr = httptest.NewRecorder()
+	router.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, stranger, nil))
+	if rr.Code != http.StatusNotFound {
+		t.Fatalf("non-member: expected 404, got %d", rr.Code)
 	}
 }
 

@@ -82,6 +82,9 @@ except ManyRowsServerError as err:
 | `delete_user_field_value(field_id, user_id)` | `DELETE /user-fields/{fieldId}/users/{id}` |
 | `set_config_value(config_key, value)` / `delete_config_value(config_key)` | `PUT` · `DELETE /config/{key}` |
 | `set_feature_flag(flag_key, enabled, roles=…)` / `delete_feature_flag(flag_key)` | `PUT` · `DELETE /features/{key}` |
+| `reset_user_totp(user_id)` / `unlock_user(user_id)` | `DELETE /users/{id}/totp` · `POST .../unlock` |
+| `list_user_identities(user_id)` / `delete_user_identity(user_id, provider)` | `GET` · `DELETE /users/{id}/identities[/{provider}]` |
+| `list_user_passkeys(user_id)` / `delete_user_passkey(user_id, passkey_id)` | `GET` · `DELETE /users/{id}/passkeys[/{pid}]` |
 
 The full HTTP contract is in [`docs/server-api.openapi.yaml`](../docs/server-api.openapi.yaml).
 

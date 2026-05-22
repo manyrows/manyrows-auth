@@ -152,6 +152,24 @@ class AuthLogsPage:
 
 
 @dataclass
+class Identity:
+    provider: str = ""
+    provider_subject: str = ""
+    provider_email: str = ""
+    created_at: str = ""
+    last_login_at: str = ""
+
+
+@dataclass
+class Passkey:
+    id: str = ""
+    name: str = ""
+    transports: list[str] = field(default_factory=list)
+    created_at: str = ""
+    last_used_at: str = ""
+
+
+@dataclass
 class UserField:
     id: str = ""
     user_pool_id: str = ""

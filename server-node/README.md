@@ -85,6 +85,9 @@ try {
 | `deleteUserFieldValue(fieldId, userId)` | `DELETE /user-fields/{fieldId}/users/{id}` |
 | `setConfigValue(configKey, value)` / `deleteConfigValue(configKey)` | `PUT` · `DELETE /config/{key}` |
 | `setFeatureFlag(flagKey, enabled, roles?)` / `deleteFeatureFlag(flagKey)` | `PUT` · `DELETE /features/{key}` |
+| `resetUserTotp(userId)` / `unlockUser(userId)` | `DELETE /users/{id}/totp` · `POST .../unlock` |
+| `listUserIdentities(userId)` / `deleteUserIdentity(userId, provider)` | `GET` · `DELETE /users/{id}/identities[/{provider}]` |
+| `listUserPasskeys(userId)` / `deleteUserPasskey(userId, passkeyId)` | `GET` · `DELETE /users/{id}/passkeys[/{pid}]` |
 
 The full HTTP contract is in [`docs/server-api.openapi.yaml`](../docs/server-api.openapi.yaml).
 
