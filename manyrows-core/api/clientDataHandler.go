@@ -506,11 +506,12 @@ func (handler *RequestHandler) ServerGetAppMembers(w http.ResponseWriter, r *htt
 		pageSize = n
 	}
 
-	email := strings.TrimSpace(q.Get("email"))
+	// Substring filter on email. Named "search" (not "email") because on the
+	// /users collection ?email= is the exact single-user lookup.
+	search := strings.TrimSpace(q.Get("search"))
 
-	_ = ctx // sdProduct load not needed now that GetProductMembersByApp doesn't take a scope level
 	members, total, err := handler.repo.GetProductMembersByApp(
-		ctx, project.ID, app.ID, page, pageSize, email, 0, repo.MemberEnabledFilterAny, repo.MemberRoleFilter{},
+		ctx, project.ID, app.ID, page, pageSize, search, 0, repo.MemberEnabledFilterAny, repo.MemberRoleFilter{},
 	)
 	if err != nil {
 		log.Err(err).Msg("Could not get app members")

@@ -160,7 +160,6 @@ func (a *AppService) serverAPIRouter(h *api.RequestHandler) *chi.Mux {
 	appRouter.Use(appIPAllowlistMiddleware(a.repo))
 	appRouter.Get("/", h.GetDeliveryForServer)
 	appRouter.Get("/check-permission", h.ServerCheckPermission)
-	appRouter.Get("/members", h.ServerGetAppMembers)
 
 	// User fields (app-scoped). Schema is read-only; values can be read
 	// and written per user (handlers pool-scope every userId).
@@ -169,12 +168,19 @@ func (a *AppService) serverAPIRouter(h *api.RequestHandler) *chi.Mux {
 	appRouter.Put("/user-fields/{userFieldId}/users/{userId}", h.ServerUpsertUserFieldValue)
 	appRouter.Delete("/user-fields/{userFieldId}/users/{userId}", h.ServerDeleteUserFieldValue)
 
-	// User lookup
+	// Users: list app members (GET /users, ?search= filter) or look one up by
+	// email (GET /users?email=); fetch one by id (GET /users/{userId});
+	// provision (POST /users, create-or-find in pool + add to app).
 	appRouter.Get("/users", h.HandleServerGetUser)
+	appRouter.Get("/users/{userId}", h.ServerGetUserByID)
+	appRouter.Post("/users", h.ServerCreateUser)
 
-	// User mutations (force-logout, role assignment), app/pool-scoped.
+	// User mutations (force-logout, role assignment, removal), app/pool-scoped.
 	appRouter.Delete("/users/{userId}/sessions", h.ServerRevokeUserSessions)
 	appRouter.Put("/users/{userId}/roles", h.ServerReplaceUserRoles)
+	// Remove a user from this app; prunes the pool identity if the user is
+	// left with no app memberships.
+	appRouter.Delete("/users/{userId}", h.ServerRemoveUser)
 
 	r.Mount("/v1/apps/{appId}", appRouter)
 

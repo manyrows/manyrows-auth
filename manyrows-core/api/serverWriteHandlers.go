@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"manyrows-core/auth"
 	"manyrows-core/core"
 	"manyrows-core/core/repo"
 	"manyrows-core/utils"
@@ -39,6 +40,57 @@ func (handler *RequestHandler) requireAppMember(w http.ResponseWriter, r *http.R
 		return false
 	}
 	return true
+}
+
+// apiKeyActorID returns the calling API key's ID for attributing audit-log
+// rows (ActorAPIKeyID), or nil if no key is in context.
+func apiKeyActorID(ctx context.Context) *uuid.UUID {
+	if key, ok := core.APIKeyFromContext(ctx); ok && key != nil {
+		id := key.ID
+		return &id
+	}
+	return nil
+}
+
+// resolveRoleSlugs maps role slugs to role IDs within the product,
+// de-duplicating. An unknown slug or a DB error writes the HTTP response and
+// returns ok=false; an empty input is valid and yields empty slices (clears
+// roles). Returns the resolved IDs and the canonical slugs (1:1, order
+// preserved) so callers can echo what they set without a read-back.
+func (handler *RequestHandler) resolveRoleSlugs(w http.ResponseWriter, r *http.Request, productID uuid.UUID, rawSlugs []string) (roleIDs []uuid.UUID, slugs []string, ok bool) {
+	roleIDs = []uuid.UUID{}
+	slugs = []string{}
+	if len(rawSlugs) == 0 {
+		return roleIDs, slugs, true
+	}
+
+	productRoles, err := handler.repo.GetRolesByProductID(r.Context(), productID)
+	if err != nil {
+		log.Err(err).Msg("resolveRoleSlugs: GetRolesByProductID failed")
+		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
+		return nil, nil, false
+	}
+	bySlug := make(map[string]uuid.UUID, len(productRoles))
+	for _, role := range productRoles {
+		bySlug[role.Slug] = role.ID
+	}
+
+	seen := make(map[string]bool, len(rawSlugs))
+	for _, raw := range rawSlugs {
+		slug := strings.TrimSpace(raw)
+		id, known := bySlug[slug]
+		if !known {
+			WriteError(w, r, "error.rolesInvalid", http.StatusBadRequest)
+			return nil, nil, false
+		}
+		if seen[slug] {
+			continue
+		}
+		seen[slug] = true
+		roleIDs = append(roleIDs, id)
+		slugs = append(slugs, slug)
+	}
+	return roleIDs, slugs, true
 }
 
 // serverActorID returns the account to record as the actor for a write
@@ -184,37 +236,9 @@ func (handler *RequestHandler) ServerReplaceUserRoles(w http.ResponseWriter, r *
 		return
 	}
 
-	// Resolve slugs to role IDs within the product, de-duplicating. Any
-	// unknown slug is a 400 — silently dropping it would let a typo quietly
-	// under-grant.
-	roleIDs := []uuid.UUID{}
-	slugs := []string{}
-	if len(req.Roles) > 0 {
-		productRoles, err := handler.repo.GetRolesByProductID(ctx, project.ID)
-		if err != nil {
-			log.Err(err).Msg("ServerReplaceUserRoles: GetRolesByProductID failed")
-			WriteError(w, r, "error.internalError", http.StatusInternalServerError)
-			return
-		}
-		bySlug := make(map[string]uuid.UUID, len(productRoles))
-		for _, role := range productRoles {
-			bySlug[role.Slug] = role.ID
-		}
-		seen := make(map[string]bool, len(req.Roles))
-		for _, raw := range req.Roles {
-			slug := strings.TrimSpace(raw)
-			id, known := bySlug[slug]
-			if !known {
-				WriteError(w, r, "error.rolesInvalid", http.StatusBadRequest)
-				return
-			}
-			if seen[slug] {
-				continue
-			}
-			seen[slug] = true
-			roleIDs = append(roleIDs, id)
-			slugs = append(slugs, slug)
-		}
+	roleIDs, slugs, ok := handler.resolveRoleSlugs(w, r, project.ID, req.Roles)
+	if !ok {
+		return
 	}
 
 	if err := handler.repo.ReplaceUserRoles(ctx, repo.ReplaceUserRolesParams{
@@ -248,4 +272,198 @@ func (handler *RequestHandler) ServerReplaceUserRoles(w http.ResponseWriter, r *
 	// Echo the assigned slugs: they are exactly what was just stored, so no
 	// read-back query is needed.
 	utils.WriteJson(w, ServerRolesResponse{Roles: slugs})
+}
+
+type ServerCreateUserRequest struct {
+	Email string `json:"email"`
+	// EmailVerified marks the address as already verified — the customer
+	// vouches for it (e.g. they verified it on their side). Omitted/false
+	// creates the user unverified.
+	EmailVerified bool     `json:"emailVerified"`
+	Roles         []string `json:"roles"`
+}
+
+type ServerCreateUserResponse struct {
+	User    *core.UserResource `json:"user"`
+	Created bool               `json:"created"`
+	Roles   []string           `json:"roles"`
+}
+
+// ServerCreateUser provisions a user into the app's pool and adds them to the
+// app. The pool is the identity boundary, so an existing user with the same
+// email in the pool is reused (created=false) and ensured to be a member —
+// the call is idempotent. Optional roles are assigned and echoed back.
+// POST /x/{workspaceSlug}/api/v1/apps/{appId}/users
+func (handler *RequestHandler) ServerCreateUser(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	project, ok := core.ProductFromContext(ctx)
+	if !ok || project == nil {
+		WriteError(w, r, "error.projectNotFound", http.StatusNotFound)
+		return
+	}
+	app, ok := core.AppFromContext(ctx)
+	if !ok || app == nil {
+		WriteError(w, r, "error.appNotFound", http.StatusNotFound)
+		return
+	}
+
+	var req ServerCreateUserRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		WriteError(w, r, "error.invalidJson", http.StatusBadRequest)
+		return
+	}
+
+	email, vr := auth.ValidateEmail(req.Email)
+	if !vr.Ok() {
+		WriteValidationError(w, r, vr)
+		return
+	}
+
+	// Resolve roles before creating anything, so a bad slug fails fast.
+	roleIDs, slugs, ok := handler.resolveRoleSlugs(w, r, project.ID, req.Roles)
+	if !ok {
+		return
+	}
+
+	user, created, err := handler.repo.GetOrCreateUser(ctx, email, app, core.UserSourceInvited)
+	if err != nil {
+		log.Err(err).Msg("ServerCreateUser: GetOrCreateUser failed")
+		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
+		return
+	}
+
+	if req.EmailVerified && user.EmailVerifiedAt == nil {
+		now := time.Now().UTC()
+		if err := handler.repo.SetUserEmailVerified(ctx, user.ID, now); err != nil {
+			log.Err(err).Msg("ServerCreateUser: SetUserEmailVerified failed")
+			WriteError(w, r, "error.internalError", http.StatusInternalServerError)
+			return
+		}
+		user.EmailVerifiedAt = &now
+	}
+
+	_, membershipCreated, err := handler.repo.EnsureAppMember(ctx, app.ID, user.ID, core.UserSourceInvited)
+	if err != nil {
+		log.Err(err).Msg("ServerCreateUser: EnsureAppMember failed")
+		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
+		return
+	}
+
+	if len(roleIDs) > 0 {
+		if err := handler.repo.ReplaceUserRoles(ctx, repo.ReplaceUserRolesParams{
+			ProductID: project.ID, AppID: app.ID, UserID: user.ID, RoleIDs: roleIDs, Now: time.Now().UTC(),
+		}); err != nil {
+			if errors.Is(err, repo.ErrBadRequest) {
+				WriteError(w, r, "error.rolesInvalid", http.StatusBadRequest)
+				return
+			}
+			log.Err(err).Msg("ServerCreateUser: ReplaceUserRoles failed")
+			WriteError(w, r, "error.internalError", http.StatusInternalServerError)
+			return
+		}
+	}
+
+	// Fire user.created only for a brand-new identity, matching the admin
+	// create path (workspaceAccountsHandler).
+	if created {
+		handler.dispatchWebhook(app.ID, "user.created", map[string]any{"userId": user.ID, "email": email, "appId": app.ID})
+	}
+
+	// Audit any real change, not an idempotent no-op re-provision.
+	if created || membershipCreated {
+		handler.writeAuthLogFromRequest(r, AuthLogInput{
+			WorkspaceID:    app.WorkspaceID,
+			AppID:          &app.ID,
+			Event:          core.AuthEventRegisterSuccess,
+			Outcome:        core.AuthOutcomeSuccess,
+			SubjectUserID:  &user.ID,
+			EmailAttempted: email,
+			ActorType:      core.AuthActorAPIKey,
+			ActorAPIKeyID:  apiKeyActorID(ctx),
+			Metadata:       core.RegisterMetadata{Source: core.RegisterSourceAdminAdded},
+		})
+	}
+
+	status := http.StatusOK
+	if created {
+		status = http.StatusCreated
+	}
+	utils.WriteJsonWithStatusCode(w, ServerCreateUserResponse{
+		User:    core.ToUserResource(user),
+		Created: created,
+		Roles:   slugs,
+	}, status)
+}
+
+type ServerRemoveUserResponse struct {
+	RemovedFromApp  bool `json:"removedFromApp"`
+	IdentityDeleted bool `json:"identityDeleted"`
+}
+
+// ServerRemoveUser removes a user from this app. If that leaves the user with
+// no remaining app memberships, the pool identity is deleted too (orphan
+// prune); otherwise the identity is kept because it's still used by another
+// app sharing the pool. The response says which happened.
+// DELETE /x/{workspaceSlug}/api/v1/apps/{appId}/users/{userId}
+func (handler *RequestHandler) ServerRemoveUser(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	project, ok := core.ProductFromContext(ctx)
+	if !ok || project == nil {
+		WriteError(w, r, "error.projectNotFound", http.StatusNotFound)
+		return
+	}
+	app, ok := core.AppFromContext(ctx)
+	if !ok || app == nil {
+		WriteError(w, r, "error.appNotFound", http.StatusNotFound)
+		return
+	}
+
+	userID, ok := handler.userIDFromURL(w, r)
+	if !ok {
+		return
+	}
+
+	if !handler.requireAppMember(w, r, app.ID, userID) {
+		return
+	}
+
+	// Capture the email before any deletion, for the user.delete webhook
+	// (best-effort — the row is about to potentially go away).
+	var email string
+	if u, _ := handler.repo.GetUserByID(ctx, userID); u != nil {
+		email = u.Email
+	}
+
+	if err := handler.removeAppMembership(ctx, project.ID, app.ID, userID); err != nil {
+		log.Err(err).Msg("ServerRemoveUser: remove membership failed")
+		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
+		return
+	}
+
+	// Orphan prune: delete the identity only if the user now belongs to no
+	// app. The guard lives in the DELETE predicate, so it's atomic against a
+	// concurrent re-add.
+	identityDeleted, err := handler.repo.DeleteUserIfOrphanInPool(ctx, userID, app.UserPoolID)
+	if err != nil {
+		log.Err(err).Msg("ServerRemoveUser: orphan prune failed")
+		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
+		return
+	}
+
+	if identityDeleted {
+		handler.dispatchWebhook(app.ID, "user.delete", map[string]any{"userId": userID, "email": email, "appId": app.ID})
+		handler.writeAuthLogFromRequest(r, AuthLogInput{
+			WorkspaceID:   app.WorkspaceID,
+			AppID:         &app.ID,
+			Event:         core.AuthEventAccountDeleted,
+			Outcome:       core.AuthOutcomeSuccess,
+			SubjectUserID: &userID,
+			ActorType:     core.AuthActorAPIKey,
+			ActorAPIKeyID: apiKeyActorID(ctx),
+		})
+	}
+
+	utils.WriteJson(w, ServerRemoveUserResponse{RemovedFromApp: true, IdentityDeleted: identityDeleted})
 }

@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -155,50 +156,50 @@ func (handler *RequestHandler) HandleRemoveProductMember(w http.ResponseWriter, 
 		return
 	}
 
-	// Clear the user's role assignments for this app first. user_roles
-	// has no FK to app_users, so deleting the membership wouldn't
-	// cascade them — they'd be orphaned and re-applied on re-add.
-	if err := handler.repo.ReplaceUserRoles(r.Context(), repo.ReplaceUserRolesParams{
-		ProductID: project.ID,
+	if err := handler.removeAppMembership(r.Context(), project.ID, appID, userID); err != nil {
+		if errors.Is(err, repo.ErrBadRequest) {
+			WriteError(w, r, "error.rolesInvalid", http.StatusBadRequest)
+			return
+		}
+		log.Err(err).Msg("Could not remove app member")
+		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
+		return
+	}
+
+	utils.WriteJsonWithStatusCode(w, map[string]any{"removed": true}, http.StatusOK)
+}
+
+// removeAppMembership detaches a user from one app: it clears the app-scoped
+// role and permission grants (neither FK-cascades from app_users, so they'd
+// otherwise be orphaned and re-applied on re-add), revokes the app's sessions,
+// and drops the membership row (idempotent on a missing row). The pool
+// identity is left intact — callers decide whether to prune it. Returns
+// repo.ErrBadRequest when appID doesn't belong to productID.
+func (handler *RequestHandler) removeAppMembership(ctx context.Context, productID, appID, userID uuid.UUID) error {
+	if err := handler.repo.ReplaceUserRoles(ctx, repo.ReplaceUserRolesParams{
+		ProductID: productID,
 		AppID:     appID,
 		UserID:    userID,
 		RoleIDs:   []uuid.UUID{},
 		Now:       time.Now().UTC(),
 	}); err != nil {
-		if errors.Is(err, repo.ErrBadRequest) {
-			WriteError(w, r, "error.rolesInvalid", http.StatusBadRequest)
-			return
-		}
-		log.Err(err).Msg("Could not clear roles while removing app member")
-		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
-		return
+		return err
 	}
 
-	// Clear direct permission overrides for this app too — same orphan
-	// reasoning as roles (no FK from user_permissions to app_users).
-	if err := handler.repo.SetDirectPermissions(r.Context(), project.ID, userID, appID, []uuid.UUID{}); err != nil {
-		log.Err(err).Msg("Could not clear permission overrides while removing app member")
-		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
-		return
+	if err := handler.repo.SetDirectPermissions(ctx, productID, userID, appID, []uuid.UUID{}); err != nil {
+		return err
 	}
 
-	// Delete the membership row. Idempotent: a missing row (already
-	// removed / double-submit) is not an error.
-	if err := handler.repo.DeleteAppMember(r.Context(), appID, userID); err != nil && !errors.Is(err, repo.ErrNotFound) {
-		log.Err(err).Msg("Could not delete app membership")
-		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
-		return
-	}
-
-	// No longer a member — revoke their sessions for this app (mirrors
-	// the roles-emptied path in HandlerUpdateMemberRoles).
-	if n, err := handler.repo.DeleteClientSessionsByUserAndApp(r.Context(), userID, appID); err != nil {
-		log.Err(err).Msg("Could not revoke sessions after removing app member")
+	if n, err := handler.repo.DeleteClientSessionsByUserAndApp(ctx, userID, appID); err != nil {
+		log.Err(err).Str("userId", userID.String()).Str("appId", appID.String()).Msg("removeAppMembership: revoke sessions failed")
 	} else if n > 0 {
 		log.Info().Int64("deleted", n).Str("userId", userID.String()).Str("appId", appID.String()).Msg("Revoked sessions after removing app member")
 	}
 
-	utils.WriteJsonWithStatusCode(w, map[string]any{"removed": true}, http.StatusOK)
+	if err := handler.repo.DeleteAppMember(ctx, appID, userID); err != nil && !errors.Is(err, repo.ErrNotFound) {
+		return err
+	}
+	return nil
 }
 
 /* ===== URL helper ===== */
