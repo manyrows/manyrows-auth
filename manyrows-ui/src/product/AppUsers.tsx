@@ -124,6 +124,28 @@ async function unlockUserAccount(workspaceId: string, productId: string, appId: 
   await axios.post(`/admin/workspace/${workspaceId}/products/${productId}/apps/${appId}/users/${userId}/unlock`);
 }
 
+function appUserBase(workspaceId: string, productId: string, appId: string, userId: string): string {
+  return `/admin/workspace/${workspaceId}/products/${productId}/apps/${appId}/users/${userId}`;
+}
+
+async function adminSetUserPassword(workspaceId: string, productId: string, appId: string, userId: string, password: string): Promise<void> {
+  await axios.put(`${appUserBase(workspaceId, productId, appId, userId)}/password`, { password });
+}
+
+async function adminSetUserEmailVerified(workspaceId: string, productId: string, appId: string, userId: string, verified: boolean): Promise<void> {
+  await axios.put(`${appUserBase(workspaceId, productId, appId, userId)}/email-verified`, { verified });
+}
+
+async function adminCreateUserMagicLink(workspaceId: string, productId: string, appId: string, userId: string): Promise<string> {
+  const r = await axios.post<{ url: string }>(`${appUserBase(workspaceId, productId, appId, userId)}/magic-link`, {});
+  return r.data.url;
+}
+
+async function adminCheckUserPermission(workspaceId: string, productId: string, appId: string, userId: string, permission: string): Promise<boolean> {
+  const r = await axios.get<{ allowed: boolean }>(`${appUserBase(workspaceId, productId, appId, userId)}/check-permission`, { params: { permission } });
+  return r.data.allowed;
+}
+
 // workspace accounts (so we can resolve email -> accountId when adding)
 function workspaceAccountsUrl(workspaceId: string) {
   return `/admin/workspace/${workspaceId}/accounts`;
@@ -838,6 +860,15 @@ export default function AppUsers({ project, appId: appIdProp }: Props) {
   const [resetTotpLoading, setResetTotpLoading] = React.useState(false);
   const [unlockOpen, setUnlockOpen] = React.useState(false);
   const [unlockLoading, setUnlockLoading] = React.useState(false);
+  const [setPwOpen, setSetPwOpen] = React.useState(false);
+  const [setPwValue, setSetPwValue] = React.useState("");
+  const [setPwLoading, setSetPwLoading] = React.useState(false);
+  const [magicLinkUrl, setMagicLinkUrl] = React.useState<string | null>(null);
+  const [magicLinkLoading, setMagicLinkLoading] = React.useState(false);
+  const [emailVerifyLoading, setEmailVerifyLoading] = React.useState(false);
+  const [checkPerm, setCheckPerm] = React.useState("");
+  const [checkPermResult, setCheckPermResult] = React.useState<boolean | null>(null);
+  const [checkPermLoading, setCheckPermLoading] = React.useState(false);
 
   // User info dialog
   const [infoOpen, setInfoOpen] = React.useState(false);
@@ -2203,23 +2234,96 @@ export default function AppUsers({ project, appId: appIdProp }: Props) {
 
               <Stack spacing={0.5}>
                 <Typography variant="caption" color="text.secondary">{t("projectMembers.accountRecovery", "Account recovery")}</Typography>
-                <Stack direction="row" spacing={1}>
-                  <Button
-                    size="small"
-                    variant="outlined"
-                    onClick={() => setResetTotpOpen(true)}
-                    sx={{ textTransform: "none", fontSize: 12 }}
-                  >
+                <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+                  <Button size="small" variant="outlined" onClick={() => setResetTotpOpen(true)} sx={{ textTransform: "none", fontSize: 12 }}>
                     {t("projectMembers.reset2fa", "Reset 2FA")}
                   </Button>
+                  <Button size="small" variant="outlined" onClick={() => setUnlockOpen(true)} sx={{ textTransform: "none", fontSize: 12 }}>
+                    {t("projectMembers.unlockAccount", "Unlock account")}
+                  </Button>
+                  <Button size="small" variant="outlined" onClick={() => { setSetPwValue(""); setSetPwOpen(true); }} sx={{ textTransform: "none", fontSize: 12 }}>
+                    {t("projectMembers.setPassword", "Set password")}
+                  </Button>
                   <Button
                     size="small"
                     variant="outlined"
-                    onClick={() => setUnlockOpen(true)}
+                    disabled={magicLinkLoading}
+                    onClick={async () => {
+                      if (!infoMember || !selectedAppId) return;
+                      setMagicLinkLoading(true);
+                      try {
+                        const url = await adminCreateUserMagicLink(project.workspaceId, project.id, selectedAppId, infoMember.accountId);
+                        setMagicLinkUrl(url);
+                      } catch {
+                        enqueueSnackbar(t("projectMembers.magicLinkFailed", "Failed to generate link (app must use magic-link sign-in)"), { variant: "error" });
+                      } finally {
+                        setMagicLinkLoading(false);
+                      }
+                    }}
                     sx={{ textTransform: "none", fontSize: 12 }}
                   >
-                    {t("projectMembers.unlockAccount", "Unlock account")}
+                    {t("projectMembers.magicLink", "Magic link")}
                   </Button>
+                  <Button
+                    size="small"
+                    variant="outlined"
+                    disabled={emailVerifyLoading}
+                    onClick={async () => {
+                      if (!infoMember || !selectedAppId) return;
+                      const next = !infoMember.emailVerifiedAt;
+                      setEmailVerifyLoading(true);
+                      try {
+                        await adminSetUserEmailVerified(project.workspaceId, project.id, selectedAppId, infoMember.accountId, next);
+                        enqueueSnackbar(next ? t("projectMembers.emailMarkedVerified", "Email marked verified") : t("projectMembers.emailMarkedUnverified", "Email marked unverified"), { variant: "success" });
+                        await refreshList();
+                        setInfoOpen(false);
+                        setInfoMember(null);
+                      } catch {
+                        enqueueSnackbar(t("projectMembers.emailVerifyFailed", "Failed to update email-verified"), { variant: "error" });
+                      } finally {
+                        setEmailVerifyLoading(false);
+                      }
+                    }}
+                    sx={{ textTransform: "none", fontSize: 12 }}
+                  >
+                    {infoMember.emailVerifiedAt ? t("projectMembers.markUnverified", "Mark unverified") : t("projectMembers.markVerified", "Mark verified")}
+                  </Button>
+                </Stack>
+                <Stack direction="row" spacing={1} alignItems="center">
+                  <TextField
+                    size="small"
+                    placeholder={t("projectMembers.permissionSlug", "permission:slug")}
+                    value={checkPerm}
+                    onChange={(e) => { setCheckPerm(e.target.value); setCheckPermResult(null); }}
+                    sx={{ "& .MuiInputBase-input": { fontSize: 12, py: 0.5 } }}
+                  />
+                  <Button
+                    size="small"
+                    variant="outlined"
+                    disabled={checkPermLoading || !checkPerm.trim()}
+                    onClick={async () => {
+                      if (!infoMember || !selectedAppId) return;
+                      setCheckPermLoading(true);
+                      try {
+                        const allowed = await adminCheckUserPermission(project.workspaceId, project.id, selectedAppId, infoMember.accountId, checkPerm.trim());
+                        setCheckPermResult(allowed);
+                      } catch {
+                        enqueueSnackbar(t("projectMembers.checkPermFailed", "Failed to check permission"), { variant: "error" });
+                      } finally {
+                        setCheckPermLoading(false);
+                      }
+                    }}
+                    sx={{ textTransform: "none", fontSize: 12 }}
+                  >
+                    {t("projectMembers.checkPermission", "Check")}
+                  </Button>
+                  {checkPermResult !== null && (
+                    <Chip
+                      size="small"
+                      label={checkPermResult ? t("projectMembers.allowed", "Allowed") : t("projectMembers.denied", "Denied")}
+                      color={checkPermResult ? "success" : "default"}
+                    />
+                  )}
                 </Stack>
               </Stack>
 
@@ -2647,6 +2751,94 @@ export default function AppUsers({ project, appId: appIdProp }: Props) {
             }}
           >
             {unlockLoading ? "..." : t("projectMembers.unlockAccount", "Unlock account")}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Set password */}
+      <Dialog open={setPwOpen} onClose={() => (setPwLoading ? null : setSetPwOpen(false))} maxWidth="xs" fullWidth>
+        <DialogTitle>{t("projectMembers.setPassword", "Set password")}</DialogTitle>
+        <DialogContent>
+          <Stack spacing={1.5} sx={{ pt: 1 }}>
+            <Typography variant="body2" color="text.secondary">
+              {t("projectMembers.setPasswordBody", "Set a new password for this user; it must meet the app's password policy. The user can sign in with it immediately.")}
+            </Typography>
+            <TextField
+              type="password"
+              size="small"
+              autoFocus
+              fullWidth
+              label={t("projectMembers.newPassword", "New password")}
+              value={setPwValue}
+              onChange={(e) => setSetPwValue(e.target.value)}
+            />
+          </Stack>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setSetPwOpen(false)} disabled={setPwLoading}>{t("common.cancel")}</Button>
+          <Button
+            variant="contained"
+            disableElevation
+            disabled={setPwLoading || !setPwValue}
+            onClick={async () => {
+              if (!infoMember || !selectedAppId) return;
+              setSetPwLoading(true);
+              try {
+                await adminSetUserPassword(project.workspaceId, project.id, selectedAppId, infoMember.accountId, setPwValue);
+                setSetPwOpen(false);
+                setSetPwValue("");
+                enqueueSnackbar(t("projectMembers.passwordSet", "Password set"), { variant: "success" });
+                await refreshList();
+              } catch (e) {
+                const code = (e as { response?: { data?: { error?: string } } })?.response?.data?.error;
+                const weak = code === "error.passwordTooWeak" || code === "error.passwordTooShort";
+                enqueueSnackbar(
+                  weak
+                    ? t("projectMembers.passwordTooWeak", "Password doesn't meet the app's policy")
+                    : t("projectMembers.passwordSetFailed", "Failed to set password"),
+                  { variant: "error" },
+                );
+              } finally {
+                setSetPwLoading(false);
+              }
+            }}
+          >
+            {setPwLoading ? "..." : t("projectMembers.setPassword", "Set password")}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Magic-link result */}
+      <Dialog open={magicLinkUrl !== null} onClose={() => setMagicLinkUrl(null)} maxWidth="sm" fullWidth>
+        <DialogTitle>{t("projectMembers.magicLink", "Magic link")}</DialogTitle>
+        <DialogContent>
+          <Stack spacing={1.5} sx={{ pt: 1 }}>
+            <Typography variant="body2" color="text.secondary">
+              {t("projectMembers.magicLinkBody", "A one-time sign-in link for this user (expires in 15 minutes). Copy it and send it to them securely.")}
+            </Typography>
+            <TextField
+              size="small"
+              fullWidth
+              multiline
+              value={magicLinkUrl ?? ""}
+              InputProps={{ readOnly: true }}
+              sx={{ "& textarea": { fontFamily: "var(--font-mono)", fontSize: 12 } }}
+            />
+          </Stack>
+        </DialogContent>
+        <DialogActions>
+          <Button
+            onClick={() => {
+              if (magicLinkUrl) {
+                void navigator.clipboard?.writeText(magicLinkUrl);
+                enqueueSnackbar(t("projectMembers.copied", "Copied"), { variant: "success" });
+              }
+            }}
+          >
+            {t("projectMembers.copy", "Copy")}
+          </Button>
+          <Button variant="contained" disableElevation onClick={() => setMagicLinkUrl(null)}>
+            {t("common.close", "Close")}
           </Button>
         </DialogActions>
       </Dialog>
