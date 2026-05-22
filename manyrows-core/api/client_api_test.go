@@ -307,9 +307,12 @@ func setupServerAPIRouter(t *testing.T) *chi.Mux {
 	appRouter.Use(testAppMiddleware)
 	appRouter.Get("/", requestHandler.GetDeliveryForServer)
 	appRouter.Get("/check-permission", requestHandler.ServerCheckPermission)
+	appRouter.Get("/roles", requestHandler.ServerListRoles)
+	appRouter.Get("/permissions", requestHandler.ServerListPermissions)
 	appRouter.Get("/users", requestHandler.HandleServerGetUser)
 	appRouter.Get("/users/{userId}", requestHandler.ServerGetUserByID)
 	appRouter.Post("/users", requestHandler.ServerCreateUser)
+	appRouter.Patch("/users/{userId}", requestHandler.ServerSetUserStatus)
 	appRouter.Get("/user-fields", requestHandler.HandleServerGetUserFields)
 	appRouter.Get("/user-fields/users/{userId}", requestHandler.HandleServerGetUserFieldValues)
 	appRouter.Put("/user-fields/{userFieldId}/users/{userId}", requestHandler.ServerUpsertUserFieldValue)
@@ -2180,6 +2183,207 @@ func TestServerRemoveUser_NotMember(t *testing.T) {
 		"/x/"+ws.Slug+"/api/v1/apps/"+appID.String()+"/users/"+uuid.Must(uuid.NewV4()).String(), nil))
 	if rr.Code != http.StatusNotFound {
 		t.Fatalf("expected 404 removing a non-member, got %d: %s", rr.Code, rr.Body.String())
+	}
+}
+
+// =====================
+// Server API catalog + status tests
+// =====================
+
+func TestServerListRolesAndPermissions(t *testing.T) {
+	router := setupServerAPIRouter(t)
+
+	acc := testEnv.CreateTestAccount(t, "srv-catalog-"+GenerateUniqueSlug("test")+"@example.com")
+	ws := testEnv.CreateTestWorkspace(t, acc, "Test WS", GenerateUniqueSlug("ws"))
+	project := testEnv.CreateTestProduct(t, ws, acc, "Test Product", GenerateUniqueSlug("proj"))
+	appID := createTestApp(t, ws.ID, project.ID, uuid.Nil, "Test App")
+
+	fixtures := &TestFixtures{Account: acc, Workspace: ws, Products: []core.Product{*project}}
+	defer testEnv.CleanupTestData(t, fixtures)
+	defer func() {
+		pool := testEnv.DB.Pool()
+		_, _ = pool.Exec(context.Background(), "DELETE FROM apps WHERE id = $1", appID)
+	}()
+
+	ctx := context.Background()
+	now := time.Now().UTC()
+	perm := core.Permission{ID: utils.NewUUID(), ProductID: project.ID, Name: "Read", Slug: "posts:read", CreatedAt: now, UpdatedAt: now}
+	if err := testEnv.Repo.CreatePermission(ctx, perm); err != nil {
+		t.Fatalf("CreatePermission: %v", err)
+	}
+	roleSlug := GenerateUniqueSlug("editor")
+	role, err := testEnv.Repo.CreateRole(ctx, repo.CreateRoleParams{ProductID: project.ID, Name: "Editor", Slug: roleSlug, Now: now})
+	if err != nil {
+		t.Fatalf("CreateRole: %v", err)
+	}
+	if err := testEnv.Repo.ReplaceRolePermissions(ctx, repo.ReplaceRolePermissionsParams{
+		ProductID: project.ID, RoleID: role.ID, PermissionIDs: []uuid.UUID{perm.ID}, Now: now,
+	}); err != nil {
+		t.Fatalf("ReplaceRolePermissions: %v", err)
+	}
+	defer func() {
+		pool := testEnv.DB.Pool()
+		_, _ = pool.Exec(ctx, "DELETE FROM role_permissions WHERE role_id = $1", role.ID)
+		_, _ = pool.Exec(ctx, "DELETE FROM roles WHERE id = $1", role.ID)
+		_, _ = pool.Exec(ctx, "DELETE FROM permissions WHERE id = $1", perm.ID)
+	}()
+
+	base := "/x/" + ws.Slug + "/api/v1/apps/" + appID.String()
+
+	// Roles
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, base+"/roles", nil))
+	if rr.Code != http.StatusOK {
+		t.Fatalf("GET /roles: expected 200, got %d: %s", rr.Code, rr.Body.String())
+	}
+	var rolesResp api.ServerRolesListResponse
+	if err := json.Unmarshal(rr.Body.Bytes(), &rolesResp); err != nil {
+		t.Fatalf("parse roles: %v", err)
+	}
+	found := false
+	for _, role := range rolesResp.Roles {
+		if role.Slug == roleSlug {
+			found = true
+			if len(role.Permissions) != 1 || role.Permissions[0] != "posts:read" {
+				t.Fatalf("expected role %s to grant [posts:read], got %v", roleSlug, role.Permissions)
+			}
+		}
+	}
+	if !found {
+		t.Fatalf("expected role %s in catalog, got %+v", roleSlug, rolesResp.Roles)
+	}
+
+	// Permissions
+	pr := httptest.NewRecorder()
+	router.ServeHTTP(pr, httptest.NewRequest(http.MethodGet, base+"/permissions", nil))
+	if pr.Code != http.StatusOK {
+		t.Fatalf("GET /permissions: expected 200, got %d: %s", pr.Code, pr.Body.String())
+	}
+	var permsResp api.ServerPermissionsListResponse
+	if err := json.Unmarshal(pr.Body.Bytes(), &permsResp); err != nil {
+		t.Fatalf("parse permissions: %v", err)
+	}
+	permFound := false
+	for _, p := range permsResp.Permissions {
+		if p.Slug == "posts:read" {
+			permFound = true
+		}
+	}
+	if !permFound {
+		t.Fatalf("expected permission posts:read in catalog, got %+v", permsResp.Permissions)
+	}
+}
+
+func TestServerSetUserStatus_DisableThenEnable(t *testing.T) {
+	router := setupServerAPIRouter(t)
+
+	acc := testEnv.CreateTestAccount(t, "srv-status-"+GenerateUniqueSlug("test")+"@example.com")
+	ws := testEnv.CreateTestWorkspace(t, acc, "Test WS", GenerateUniqueSlug("ws"))
+	project := testEnv.CreateTestProduct(t, ws, acc, "Test Product", GenerateUniqueSlug("proj"))
+	appID := createTestApp(t, ws.ID, project.ID, uuid.Nil, "Test App")
+
+	fixtures := &TestFixtures{Account: acc, Workspace: ws, Products: []core.Product{*project}}
+	defer testEnv.CleanupTestData(t, fixtures)
+	defer func() {
+		pool := testEnv.DB.Pool()
+		_, _ = pool.Exec(context.Background(), "DELETE FROM apps WHERE id = $1", appID)
+	}()
+
+	ctx := context.Background()
+	user, _, err := testEnv.GetOrCreateUserWithMembership(ctx, acc.Email, &core.App{ID: appID}, core.UserSourceInvited)
+	if err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	defer func() {
+		pool := testEnv.DB.Pool()
+		_, _ = pool.Exec(ctx, "DELETE FROM client_sessions WHERE user_id = $1", user.ID)
+		_, _ = pool.Exec(ctx, "DELETE FROM users WHERE id = $1", user.ID)
+	}()
+
+	// Live session that should be revoked on disable.
+	now := time.Now().UTC()
+	aID := appID
+	if err := testEnv.Repo.InsertClientSession(ctx, &core.ClientSession{
+		ID: uuid.Must(uuid.NewV4()), UserID: user.ID, AppID: &aID, CreatedAt: now, LastSeenAt: now, ExpiresAt: now.Add(24 * time.Hour),
+	}); err != nil {
+		t.Fatalf("InsertClientSession: %v", err)
+	}
+
+	base := "/x/" + ws.Slug + "/api/v1/apps/" + appID.String() + "/users/" + user.ID.String()
+
+	// Disable
+	body, _ := json.Marshal(api.ServerSetUserStatusRequest{Status: "disabled"})
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, httptest.NewRequest(http.MethodPatch, base, bytes.NewReader(body)))
+	if rr.Code != http.StatusOK {
+		t.Fatalf("disable: expected 200, got %d: %s", rr.Code, rr.Body.String())
+	}
+	var resp api.ServerUserStatusResponse
+	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if resp.Status != "disabled" {
+		t.Fatalf("expected status disabled, got %q", resp.Status)
+	}
+	if m, _ := testEnv.Repo.GetAppUser(ctx, appID, user.ID); m == nil || m.Status != core.AppUserStatusDisabled {
+		t.Fatalf("membership should be disabled, got %+v", m)
+	}
+	if sessions, _ := testEnv.Repo.GetActiveClientSessionsByUserID(ctx, user.ID); len(sessions) != 0 {
+		t.Fatalf("disable should revoke the app's sessions, %d remain", len(sessions))
+	}
+
+	// Re-enable
+	body, _ = json.Marshal(api.ServerSetUserStatusRequest{Status: "active"})
+	rr = httptest.NewRecorder()
+	router.ServeHTTP(rr, httptest.NewRequest(http.MethodPatch, base, bytes.NewReader(body)))
+	if rr.Code != http.StatusOK {
+		t.Fatalf("enable: expected 200, got %d: %s", rr.Code, rr.Body.String())
+	}
+	if m, _ := testEnv.Repo.GetAppUser(ctx, appID, user.ID); m == nil || m.Status != core.AppUserStatusActive {
+		t.Fatalf("membership should be active again, got %+v", m)
+	}
+}
+
+func TestServerSetUserStatus_NotMemberAndInvalid(t *testing.T) {
+	router := setupServerAPIRouter(t)
+
+	acc := testEnv.CreateTestAccount(t, "srv-status-nm-"+GenerateUniqueSlug("test")+"@example.com")
+	ws := testEnv.CreateTestWorkspace(t, acc, "Test WS", GenerateUniqueSlug("ws"))
+	project := testEnv.CreateTestProduct(t, ws, acc, "Test Product", GenerateUniqueSlug("proj"))
+	appID := createTestApp(t, ws.ID, project.ID, uuid.Nil, "Test App")
+
+	fixtures := &TestFixtures{Account: acc, Workspace: ws, Products: []core.Product{*project}}
+	defer testEnv.CleanupTestData(t, fixtures)
+	defer func() {
+		pool := testEnv.DB.Pool()
+		_, _ = pool.Exec(context.Background(), "DELETE FROM apps WHERE id = $1", appID)
+	}()
+
+	base := "/x/" + ws.Slug + "/api/v1/apps/" + appID.String() + "/users/"
+
+	// Invalid status on a real (member) user → 400 before any membership work.
+	ctx := context.Background()
+	user, _, err := testEnv.GetOrCreateUserWithMembership(ctx, acc.Email, &core.App{ID: appID}, core.UserSourceInvited)
+	if err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	defer func() {
+		pool := testEnv.DB.Pool()
+		_, _ = pool.Exec(ctx, "DELETE FROM users WHERE id = $1", user.ID)
+	}()
+	bad, _ := json.Marshal(api.ServerSetUserStatusRequest{Status: "frozen"})
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, httptest.NewRequest(http.MethodPatch, base+user.ID.String(), bytes.NewReader(bad)))
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("invalid status: expected 400, got %d: %s", rr.Code, rr.Body.String())
+	}
+
+	// Valid status on a non-member → 404.
+	ok, _ := json.Marshal(api.ServerSetUserStatusRequest{Status: "disabled"})
+	rr = httptest.NewRecorder()
+	router.ServeHTTP(rr, httptest.NewRequest(http.MethodPatch, base+uuid.Must(uuid.NewV4()).String(), bytes.NewReader(ok)))
+	if rr.Code != http.StatusNotFound {
+		t.Fatalf("non-member: expected 404, got %d: %s", rr.Code, rr.Body.String())
 	}
 }
 

@@ -467,3 +467,91 @@ func (handler *RequestHandler) ServerRemoveUser(w http.ResponseWriter, r *http.R
 
 	utils.WriteJson(w, ServerRemoveUserResponse{RemovedFromApp: true, IdentityDeleted: identityDeleted})
 }
+
+type ServerSetUserStatusRequest struct {
+	Status string `json:"status"` // "active" | "disabled"
+}
+
+type ServerUserStatusResponse struct {
+	UserID string `json:"userId"`
+	Status string `json:"status"`
+}
+
+// ServerSetUserStatus suspends or re-enables a user IN THIS APP by setting the
+// app_users membership status. A disabled member is blocked from signing in to
+// this app (enforced in ResolveSignInIdentity) while staying untouched in any
+// sibling app that shares the pool. Disabling also revokes the app's live
+// sessions so the change takes effect immediately.
+// PATCH /x/{workspaceSlug}/api/v1/apps/{appId}/users/{userId}
+func (handler *RequestHandler) ServerSetUserStatus(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	app, ok := core.AppFromContext(ctx)
+	if !ok || app == nil {
+		WriteError(w, r, "error.appNotFound", http.StatusNotFound)
+		return
+	}
+
+	userID, ok := handler.userIDFromURL(w, r)
+	if !ok {
+		return
+	}
+
+	var req ServerSetUserStatusRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		WriteError(w, r, "error.invalidJson", http.StatusBadRequest)
+		return
+	}
+	status := core.AppUserStatus(strings.TrimSpace(req.Status))
+	if status != core.AppUserStatusActive && status != core.AppUserStatusDisabled {
+		WriteError(w, r, "error.invalidStatus", http.StatusBadRequest)
+		return
+	}
+
+	// Load the membership both to gate (must be a member of this app) and to
+	// capture the prior status for the audit row.
+	member, err := handler.repo.GetAppUser(ctx, app.ID, userID)
+	if err != nil {
+		log.Err(err).Msg("ServerSetUserStatus: GetAppUser failed")
+		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
+		return
+	}
+	if member == nil {
+		WriteError(w, r, "error.notFound", http.StatusNotFound)
+		return
+	}
+	if member.Status == status {
+		// No-op: report current state without re-writing or auditing.
+		utils.WriteJson(w, ServerUserStatusResponse{UserID: userID.String(), Status: string(status)})
+		return
+	}
+
+	if err := handler.repo.SetAppUserStatus(ctx, app.ID, userID, status); err != nil {
+		log.Err(err).Msg("ServerSetUserStatus: SetAppUserStatus failed")
+		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
+		return
+	}
+
+	// Disabling cuts access; revoke the app's live sessions so it's immediate.
+	if status == core.AppUserStatusDisabled {
+		if n, err := handler.repo.DeleteClientSessionsByUserAndApp(ctx, userID, app.ID); err != nil {
+			log.Err(err).Msg("ServerSetUserStatus: revoke sessions failed")
+		} else if n > 0 {
+			log.Info().Int64("deleted", n).Str("userId", userID.String()).Str("appId", app.ID.String()).
+				Msg("Revoked sessions after disabling app member")
+		}
+	}
+
+	handler.writeAuthLogFromRequest(r, AuthLogInput{
+		WorkspaceID:   app.WorkspaceID,
+		AppID:         &app.ID,
+		Event:         core.AuthEventAccountStatusChanged,
+		Outcome:       core.AuthOutcomeSuccess,
+		SubjectUserID: &userID,
+		ActorType:     core.AuthActorAPIKey,
+		ActorAPIKeyID: apiKeyActorID(ctx),
+		Metadata:      core.AccountStatusChangedMetadata{From: string(member.Status), To: string(status)},
+	})
+
+	utils.WriteJson(w, ServerUserStatusResponse{UserID: userID.String(), Status: string(status)})
+}

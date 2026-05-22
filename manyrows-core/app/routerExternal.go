@@ -161,6 +161,10 @@ func (a *AppService) serverAPIRouter(h *api.RequestHandler) *chi.Mux {
 	appRouter.Get("/", h.GetDeliveryForServer)
 	appRouter.Get("/check-permission", h.ServerCheckPermission)
 
+	// Authorization catalog: the assignable role/permission slugs for the app.
+	appRouter.Get("/roles", h.ServerListRoles)
+	appRouter.Get("/permissions", h.ServerListPermissions)
+
 	// User fields (app-scoped). Schema is read-only; values can be read
 	// and written per user (handlers pool-scope every userId).
 	appRouter.Get("/user-fields", h.HandleServerGetUserFields)
@@ -174,6 +178,8 @@ func (a *AppService) serverAPIRouter(h *api.RequestHandler) *chi.Mux {
 	appRouter.Get("/users", h.HandleServerGetUser)
 	appRouter.Get("/users/{userId}", h.ServerGetUserByID)
 	appRouter.Post("/users", h.ServerCreateUser)
+	// Suspend / re-enable a user in this app (per-app membership status).
+	appRouter.Patch("/users/{userId}", h.ServerSetUserStatus)
 
 	// User mutations (force-logout, role assignment, removal), app/pool-scoped.
 	appRouter.Delete("/users/{userId}/sessions", h.ServerRevokeUserSessions)
