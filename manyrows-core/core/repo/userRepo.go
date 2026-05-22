@@ -301,6 +301,22 @@ UPDATE users SET email_verified_at = $2, updated_at = $3 WHERE id = $1;
 	return nil
 }
 
+// ClearUserEmailVerified marks the user's email as unverified (NULLs the
+// verified-at timestamp).
+func (r *Repo) ClearUserEmailVerified(ctx context.Context, id uuid.UUID) error {
+	const q = `
+UPDATE users SET email_verified_at = NULL, updated_at = $2 WHERE id = $1;
+`
+	ct, err := r.db.Pool().Exec(ctx, q, id, time.Now().UTC())
+	if err != nil {
+		return err
+	}
+	if ct.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
 /* -------------------------------------------------------------------------- */
 /* Login tracking                                                              */
 /* -------------------------------------------------------------------------- */

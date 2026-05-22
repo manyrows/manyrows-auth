@@ -422,6 +422,13 @@ func (c *Client) ClearUserPassword(ctx context.Context, userID string) error {
 	return c.do(ctx, http.MethodDelete, "/users/"+url.PathEscape(userID)+"/password", nil, nil, nil)
 }
 
+// SetUserEmailVerified marks a member's email verified or unverified (a
+// pool-level attribute, so it applies across every app sharing the pool).
+func (c *Client) SetUserEmailVerified(ctx context.Context, userID string, verified bool) error {
+	body := map[string]bool{"verified": verified}
+	return c.do(ctx, http.MethodPut, "/users/"+url.PathEscape(userID)+"/email-verified", nil, body, nil)
+}
+
 // CreateMagicLink generates a one-time passwordless sign-in link for a member
 // (requires the app's primary auth method to be Magic Link).
 func (c *Client) CreateMagicLink(ctx context.Context, userID string, rememberMe bool) (*MagicLinkResult, error) {

@@ -366,6 +366,28 @@ paths:
         "204": { description: Password cleared. }
         "404": { $ref: "#/components/responses/NotFound" }
 
+  /apps/{appId}/users/{userId}/email-verified:
+    parameters:
+      - $ref: "#/components/parameters/AppId"
+      - $ref: "#/components/parameters/UserId"
+    put:
+      tags: [Users]
+      summary: Mark a user's email verified or unverified
+      description: >
+        Set the verified state of the member's email (a pool-level attribute, so
+        it applies across every app sharing the pool). Use when your own flow has
+        confirmed or invalidated the address.
+      operationId: setUserEmailVerified
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SetEmailVerifiedRequest" }
+      responses:
+        "204": { description: Updated. }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
   /apps/{appId}/users/{userId}/auth-logs:
     parameters:
       - $ref: "#/components/parameters/AppId"
@@ -659,6 +681,12 @@ components:
       required: [password]
       properties:
         password: { type: string, description: "Validated against the app's password policy." }
+
+    SetEmailVerifiedRequest:
+      type: object
+      required: [verified]
+      properties:
+        verified: { type: boolean }
 
     Session:
       type: object

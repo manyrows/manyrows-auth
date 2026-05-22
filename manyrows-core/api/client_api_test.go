@@ -328,6 +328,7 @@ func setupServerAPIRouter(t *testing.T) *chi.Mux {
 	appRouter.Get("/users/{userId}/auth-logs", requestHandler.ServerGetUserAuthLogs)
 	appRouter.Put("/users/{userId}/password", requestHandler.ServerSetUserPassword)
 	appRouter.Delete("/users/{userId}/password", requestHandler.ServerClearUserPassword)
+	appRouter.Put("/users/{userId}/email-verified", requestHandler.ServerSetUserEmailVerified)
 	appRouter.Delete("/users/{userId}", requestHandler.ServerRemoveUser)
 
 	serverRouter.Mount("/v1/apps/{appId}", appRouter)
@@ -2669,6 +2670,56 @@ func TestServerGetUserAuthLogs(t *testing.T) {
 	}
 	if resp.Logs[0].Event != string(core.AuthEventLoginSuccess) {
 		t.Fatalf("expected event login.success, got %q", resp.Logs[0].Event)
+	}
+}
+
+func TestServerSetUserEmailVerified(t *testing.T) {
+	router := setupServerAPIRouter(t)
+
+	acc := testEnv.CreateTestAccount(t, "srv-ev-"+GenerateUniqueSlug("test")+"@example.com")
+	ws := testEnv.CreateTestWorkspace(t, acc, "Test WS", GenerateUniqueSlug("ws"))
+	project := testEnv.CreateTestProduct(t, ws, acc, "Test Product", GenerateUniqueSlug("proj"))
+	appID := createTestApp(t, ws.ID, project.ID, uuid.Nil, "Test App")
+
+	fixtures := &TestFixtures{Account: acc, Workspace: ws, Products: []core.Product{*project}}
+	defer testEnv.CleanupTestData(t, fixtures)
+	defer func() {
+		pool := testEnv.DB.Pool()
+		_, _ = pool.Exec(context.Background(), "DELETE FROM apps WHERE id = $1", appID)
+	}()
+
+	ctx := context.Background()
+	user, _, err := testEnv.GetOrCreateUserWithMembership(ctx, acc.Email, &core.App{ID: appID}, core.UserSourceInvited)
+	if err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	defer func() {
+		pool := testEnv.DB.Pool()
+		_, _ = pool.Exec(ctx, "DELETE FROM users WHERE id = $1", user.ID)
+	}()
+
+	base := "/x/" + ws.Slug + "/api/v1/apps/" + appID.String() + "/users/" + user.ID.String() + "/email-verified"
+
+	// Mark verified → 204, timestamp set.
+	body, _ := json.Marshal(api.ServerSetEmailVerifiedRequest{Verified: true})
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, httptest.NewRequest(http.MethodPut, base, bytes.NewReader(body)))
+	if rr.Code != http.StatusNoContent {
+		t.Fatalf("verify: expected 204, got %d: %s", rr.Code, rr.Body.String())
+	}
+	if u, _ := testEnv.Repo.GetUserByID(ctx, user.ID); u == nil || u.EmailVerifiedAt == nil {
+		t.Fatalf("email should be verified, got %+v", u)
+	}
+
+	// Mark unverified → 204, timestamp cleared.
+	body, _ = json.Marshal(api.ServerSetEmailVerifiedRequest{Verified: false})
+	rr = httptest.NewRecorder()
+	router.ServeHTTP(rr, httptest.NewRequest(http.MethodPut, base, bytes.NewReader(body)))
+	if rr.Code != http.StatusNoContent {
+		t.Fatalf("unverify: expected 204, got %d: %s", rr.Code, rr.Body.String())
+	}
+	if u, _ := testEnv.Repo.GetUserByID(ctx, user.ID); u == nil || u.EmailVerifiedAt != nil {
+		t.Fatalf("email should be unverified, got %+v", u)
 	}
 }
 

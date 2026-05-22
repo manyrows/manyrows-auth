@@ -371,6 +371,14 @@ export class ManyRowsServer {
     return this.request("DELETE", `/users/${encodeURIComponent(userId)}/password`, { expectNoContent: true });
   }
 
+  /** Mark a member's email verified or unverified (a pool-level attribute). */
+  setUserEmailVerified(userId: string, verified: boolean): Promise<void> {
+    return this.request("PUT", `/users/${encodeURIComponent(userId)}/email-verified`, {
+      body: { verified },
+      expectNoContent: true,
+    });
+  }
+
   /** Generate a one-time passwordless sign-in link for a member (requires magic-link auth). */
   createMagicLink(userId: string, opts: { rememberMe?: boolean } = {}): Promise<MagicLinkResult> {
     return this.request("POST", `/users/${encodeURIComponent(userId)}/magic-link`, { body: opts });

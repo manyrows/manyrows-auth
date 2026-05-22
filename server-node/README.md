@@ -75,6 +75,7 @@ try {
 | `revokeUserSessions(userId)` | `DELETE /users/{id}/sessions` |
 | `listUserSessions(userId)` / `revokeUserSession(userId, sessionId)` | `GET` · `DELETE /users/{id}/sessions[/{sid}]` |
 | `setUserPassword(userId, password)` / `clearUserPassword(userId)` | `PUT` · `DELETE /users/{id}/password` |
+| `setUserEmailVerified(userId, verified)` | `PUT /users/{id}/email-verified` |
 | `createMagicLink(userId, { rememberMe? })` | `POST /users/{id}/magic-link` |
 | `getUserAuthLogs(userId, { page?, pageSize? })` | `GET /users/{id}/auth-logs` |
 | `listUserFields()` | `GET /user-fields` |

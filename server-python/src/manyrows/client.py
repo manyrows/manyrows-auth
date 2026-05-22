@@ -192,6 +192,12 @@ class ManyRowsServer:
         """Clear a member's password (email+password sign-in disabled until a new one is set)."""
         self._request("DELETE", f"/users/{urllib.parse.quote(user_id, safe='')}/password")
 
+    def set_user_email_verified(self, user_id: str, verified: bool) -> None:
+        """Mark a member's email verified or unverified (a pool-level attribute)."""
+        self._request(
+            "PUT", f"/users/{urllib.parse.quote(user_id, safe='')}/email-verified", body={"verified": verified}
+        )
+
     def create_magic_link(self, user_id: str, *, remember_me: bool = False) -> MagicLinkResult:
         """Generate a one-time passwordless sign-in link (requires magic-link auth on the app)."""
         data = self._request(
