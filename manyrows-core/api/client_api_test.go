@@ -313,6 +313,7 @@ func setupServerAPIRouter(t *testing.T) *chi.Mux {
 	appRouter.Get("/users/{userId}", requestHandler.ServerGetUserByID)
 	appRouter.Post("/users", requestHandler.ServerCreateUser)
 	appRouter.Patch("/users/{userId}", requestHandler.ServerSetUserStatus)
+	appRouter.Post("/users/{userId}/magic-link", requestHandler.ServerCreateMagicLink)
 	appRouter.Get("/user-fields", requestHandler.HandleServerGetUserFields)
 	appRouter.Get("/user-fields/users/{userId}", requestHandler.HandleServerGetUserFieldValues)
 	appRouter.Put("/user-fields/{userFieldId}/users/{userId}", requestHandler.ServerUpsertUserFieldValue)
@@ -2384,6 +2385,113 @@ func TestServerSetUserStatus_NotMemberAndInvalid(t *testing.T) {
 	router.ServeHTTP(rr, httptest.NewRequest(http.MethodPatch, base+uuid.Must(uuid.NewV4()).String(), bytes.NewReader(ok)))
 	if rr.Code != http.StatusNotFound {
 		t.Fatalf("non-member: expected 404, got %d: %s", rr.Code, rr.Body.String())
+	}
+}
+
+// =====================
+// Server API magic-link tests
+// =====================
+
+func TestServerCreateMagicLink_Success(t *testing.T) {
+	router := setupServerAPIRouter(t)
+
+	acc := testEnv.CreateTestAccount(t, "srv-ml-"+GenerateUniqueSlug("test")+"@example.com")
+	ws := testEnv.CreateTestWorkspace(t, acc, "Test WS", GenerateUniqueSlug("ws"))
+	project := testEnv.CreateTestProduct(t, ws, acc, "Test Product", GenerateUniqueSlug("proj"))
+	appID := createTestApp(t, ws.ID, project.ID, uuid.Nil, "Test App")
+	appRow, err := testEnv.Repo.GetAppByID(context.Background(), appID)
+	if err != nil {
+		t.Fatalf("GetAppByID: %v", err)
+	}
+	configureAppForMagicLink(t, &appRow)
+
+	fixtures := &TestFixtures{Account: acc, Workspace: ws, Products: []core.Product{*project}}
+	defer testEnv.CleanupTestData(t, fixtures)
+	defer func() {
+		pool := testEnv.DB.Pool()
+		_, _ = pool.Exec(context.Background(), "DELETE FROM apps WHERE id = $1", appID)
+	}()
+
+	ctx := context.Background()
+	user, _, err := testEnv.GetOrCreateUserWithMembership(ctx, acc.Email, &core.App{ID: appID}, core.UserSourceInvited)
+	if err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	defer func() {
+		pool := testEnv.DB.Pool()
+		_, _ = pool.Exec(ctx, "DELETE FROM magic_links WHERE lower(email) = lower($1)", user.Email)
+		_, _ = pool.Exec(ctx, "DELETE FROM users WHERE id = $1", user.ID)
+	}()
+
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, httptest.NewRequest(http.MethodPost,
+		"/x/"+ws.Slug+"/api/v1/apps/"+appID.String()+"/users/"+user.ID.String()+"/magic-link", nil))
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rr.Code, rr.Body.String())
+	}
+	var resp api.ServerMagicLinkResponse
+	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if !strings.Contains(resp.URL, "/auth/magic-link") || !strings.Contains(resp.URL, "token=") {
+		t.Fatalf("expected a consumable magic-link URL, got %q", resp.URL)
+	}
+	if !resp.ExpiresAt.After(time.Now()) {
+		t.Fatalf("expected a future expiry, got %v", resp.ExpiresAt)
+	}
+}
+
+func TestServerCreateMagicLink_AuthMethodDisabled(t *testing.T) {
+	router := setupServerAPIRouter(t)
+
+	acc := testEnv.CreateTestAccount(t, "srv-ml-off-"+GenerateUniqueSlug("test")+"@example.com")
+	ws := testEnv.CreateTestWorkspace(t, acc, "Test WS", GenerateUniqueSlug("ws"))
+	project := testEnv.CreateTestProduct(t, ws, acc, "Test Product", GenerateUniqueSlug("proj"))
+	appID := createTestApp(t, ws.ID, project.ID, uuid.Nil, "Test App") // password-primary by default
+
+	fixtures := &TestFixtures{Account: acc, Workspace: ws, Products: []core.Product{*project}}
+	defer testEnv.CleanupTestData(t, fixtures)
+	defer func() {
+		pool := testEnv.DB.Pool()
+		_, _ = pool.Exec(context.Background(), "DELETE FROM apps WHERE id = $1", appID)
+	}()
+
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, httptest.NewRequest(http.MethodPost,
+		"/x/"+ws.Slug+"/api/v1/apps/"+appID.String()+"/users/"+uuid.Must(uuid.NewV4()).String()+"/magic-link", nil))
+
+	if rr.Code != http.StatusForbidden {
+		t.Fatalf("expected 403 when app isn't magic-link primary, got %d: %s", rr.Code, rr.Body.String())
+	}
+}
+
+func TestServerCreateMagicLink_NotMember(t *testing.T) {
+	router := setupServerAPIRouter(t)
+
+	acc := testEnv.CreateTestAccount(t, "srv-ml-nm-"+GenerateUniqueSlug("test")+"@example.com")
+	ws := testEnv.CreateTestWorkspace(t, acc, "Test WS", GenerateUniqueSlug("ws"))
+	project := testEnv.CreateTestProduct(t, ws, acc, "Test Product", GenerateUniqueSlug("proj"))
+	appID := createTestApp(t, ws.ID, project.ID, uuid.Nil, "Test App")
+	appRow, err := testEnv.Repo.GetAppByID(context.Background(), appID)
+	if err != nil {
+		t.Fatalf("GetAppByID: %v", err)
+	}
+	configureAppForMagicLink(t, &appRow)
+
+	fixtures := &TestFixtures{Account: acc, Workspace: ws, Products: []core.Product{*project}}
+	defer testEnv.CleanupTestData(t, fixtures)
+	defer func() {
+		pool := testEnv.DB.Pool()
+		_, _ = pool.Exec(context.Background(), "DELETE FROM apps WHERE id = $1", appID)
+	}()
+
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, httptest.NewRequest(http.MethodPost,
+		"/x/"+ws.Slug+"/api/v1/apps/"+appID.String()+"/users/"+uuid.Must(uuid.NewV4()).String()+"/magic-link", nil))
+
+	if rr.Code != http.StatusNotFound {
+		t.Fatalf("expected 404 for a non-member, got %d: %s", rr.Code, rr.Body.String())
 	}
 }
 

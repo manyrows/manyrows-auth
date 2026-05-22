@@ -180,6 +180,8 @@ func (a *AppService) serverAPIRouter(h *api.RequestHandler) *chi.Mux {
 	appRouter.Post("/users", h.ServerCreateUser)
 	// Suspend / re-enable a user in this app (per-app membership status).
 	appRouter.Patch("/users/{userId}", h.ServerSetUserStatus)
+	// Generate a one-time passwordless sign-in link for a member.
+	appRouter.Post("/users/{userId}/magic-link", h.ServerCreateMagicLink)
 
 	// User mutations (force-logout, role assignment, removal), app/pool-scoped.
 	appRouter.Delete("/users/{userId}/sessions", h.ServerRevokeUserSessions)
