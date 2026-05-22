@@ -68,6 +68,7 @@ except ManyRowsServerError as err:
 | `set_user_status(user_id, "active" / "disabled")` | `PATCH /users/{id}` |
 | `remove_user(user_id)` | `DELETE /users/{id}` |
 | `replace_user_roles(user_id, roles)` | `PUT /users/{id}/roles` |
+| `get_user_permissions(user_id)` / `set_user_permissions(user_id, perms)` | `GET` · `PUT /users/{id}/permissions` |
 | `revoke_user_sessions(user_id)` | `DELETE /users/{id}/sessions` |
 | `list_user_sessions(user_id)` / `revoke_user_session(user_id, session_id)` | `GET` · `DELETE /users/{id}/sessions[/{sid}]` |
 | `set_user_password(user_id, password)` / `clear_user_password(user_id)` | `PUT` · `DELETE /users/{id}/password` |

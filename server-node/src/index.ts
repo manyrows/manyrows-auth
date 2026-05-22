@@ -289,6 +289,25 @@ export class ManyRowsServer {
     return this.request("PUT", `/users/${encodeURIComponent(userId)}/roles`, { body: { roles } });
   }
 
+  /** A member's direct permission overrides (slugs), separate from role-granted permissions. */
+  async getUserPermissions(userId: string): Promise<string[]> {
+    const { permissions } = await this.request<{ permissions: string[] }>(
+      "GET",
+      `/users/${encodeURIComponent(userId)}/permissions`,
+    );
+    return permissions;
+  }
+
+  /** Replace a member's direct permission overrides (full set of slugs). Returns the result. */
+  async setUserPermissions(userId: string, permissions: string[]): Promise<string[]> {
+    const res = await this.request<{ permissions: string[] }>(
+      "PUT",
+      `/users/${encodeURIComponent(userId)}/permissions`,
+      { body: { permissions } },
+    );
+    return res.permissions;
+  }
+
   /** Force-logout: revoke all of a member's sessions for this app. */
   revokeUserSessions(userId: string): Promise<{ revoked: number }> {
     return this.request("DELETE", `/users/${encodeURIComponent(userId)}/sessions`);

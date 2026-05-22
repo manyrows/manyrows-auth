@@ -146,6 +146,18 @@ class ManyRowsServer:
         )
         return data.get("roles", [])
 
+    def get_user_permissions(self, user_id: str) -> list[str]:
+        """A member's direct permission overrides (slugs), separate from role-granted ones."""
+        data = self._request("GET", f"/users/{urllib.parse.quote(user_id, safe='')}/permissions")
+        return data.get("permissions", [])
+
+    def set_user_permissions(self, user_id: str, permissions: list[str]) -> list[str]:
+        """Replace a member's direct permission overrides (full set of slugs). Returns the result."""
+        data = self._request(
+            "PUT", f"/users/{urllib.parse.quote(user_id, safe='')}/permissions", body={"permissions": permissions}
+        )
+        return data.get("permissions", [])
+
     def revoke_user_sessions(self, user_id: str) -> int:
         """Force-logout: revoke all of a member's sessions for this app. Returns the count revoked."""
         data = self._request("DELETE", f"/users/{urllib.parse.quote(user_id, safe='')}/sessions")

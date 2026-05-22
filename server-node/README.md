@@ -71,6 +71,7 @@ try {
 | `setUserStatus(userId, "active" \| "disabled")` | `PATCH /users/{id}` |
 | `removeUser(userId)` | `DELETE /users/{id}` |
 | `replaceUserRoles(userId, roles)` | `PUT /users/{id}/roles` |
+| `getUserPermissions(userId)` / `setUserPermissions(userId, perms)` | `GET` · `PUT /users/{id}/permissions` |
 | `revokeUserSessions(userId)` | `DELETE /users/{id}/sessions` |
 | `listUserSessions(userId)` / `revokeUserSession(userId, sessionId)` | `GET` · `DELETE /users/{id}/sessions[/{sid}]` |
 | `setUserPassword(userId, password)` / `clearUserPassword(userId)` | `PUT` · `DELETE /users/{id}/password` |

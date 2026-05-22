@@ -257,6 +257,40 @@ paths:
         "400": { $ref: "#/components/responses/BadRequest" }
         "404": { $ref: "#/components/responses/NotFound" }
 
+  /apps/{appId}/users/{userId}/permissions:
+    parameters:
+      - $ref: "#/components/parameters/AppId"
+      - $ref: "#/components/parameters/UserId"
+    get:
+      tags: [Users]
+      summary: List a user's direct permission overrides
+      description: Per-user grants, separate from the permissions inherited via roles.
+      operationId: getUserPermissions
+      responses:
+        "200":
+          description: Direct permission slugs.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/UserPermissionsResponse" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    put:
+      tags: [Users]
+      summary: Replace a user's direct permission overrides
+      operationId: setUserPermissions
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SetPermissionsRequest" }
+      responses:
+        "200":
+          description: The resulting permission slugs.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/UserPermissionsResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
   /apps/{appId}/users/{userId}/sessions:
     parameters:
       - $ref: "#/components/parameters/AppId"
@@ -616,6 +650,17 @@ components:
       type: object
       properties:
         sessions: { type: array, items: { $ref: "#/components/schemas/Session" } }
+
+    UserPermissionsResponse:
+      type: object
+      properties:
+        permissions: { type: array, items: { type: string } }
+
+    SetPermissionsRequest:
+      type: object
+      required: [permissions]
+      properties:
+        permissions: { type: array, items: { type: string }, description: "Full set of direct permission slugs (replace, not merge)." }
 
     ReplaceRolesRequest:
       type: object

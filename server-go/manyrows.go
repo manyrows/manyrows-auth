@@ -333,6 +333,28 @@ func (c *Client) ReplaceUserRoles(ctx context.Context, userID string, roles []st
 	return out.Roles, c.do(ctx, http.MethodPut, "/users/"+url.PathEscape(userID)+"/roles", nil, body, &out)
 }
 
+// GetUserPermissions lists a member's direct permission overrides (slugs),
+// separate from the permissions inherited via roles.
+func (c *Client) GetUserPermissions(ctx context.Context, userID string) ([]string, error) {
+	var out struct {
+		Permissions []string `json:"permissions"`
+	}
+	return out.Permissions, c.do(ctx, http.MethodGet, "/users/"+url.PathEscape(userID)+"/permissions", nil, nil, &out)
+}
+
+// SetUserPermissions replaces a member's direct permission overrides (full set
+// of slugs) and returns the result.
+func (c *Client) SetUserPermissions(ctx context.Context, userID string, permissions []string) ([]string, error) {
+	if permissions == nil {
+		permissions = []string{}
+	}
+	var out struct {
+		Permissions []string `json:"permissions"`
+	}
+	body := map[string][]string{"permissions": permissions}
+	return out.Permissions, c.do(ctx, http.MethodPut, "/users/"+url.PathEscape(userID)+"/permissions", nil, body, &out)
+}
+
 // RevokeUserSessions force-logs-out a member from this app and returns the count revoked.
 func (c *Client) RevokeUserSessions(ctx context.Context, userID string) (int64, error) {
 	var out struct {

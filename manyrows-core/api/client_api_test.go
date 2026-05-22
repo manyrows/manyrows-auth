@@ -323,6 +323,8 @@ func setupServerAPIRouter(t *testing.T) *chi.Mux {
 	appRouter.Delete("/users/{userId}/sessions", requestHandler.ServerRevokeUserSessions)
 	appRouter.Delete("/users/{userId}/sessions/{sessionId}", requestHandler.ServerRevokeUserSession)
 	appRouter.Put("/users/{userId}/roles", requestHandler.ServerReplaceUserRoles)
+	appRouter.Get("/users/{userId}/permissions", requestHandler.ServerGetUserPermissions)
+	appRouter.Put("/users/{userId}/permissions", requestHandler.ServerSetUserPermissions)
 	appRouter.Put("/users/{userId}/password", requestHandler.ServerSetUserPassword)
 	appRouter.Delete("/users/{userId}/password", requestHandler.ServerClearUserPassword)
 	appRouter.Delete("/users/{userId}", requestHandler.ServerRemoveUser)
@@ -2524,6 +2526,91 @@ func TestServerListAndRevokeOneSession(t *testing.T) {
 	}
 	if remaining, _ := testEnv.Repo.GetActiveClientSessionsByUserID(ctx, user.ID); len(remaining) != 1 {
 		t.Fatalf("expected 1 session remaining, got %d", len(remaining))
+	}
+}
+
+func TestServerUserDirectPermissions(t *testing.T) {
+	router := setupServerAPIRouter(t)
+
+	acc := testEnv.CreateTestAccount(t, "srv-perm-"+GenerateUniqueSlug("test")+"@example.com")
+	ws := testEnv.CreateTestWorkspace(t, acc, "Test WS", GenerateUniqueSlug("ws"))
+	project := testEnv.CreateTestProduct(t, ws, acc, "Test Product", GenerateUniqueSlug("proj"))
+	appID := createTestApp(t, ws.ID, project.ID, uuid.Nil, "Test App")
+
+	fixtures := &TestFixtures{Account: acc, Workspace: ws, Products: []core.Product{*project}}
+	defer testEnv.CleanupTestData(t, fixtures)
+	defer func() {
+		pool := testEnv.DB.Pool()
+		_, _ = pool.Exec(context.Background(), "DELETE FROM apps WHERE id = $1", appID)
+	}()
+
+	ctx := context.Background()
+	now := time.Now().UTC()
+	perm := core.Permission{ID: utils.NewUUID(), ProductID: project.ID, Name: "Read", Slug: "posts:read", CreatedAt: now, UpdatedAt: now}
+	if err := testEnv.Repo.CreatePermission(ctx, perm); err != nil {
+		t.Fatalf("CreatePermission: %v", err)
+	}
+	defer func() {
+		pool := testEnv.DB.Pool()
+		_, _ = pool.Exec(ctx, "DELETE FROM permissions WHERE id = $1", perm.ID)
+	}()
+
+	user, _, err := testEnv.GetOrCreateUserWithMembership(ctx, acc.Email, &core.App{ID: appID}, core.UserSourceInvited)
+	if err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	defer func() {
+		pool := testEnv.DB.Pool()
+		_, _ = pool.Exec(ctx, "DELETE FROM user_permissions WHERE user_id = $1", user.ID)
+		_, _ = pool.Exec(ctx, "DELETE FROM users WHERE id = $1", user.ID)
+	}()
+
+	base := "/x/" + ws.Slug + "/api/v1/apps/" + appID.String() + "/users/" + user.ID.String() + "/permissions"
+
+	// Set by slug.
+	body, _ := json.Marshal(api.ServerSetPermissionsRequest{Permissions: []string{"posts:read"}})
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, httptest.NewRequest(http.MethodPut, base, bytes.NewReader(body)))
+	if rr.Code != http.StatusOK {
+		t.Fatalf("set perms: expected 200, got %d: %s", rr.Code, rr.Body.String())
+	}
+	var resp api.ServerUserPermissionsResponse
+	_ = json.Unmarshal(rr.Body.Bytes(), &resp)
+	if len(resp.Permissions) != 1 || resp.Permissions[0] != "posts:read" {
+		t.Fatalf("expected [posts:read], got %v", resp.Permissions)
+	}
+
+	// Read back.
+	rr = httptest.NewRecorder()
+	router.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, base, nil))
+	if rr.Code != http.StatusOK {
+		t.Fatalf("get perms: expected 200, got %d: %s", rr.Code, rr.Body.String())
+	}
+	_ = json.Unmarshal(rr.Body.Bytes(), &resp)
+	if len(resp.Permissions) != 1 || resp.Permissions[0] != "posts:read" {
+		t.Fatalf("expected [posts:read] on read, got %v", resp.Permissions)
+	}
+
+	// Unknown slug → 400.
+	bad, _ := json.Marshal(api.ServerSetPermissionsRequest{Permissions: []string{"does:not-exist"}})
+	rr = httptest.NewRecorder()
+	router.ServeHTTP(rr, httptest.NewRequest(http.MethodPut, base, bytes.NewReader(bad)))
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("unknown perm: expected 400, got %d: %s", rr.Code, rr.Body.String())
+	}
+
+	// Clear.
+	empty, _ := json.Marshal(api.ServerSetPermissionsRequest{Permissions: []string{}})
+	rr = httptest.NewRecorder()
+	router.ServeHTTP(rr, httptest.NewRequest(http.MethodPut, base, bytes.NewReader(empty)))
+	if rr.Code != http.StatusOK {
+		t.Fatalf("clear perms: expected 200, got %d: %s", rr.Code, rr.Body.String())
+	}
+	rr = httptest.NewRecorder()
+	router.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, base, nil))
+	_ = json.Unmarshal(rr.Body.Bytes(), &resp)
+	if len(resp.Permissions) != 0 {
+		t.Fatalf("expected no permissions after clear, got %v", resp.Permissions)
 	}
 }
 

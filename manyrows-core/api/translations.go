@@ -65,6 +65,7 @@ var apiTranslations = map[string]map[string]string{
 		"error.appNotFound":           "App not found",
 		"error.appDisabled":           "App is disabled",
 		"error.invalidStatus":         "Invalid status (expected \"active\" or \"disabled\")",
+		"error.permissionsInvalid":    "One or more permissions are invalid",
 
 		// ID errors
 		"error.missingProductId":     "Missing project ID",

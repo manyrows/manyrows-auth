@@ -71,6 +71,7 @@ if errors.As(err, &apiErr) && apiErr.Status == http.StatusNotFound {
 | `SetUserStatus(ctx, userID, "active"\|"disabled")` | `PATCH /users/{id}` |
 | `RemoveUser(ctx, userID)` | `DELETE /users/{id}` |
 | `ReplaceUserRoles(ctx, userID, roles)` | `PUT /users/{id}/roles` |
+| `GetUserPermissions(ctx, userID)` / `SetUserPermissions(ctx, userID, perms)` | `GET` · `PUT /users/{id}/permissions` |
 | `RevokeUserSessions(ctx, userID)` | `DELETE /users/{id}/sessions` |
 | `ListUserSessions(ctx, userID)` / `RevokeUserSession(ctx, userID, sessionID)` | `GET` · `DELETE /users/{id}/sessions[/{sid}]` |
 | `SetUserPassword(ctx, userID, password)` / `ClearUserPassword(ctx, userID)` | `PUT` · `DELETE /users/{id}/password` |

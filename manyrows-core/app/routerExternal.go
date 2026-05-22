@@ -188,6 +188,9 @@ func (a *AppService) serverAPIRouter(h *api.RequestHandler) *chi.Mux {
 	appRouter.Delete("/users/{userId}/sessions", h.ServerRevokeUserSessions)
 	appRouter.Delete("/users/{userId}/sessions/{sessionId}", h.ServerRevokeUserSession)
 	appRouter.Put("/users/{userId}/roles", h.ServerReplaceUserRoles)
+	// Direct per-user permission overrides (on top of role-granted permissions).
+	appRouter.Get("/users/{userId}/permissions", h.ServerGetUserPermissions)
+	appRouter.Put("/users/{userId}/permissions", h.ServerSetUserPermissions)
 	// Password management.
 	appRouter.Put("/users/{userId}/password", h.ServerSetUserPassword)
 	appRouter.Delete("/users/{userId}/password", h.ServerClearUserPassword)
