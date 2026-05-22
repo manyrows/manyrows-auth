@@ -3,6 +3,7 @@ package api_test
 import (
 	"bytes"
 	"context"
+	"encoding/csv"
 	"encoding/json"
 	"manyrows-core/api"
 	"manyrows-core/auth"
@@ -2726,6 +2727,24 @@ func TestServerGetUserAuthLogs(t *testing.T) {
 	}
 	if appResp.Total < 1 || len(appResp.Logs) < 1 {
 		t.Fatalf("app auth-logs: expected at least one log, got total=%d len=%d", appResp.Total, len(appResp.Logs))
+	}
+
+	// CSV export: text/csv, a header row, and at least one data row.
+	rr = httptest.NewRecorder()
+	router.ServeHTTP(rr, httptest.NewRequest(http.MethodGet,
+		"/x/"+ws.Slug+"/api/v1/apps/"+appID.String()+"/auth-logs?format=csv&pageSize=10", nil))
+	if rr.Code != http.StatusOK {
+		t.Fatalf("app auth-logs csv: expected 200, got %d", rr.Code)
+	}
+	if ct := rr.Header().Get("Content-Type"); !strings.HasPrefix(ct, "text/csv") {
+		t.Fatalf("app auth-logs csv: expected text/csv, got %q", ct)
+	}
+	csvRows, err := csv.NewReader(strings.NewReader(rr.Body.String())).ReadAll()
+	if err != nil {
+		t.Fatalf("app auth-logs csv: parse: %v", err)
+	}
+	if len(csvRows) < 2 || csvRows[0][0] != "id" || len(csvRows[0]) != 10 {
+		t.Fatalf("app auth-logs csv: want header + >=1 row with 10 cols, got %d rows header=%v", len(csvRows), csvRows[0])
 	}
 
 	// A bad `since` is a 400.

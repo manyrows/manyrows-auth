@@ -1,6 +1,7 @@
 package api
 
 import (
+	"encoding/csv"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -91,7 +92,12 @@ func (handler *RequestHandler) ServerListAppAuthLogs(w http.ResponseWriter, r *h
 		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 		return
 	}
-	utils.WriteJson(w, ServerAuthLogsResponse{Logs: toServerAuthLogEntries(logs), Total: total, Page: page, PageSize: pageSize})
+	entries := toServerAuthLogEntries(logs)
+	if strings.EqualFold(strings.TrimSpace(q.Get("format")), "csv") {
+		writeAuthLogsCSV(w, entries)
+		return
+	}
+	utils.WriteJson(w, ServerAuthLogsResponse{Logs: entries, Total: total, Page: page, PageSize: pageSize})
 }
 
 // ServerGetUserAuthLogs returns a member's authentication-event history for
@@ -119,7 +125,8 @@ func (handler *RequestHandler) ServerGetUserAuthLogs(w http.ResponseWriter, r *h
 		return
 	}
 
-	page, pageSize, ok := parseAuthLogPaging(w, r, r.URL.Query())
+	q := r.URL.Query()
+	page, pageSize, ok := parseAuthLogPaging(w, r, q)
 	if !ok {
 		return
 	}
@@ -137,7 +144,12 @@ func (handler *RequestHandler) ServerGetUserAuthLogs(w http.ResponseWriter, r *h
 		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 		return
 	}
-	utils.WriteJson(w, ServerAuthLogsResponse{Logs: toServerAuthLogEntries(logs), Total: total, Page: page, PageSize: pageSize})
+	entries := toServerAuthLogEntries(logs)
+	if strings.EqualFold(strings.TrimSpace(q.Get("format")), "csv") {
+		writeAuthLogsCSV(w, entries)
+		return
+	}
+	utils.WriteJson(w, ServerAuthLogsResponse{Logs: entries, Total: total, Page: page, PageSize: pageSize})
 }
 
 // parseAuthLogPaging reads page/pageSize query params (page>=0, pageSize 1..200,
@@ -165,6 +177,24 @@ func parseAuthLogPaging(w http.ResponseWriter, r *http.Request, q url.Values) (p
 		pageSize = n
 	}
 	return page, pageSize, true
+}
+
+// writeAuthLogsCSV streams the entries as CSV (one header row + a row each),
+// honouring the same filters/paging as the JSON response. encoding/csv handles
+// quoting of commas, quotes, and newlines (e.g. in user-agent strings).
+func writeAuthLogsCSV(w http.ResponseWriter, entries []ServerAuthLogEntry) {
+	w.Header().Set("Content-Type", "text/csv; charset=utf-8")
+	w.Header().Set("Content-Disposition", `attachment; filename="auth-logs.csv"`)
+	cw := csv.NewWriter(w)
+	_ = cw.Write([]string{"id", "createdAt", "event", "method", "outcome", "failureReason", "actorType", "ip", "userAgent", "requestId"})
+	for _, e := range entries {
+		_ = cw.Write([]string{
+			e.ID,
+			e.CreatedAt.UTC().Format(time.RFC3339),
+			e.Event, e.Method, e.Outcome, e.FailureReason, e.ActorType, e.IP, e.UserAgent, e.RequestID,
+		})
+	}
+	cw.Flush()
 }
 
 func toServerAuthLogEntries(logs []core.AuthLog) []ServerAuthLogEntry {

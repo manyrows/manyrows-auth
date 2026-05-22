@@ -930,12 +930,18 @@ paths:
         - name: pageSize
           in: query
           schema: { type: integer, default: 50, maximum: 200 }
+        - name: format
+          in: query
+          description: "`csv` returns the same page as a CSV download (default `json`)."
+          schema: { type: string, enum: [json, csv], default: json }
       responses:
         "200":
-          description: A page of auth-log entries.
+          description: A page of auth-log entries (JSON, or CSV when `format=csv`).
           content:
             application/json:
               schema: { $ref: "#/components/schemas/AuthLogsResponse" }
+            text/csv:
+              schema: { type: string }
         "400": { $ref: "#/components/responses/BadRequest" }
 
   /apps/{appId}/users/{userId}/auth-logs:
@@ -954,12 +960,18 @@ paths:
         - name: pageSize
           in: query
           schema: { type: integer, default: 50, maximum: 200 }
+        - name: format
+          in: query
+          description: "`csv` returns the same page as a CSV download (default `json`)."
+          schema: { type: string, enum: [json, csv], default: json }
       responses:
         "200":
-          description: A page of auth-log entries.
+          description: A page of auth-log entries (JSON, or CSV when `format=csv`).
           content:
             application/json:
               schema: { $ref: "#/components/schemas/AuthLogsResponse" }
+            text/csv:
+              schema: { type: string }
         "404": { $ref: "#/components/responses/NotFound" }
 
   /apps/{appId}/users/{userId}/totp:
