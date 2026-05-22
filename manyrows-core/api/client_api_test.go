@@ -313,6 +313,7 @@ func setupServerAPIRouter(t *testing.T) *chi.Mux {
 	appRouter.Get("/users", requestHandler.HandleServerGetUser)
 	appRouter.Get("/users/{userId}", requestHandler.ServerGetUserByID)
 	appRouter.Post("/users", requestHandler.ServerCreateUser)
+	appRouter.Post("/users:batch", requestHandler.ServerBatchCreateUsers)
 	appRouter.Patch("/users/{userId}", requestHandler.ServerSetUserStatus)
 	appRouter.Post("/users/{userId}/magic-link", requestHandler.ServerCreateMagicLink)
 	appRouter.Get("/user-fields", requestHandler.HandleServerGetUserFields)
@@ -2720,6 +2721,72 @@ func TestServerSetUserEmailVerified(t *testing.T) {
 	}
 	if u, _ := testEnv.Repo.GetUserByID(ctx, user.ID); u == nil || u.EmailVerifiedAt != nil {
 		t.Fatalf("email should be unverified, got %+v", u)
+	}
+}
+
+func TestServerBatchCreateUsers(t *testing.T) {
+	router := setupServerAPIRouter(t)
+
+	acc := testEnv.CreateTestAccount(t, "srv-batch-"+GenerateUniqueSlug("test")+"@example.com")
+	ws := testEnv.CreateTestWorkspace(t, acc, "Test WS", GenerateUniqueSlug("ws"))
+	project := testEnv.CreateTestProduct(t, ws, acc, "Test Product", GenerateUniqueSlug("proj"))
+	appID := createTestApp(t, ws.ID, project.ID, uuid.Nil, "Test App")
+
+	fixtures := &TestFixtures{Account: acc, Workspace: ws, Products: []core.Product{*project}}
+	defer testEnv.CleanupTestData(t, fixtures)
+
+	e1 := "batch-1-" + GenerateUniqueSlug("u") + "@example.com"
+	e2 := "batch-2-" + GenerateUniqueSlug("u") + "@example.com"
+	defer func() {
+		pool := testEnv.DB.Pool()
+		_, _ = pool.Exec(context.Background(), "DELETE FROM users WHERE lower(email) = lower($1) OR lower(email) = lower($2)", e1, e2)
+		_, _ = pool.Exec(context.Background(), "DELETE FROM apps WHERE id = $1", appID)
+	}()
+
+	base := "/x/" + ws.Slug + "/api/v1/apps/" + appID.String() + "/users:batch"
+
+	// Two valid emails + one invalid → 200 with per-item results.
+	body, _ := json.Marshal(api.ServerBatchCreateUsersRequest{Emails: []string{e1, e2, "not-an-email"}})
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, httptest.NewRequest(http.MethodPost, base, bytes.NewReader(body)))
+	if rr.Code != http.StatusOK {
+		t.Fatalf("batch: expected 200, got %d: %s", rr.Code, rr.Body.String())
+	}
+	var resp api.ServerBatchCreateUsersResponse
+	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if len(resp.Results) != 3 {
+		t.Fatalf("expected 3 results, got %d", len(resp.Results))
+	}
+	created := 0
+	failed := 0
+	for _, res := range resp.Results {
+		if res.Error != "" {
+			failed++
+		} else if res.UserID != "" && res.Created {
+			created++
+		}
+	}
+	if created != 2 || failed != 1 {
+		t.Fatalf("expected 2 created + 1 failed, got created=%d failed=%d (%+v)", created, failed, resp.Results)
+	}
+
+	// Re-provisioning the same emails is idempotent (created=false).
+	body, _ = json.Marshal(api.ServerBatchCreateUsersRequest{Emails: []string{e1}})
+	rr = httptest.NewRecorder()
+	router.ServeHTTP(rr, httptest.NewRequest(http.MethodPost, base, bytes.NewReader(body)))
+	_ = json.Unmarshal(rr.Body.Bytes(), &resp)
+	if len(resp.Results) != 1 || resp.Results[0].Created {
+		t.Fatalf("expected idempotent re-provision (created=false), got %+v", resp.Results)
+	}
+
+	// Empty batch → 400.
+	body, _ = json.Marshal(api.ServerBatchCreateUsersRequest{Emails: []string{}})
+	rr = httptest.NewRecorder()
+	router.ServeHTTP(rr, httptest.NewRequest(http.MethodPost, base, bytes.NewReader(body)))
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("empty batch: expected 400, got %d", rr.Code)
 	}
 }
 

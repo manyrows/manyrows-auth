@@ -4,6 +4,7 @@ from .client import ManyRowsServer, ManyRowsServerError
 from .models import (
     AuthLogEntry,
     AuthLogsPage,
+    BatchUserResult,
     CheckPermissionResult,
     CreateUserResult,
     Delivery,
@@ -32,6 +33,7 @@ __all__ = [
     "ManyRowsServerError",
     "AuthLogEntry",
     "AuthLogsPage",
+    "BatchUserResult",
     "CheckPermissionResult",
     "CreateUserResult",
     "Delivery",

@@ -117,6 +117,14 @@ export interface CreateUserResult {
   roles: string[];
 }
 
+export interface BatchUserResult {
+  email: string;
+  userId?: string;
+  created: boolean;
+  /** Set when this email failed; the rest of the batch still succeed. */
+  error?: string;
+}
+
 export type AppUserStatus = "active" | "disabled";
 
 export interface UserStatusResult {
@@ -292,6 +300,21 @@ export class ManyRowsServer {
   /** Provision a user: create-or-find by email in the pool and add to the app. Idempotent. */
   createUser(input: CreateUserInput): Promise<CreateUserResult> {
     return this.request("POST", "/users", { body: input });
+  }
+
+  /**
+   * Provision up to 100 users at once, all with the same optional roles.
+   * Each email is reported independently in the result, so one bad email
+   * doesn't sink the rest. Idempotent per email.
+   */
+  async batchCreateUsers(
+    emails: string[],
+    opts: { emailVerified?: boolean; roles?: string[] } = {},
+  ): Promise<BatchUserResult[]> {
+    const { results } = await this.request<{ results: BatchUserResult[] }>("POST", "/users:batch", {
+      body: { emails, emailVerified: opts.emailVerified, roles: opts.roles },
+    });
+    return results;
   }
 
   /** Suspend (`disabled`) or re-enable (`active`) a member in this app. */

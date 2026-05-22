@@ -68,6 +68,7 @@ try {
 | `listUsers({ search?, page?, pageSize? })` | `GET /users` |
 | `getUserByEmail(email)` / `getUser(userId)` | `GET /users` |
 | `createUser({ email, emailVerified?, roles? })` | `POST /users` |
+| `batchCreateUsers(emails, { emailVerified?, roles? })` | `POST /users:batch` |
 | `setUserStatus(userId, "active" \| "disabled")` | `PATCH /users/{id}` |
 | `removeUser(userId)` | `DELETE /users/{id}` |
 | `replaceUserRoles(userId, roles)` | `PUT /users/{id}/roles` |

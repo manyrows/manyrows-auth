@@ -180,6 +180,31 @@ paths:
               schema: { $ref: "#/components/schemas/CreateUserResponse" }
         "400": { $ref: "#/components/responses/BadRequest" }
 
+  /apps/{appId}/users:batch:
+    parameters:
+      - $ref: "#/components/parameters/AppId"
+    post:
+      tags: [Users]
+      summary: Provision many users at once
+      description: >
+        Provision up to 100 users in one call, all with the same optional role
+        set. Roles are resolved once (a bad slug fails the whole request); each
+        email is then provisioned independently and reported in `results`, so
+        one bad email doesn't sink the rest. Idempotent per email.
+      operationId: batchCreateUsers
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/BatchCreateUsersRequest" }
+      responses:
+        "200":
+          description: Per-email results.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/BatchCreateUsersResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+
   /apps/{appId}/users/{userId}:
     parameters:
       - $ref: "#/components/parameters/AppId"
@@ -652,6 +677,27 @@ components:
         user: { $ref: "#/components/schemas/UserResource" }
         created: { type: boolean, description: True when a new identity was created. }
         roles: { type: array, items: { type: string } }
+
+    BatchCreateUsersRequest:
+      type: object
+      required: [emails]
+      properties:
+        emails: { type: array, items: { type: string, format: email }, description: "Up to 100 addresses." }
+        emailVerified: { type: boolean, description: Mark all addresses verified. Defaults to false. }
+        roles: { type: array, items: { type: string }, description: Role slugs applied to every user. }
+
+    BatchUserResult:
+      type: object
+      properties:
+        email: { type: string }
+        userId: { type: string, format: uuid }
+        created: { type: boolean }
+        error: { type: string, description: Set when this email failed; the rest still succeed. }
+
+    BatchCreateUsersResponse:
+      type: object
+      properties:
+        results: { type: array, items: { $ref: "#/components/schemas/BatchUserResult" } }
 
     SetUserStatusRequest:
       type: object

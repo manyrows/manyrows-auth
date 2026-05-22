@@ -66,6 +66,8 @@ var apiTranslations = map[string]map[string]string{
 		"error.appDisabled":           "App is disabled",
 		"error.invalidStatus":         "Invalid status (expected \"active\" or \"disabled\")",
 		"error.permissionsInvalid":    "One or more permissions are invalid",
+		"error.invalidEmail":          "Invalid email address",
+		"error.batchTooLarge":         "Batch too large (max %d users per request)",
 
 		// ID errors
 		"error.missingProductId":     "Missing project ID",

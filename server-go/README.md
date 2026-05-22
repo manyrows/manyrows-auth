@@ -68,6 +68,7 @@ if errors.As(err, &apiErr) && apiErr.Status == http.StatusNotFound {
 | `ListUsers(ctx, ListUsersParams{…})` | `GET /users` |
 | `GetUserByEmail(ctx, email)` / `GetUser(ctx, userID)` | `GET /users` |
 | `CreateUser(ctx, CreateUserInput{…})` | `POST /users` |
+| `BatchCreateUsers(ctx, BatchCreateUsersInput{…})` | `POST /users:batch` |
 | `SetUserStatus(ctx, userID, "active"\|"disabled")` | `PATCH /users/{id}` |
 | `RemoveUser(ctx, userID)` | `DELETE /users/{id}` |
 | `ReplaceUserRoles(ctx, userID, roles)` | `PUT /users/{id}/roles` |

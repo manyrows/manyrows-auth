@@ -326,41 +326,59 @@ func (handler *RequestHandler) ServerCreateUser(w http.ResponseWriter, r *http.R
 		return
 	}
 
-	user, created, err := handler.repo.GetOrCreateUser(ctx, email, app, core.UserSourceInvited)
+	user, created, err := handler.provisionUser(r, project, app, email, req.EmailVerified, roleIDs)
 	if err != nil {
-		log.Err(err).Msg("ServerCreateUser: GetOrCreateUser failed")
+		if errors.Is(err, repo.ErrBadRequest) {
+			WriteError(w, r, "error.rolesInvalid", http.StatusBadRequest)
+			return
+		}
+		log.Err(err).Msg("ServerCreateUser: provision failed")
 		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 		return
 	}
 
-	if req.EmailVerified && user.EmailVerifiedAt == nil {
+	status := http.StatusOK
+	if created {
+		status = http.StatusCreated
+	}
+	utils.WriteJsonWithStatusCode(w, ServerCreateUserResponse{
+		User:    core.ToUserResource(user),
+		Created: created,
+		Roles:   slugs,
+	}, status)
+}
+
+// provisionUser find-or-creates the user in the app's pool, optionally marks
+// the email verified, ensures app membership, and assigns the given (already
+// resolved) roles. It fires the user.created webhook and an audit log for any
+// real change. roleIDs must be pre-resolved by the caller so a bad slug fails
+// fast before any writes. Errors are returned raw for the caller to map.
+func (handler *RequestHandler) provisionUser(r *http.Request, project *core.Product, app *core.App, email string, emailVerified bool, roleIDs []uuid.UUID) (*core.User, bool, error) {
+	ctx := r.Context()
+
+	user, created, err := handler.repo.GetOrCreateUser(ctx, email, app, core.UserSourceInvited)
+	if err != nil {
+		return nil, false, err
+	}
+
+	if emailVerified && user.EmailVerifiedAt == nil {
 		now := time.Now().UTC()
 		if err := handler.repo.SetUserEmailVerified(ctx, user.ID, now); err != nil {
-			log.Err(err).Msg("ServerCreateUser: SetUserEmailVerified failed")
-			WriteError(w, r, "error.internalError", http.StatusInternalServerError)
-			return
+			return nil, false, err
 		}
 		user.EmailVerifiedAt = &now
 	}
 
 	_, membershipCreated, err := handler.repo.EnsureAppMember(ctx, app.ID, user.ID, core.UserSourceInvited)
 	if err != nil {
-		log.Err(err).Msg("ServerCreateUser: EnsureAppMember failed")
-		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
-		return
+		return nil, false, err
 	}
 
 	if len(roleIDs) > 0 {
 		if err := handler.repo.ReplaceUserRoles(ctx, repo.ReplaceUserRolesParams{
 			ProductID: project.ID, AppID: app.ID, UserID: user.ID, RoleIDs: roleIDs, Now: time.Now().UTC(),
 		}); err != nil {
-			if errors.Is(err, repo.ErrBadRequest) {
-				WriteError(w, r, "error.rolesInvalid", http.StatusBadRequest)
-				return
-			}
-			log.Err(err).Msg("ServerCreateUser: ReplaceUserRoles failed")
-			WriteError(w, r, "error.internalError", http.StatusInternalServerError)
-			return
+			return nil, false, err
 		}
 	}
 
@@ -385,15 +403,85 @@ func (handler *RequestHandler) ServerCreateUser(w http.ResponseWriter, r *http.R
 		})
 	}
 
-	status := http.StatusOK
-	if created {
-		status = http.StatusCreated
+	return user, created, nil
+}
+
+const maxBatchUsers = 100
+
+type ServerBatchCreateUsersRequest struct {
+	Emails        []string `json:"emails"`
+	EmailVerified bool     `json:"emailVerified"`
+	Roles         []string `json:"roles"`
+}
+
+type ServerBatchUserResult struct {
+	Email   string `json:"email"`
+	UserID  string `json:"userId,omitempty"`
+	Created bool   `json:"created"`
+	Error   string `json:"error,omitempty"`
+}
+
+type ServerBatchCreateUsersResponse struct {
+	Results []ServerBatchUserResult `json:"results"`
+}
+
+// ServerBatchCreateUsers provisions many users in one call, all with the same
+// optional role set. Roles are resolved once (a bad slug fails the whole
+// request); each email is then provisioned independently and reported in
+// results, so one bad email doesn't sink the rest. Idempotent per email.
+// POST /x/{workspaceSlug}/api/v1/apps/{appId}/users:batch
+func (handler *RequestHandler) ServerBatchCreateUsers(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	project, ok := core.ProductFromContext(ctx)
+	if !ok || project == nil {
+		WriteError(w, r, "error.projectNotFound", http.StatusNotFound)
+		return
 	}
-	utils.WriteJsonWithStatusCode(w, ServerCreateUserResponse{
-		User:    core.ToUserResource(user),
-		Created: created,
-		Roles:   slugs,
-	}, status)
+	app, ok := core.AppFromContext(ctx)
+	if !ok || app == nil {
+		WriteError(w, r, "error.appNotFound", http.StatusNotFound)
+		return
+	}
+
+	var req ServerBatchCreateUsersRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		WriteError(w, r, "error.invalidJson", http.StatusBadRequest)
+		return
+	}
+	if len(req.Emails) == 0 {
+		WriteError(w, r, "error.badRequest", http.StatusBadRequest)
+		return
+	}
+	if len(req.Emails) > maxBatchUsers {
+		WriteErrorf(w, r, "error.batchTooLarge", http.StatusBadRequest, maxBatchUsers)
+		return
+	}
+
+	// Resolve roles once — a bad slug fails the whole batch (fail-fast before
+	// any writes), consistent with the single-create path.
+	roleIDs, _, ok := handler.resolveRoleSlugs(w, r, project.ID, req.Roles)
+	if !ok {
+		return
+	}
+
+	results := make([]ServerBatchUserResult, 0, len(req.Emails))
+	for _, raw := range req.Emails {
+		email, vr := auth.ValidateEmail(raw)
+		if !vr.Ok() {
+			results = append(results, ServerBatchUserResult{Email: raw, Error: "error.invalidEmail"})
+			continue
+		}
+		user, created, err := handler.provisionUser(r, project, app, email, req.EmailVerified, roleIDs)
+		if err != nil {
+			log.Err(err).Str("email", email).Msg("ServerBatchCreateUsers: provision failed")
+			results = append(results, ServerBatchUserResult{Email: email, Error: "error.internalError"})
+			continue
+		}
+		results = append(results, ServerBatchUserResult{Email: email, UserID: user.ID.String(), Created: created})
+	}
+
+	utils.WriteJson(w, ServerBatchCreateUsersResponse{Results: results})
 }
 
 type ServerRemoveUserResponse struct {

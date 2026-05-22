@@ -18,6 +18,7 @@ from .models import (
     RemoveUserResult,
     RoleSummary,
     AuthLogsPage,
+    BatchUserResult,
     ServerUser,
     Session,
     UserField,
@@ -130,6 +131,22 @@ class ManyRowsServer:
         if roles is not None:
             body["roles"] = roles
         return from_dict(CreateUserResult, self._request("POST", "/users", body=body))
+
+    def batch_create_users(
+        self, emails: list[str], *, email_verified: bool = False, roles: Optional[list[str]] = None
+    ) -> list[BatchUserResult]:
+        """Provision up to 100 users at once, all with the same optional roles.
+
+        Each email is reported independently, so one bad email doesn't sink the
+        rest. Idempotent per email.
+        """
+        body: dict[str, Any] = {"emails": emails}
+        if email_verified:
+            body["emailVerified"] = True
+        if roles is not None:
+            body["roles"] = roles
+        data = self._request("POST", "/users:batch", body=body)
+        return [from_dict(BatchUserResult, item) for item in data.get("results", [])]
 
     def set_user_status(self, user_id: str, status: str) -> UserStatus:
         """Suspend (``"disabled"``) or re-enable (``"active"``) a member in this app."""

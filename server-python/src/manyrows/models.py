@@ -94,6 +94,14 @@ class CreateUserResult:
 
 
 @dataclass
+class BatchUserResult:
+    email: str = ""
+    user_id: str = ""
+    created: bool = False
+    error: str = ""
+
+
+@dataclass
 class UserStatus:
     user_id: str = ""
     status: str = ""

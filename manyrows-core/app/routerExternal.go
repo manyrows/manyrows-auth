@@ -178,6 +178,7 @@ func (a *AppService) serverAPIRouter(h *api.RequestHandler) *chi.Mux {
 	appRouter.Get("/users", h.HandleServerGetUser)
 	appRouter.Get("/users/{userId}", h.ServerGetUserByID)
 	appRouter.Post("/users", h.ServerCreateUser)
+	appRouter.Post("/users:batch", h.ServerBatchCreateUsers)
 	// Suspend / re-enable a user in this app (per-app membership status).
 	appRouter.Patch("/users/{userId}", h.ServerSetUserStatus)
 	// Generate a one-time passwordless sign-in link for a member.

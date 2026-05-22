@@ -65,6 +65,7 @@ except ManyRowsServerError as err:
 | `list_users(search=…, page=…, page_size=…)` | `GET /users` |
 | `get_user_by_email(email)` / `get_user(user_id)` | `GET /users` |
 | `create_user(email=…, email_verified=…, roles=…)` | `POST /users` |
+| `batch_create_users(emails, email_verified=…, roles=…)` | `POST /users:batch` |
 | `set_user_status(user_id, "active" / "disabled")` | `PATCH /users/{id}` |
 | `remove_user(user_id)` | `DELETE /users/{id}` |
 | `replace_user_roles(user_id, roles)` | `PUT /users/{id}/roles` |

@@ -326,6 +326,32 @@ func (c *Client) CreateUser(ctx context.Context, in CreateUserInput) (*CreateUse
 	return &out, c.do(ctx, http.MethodPost, "/users", nil, in, &out)
 }
 
+// BatchCreateUsersInput provisions many users at once, all with the same
+// optional roles. Up to 100 emails per call.
+type BatchCreateUsersInput struct {
+	Emails        []string `json:"emails"`
+	EmailVerified bool     `json:"emailVerified,omitempty"`
+	Roles         []string `json:"roles,omitempty"`
+}
+
+// BatchUserResult is the per-email outcome of a batch provision.
+type BatchUserResult struct {
+	Email   string `json:"email"`
+	UserID  string `json:"userId,omitempty"`
+	Created bool   `json:"created"`
+	Error   string `json:"error,omitempty"`
+}
+
+// BatchCreateUsers provisions many users in one call. Roles are resolved once
+// (a bad slug fails the whole request); each email is reported independently,
+// so one bad email doesn't sink the rest. Idempotent per email.
+func (c *Client) BatchCreateUsers(ctx context.Context, in BatchCreateUsersInput) ([]BatchUserResult, error) {
+	var out struct {
+		Results []BatchUserResult `json:"results"`
+	}
+	return out.Results, c.do(ctx, http.MethodPost, "/users:batch", nil, in, &out)
+}
+
 // SetUserStatus suspends ("disabled") or re-enables ("active") a member in this app.
 func (c *Client) SetUserStatus(ctx context.Context, userID, status string) (*UserStatus, error) {
 	var out UserStatus
