@@ -333,8 +333,10 @@ func setupServerAPIRouter(t *testing.T) *chi.Mux {
 	appRouter.Patch("/webhooks/{webhookId}", requestHandler.ServerUpdateWebhook)
 	appRouter.Delete("/webhooks/{webhookId}", requestHandler.ServerDeleteWebhook)
 	appRouter.Post("/webhooks/{webhookId}/rotate-secret", requestHandler.ServerRotateWebhookSecret)
+	appRouter.Get("/config/{configKey}", requestHandler.ServerGetConfigValue)
 	appRouter.Put("/config/{configKey}", requestHandler.ServerSetConfigValue)
 	appRouter.Delete("/config/{configKey}", requestHandler.ServerDeleteConfigValue)
+	appRouter.Get("/features/{flagKey}", requestHandler.ServerGetFeatureFlagOverride)
 	appRouter.Put("/features/{flagKey}", requestHandler.ServerSetFeatureFlag)
 	appRouter.Delete("/features/{flagKey}", requestHandler.ServerDeleteFeatureFlag)
 	appRouter.Get("/config-keys", requestHandler.ServerListConfigKeys)
@@ -2949,9 +2951,43 @@ func TestServerConfigAndFlagManagement(t *testing.T) {
 	if rr := put("/config/NOPE", api.ServerSetConfigValueRequest{Value: json.RawMessage(`"x"`)}); rr.Code != http.StatusNotFound {
 		t.Fatalf("unknown config key: expected 404, got %d", rr.Code)
 	}
-	// Enable a feature flag → 204.
+	// Enable a feature flag (targeted at no roles) → 204.
 	if rr := put("/features/new_ui", api.ServerSetFeatureFlagRequest{Enabled: true}); rr.Code != http.StatusNoContent {
 		t.Fatalf("set flag: expected 204, got %d: %s", rr.Code, rr.Body.String())
+	}
+
+	// Read back the raw value/override via the GET endpoints (M4).
+	get := func(path string) *httptest.ResponseRecorder {
+		rr := httptest.NewRecorder()
+		router.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, base+path, nil))
+		return rr
+	}
+	if rr := get("/config/GREETING"); rr.Code != http.StatusOK {
+		t.Fatalf("get config: %d %s", rr.Code, rr.Body.String())
+	} else {
+		var cv api.ServerConfigValueResponse
+		_ = json.Unmarshal(rr.Body.Bytes(), &cv)
+		if string(cv.Value) != `"hello"` {
+			t.Fatalf("get config value: want \"hello\", got %s", cv.Value)
+		}
+	}
+	if rr := get("/config/API_SECRET"); rr.Code != http.StatusBadRequest {
+		t.Fatalf("get secret config: expected 400, got %d", rr.Code)
+	}
+	if rr := get("/config/NOPE"); rr.Code != http.StatusNotFound {
+		t.Fatalf("get unknown config: expected 404, got %d", rr.Code)
+	}
+	if rr := get("/features/new_ui"); rr.Code != http.StatusOK {
+		t.Fatalf("get override: %d %s", rr.Code, rr.Body.String())
+	} else {
+		var ov api.ServerFeatureOverrideResponse
+		_ = json.Unmarshal(rr.Body.Bytes(), &ov)
+		if !ov.Enabled {
+			t.Fatalf("get override: expected enabled, got %+v", ov)
+		}
+	}
+	if rr := get("/features/ghost"); rr.Code != http.StatusNotFound {
+		t.Fatalf("get unknown flag override: expected 404, got %d", rr.Code)
 	}
 
 	// Read back via delivery — verifies both the writes and the delivery read.
@@ -2988,6 +3024,13 @@ func TestServerConfigAndFlagManagement(t *testing.T) {
 		if it.Key == "GREETING" && len(it.Value) > 0 {
 			t.Fatalf("GREETING value should be cleared after delete, got %s", it.Value)
 		}
+	}
+	// After delete, the raw GET endpoints report no value/override (404).
+	if rr := get("/config/GREETING"); rr.Code != http.StatusNotFound {
+		t.Fatalf("get config after delete: expected 404, got %d", rr.Code)
+	}
+	if rr := get("/features/new_ui"); rr.Code != http.StatusNotFound {
+		t.Fatalf("get override after delete: expected 404, got %d", rr.Code)
 	}
 }
 

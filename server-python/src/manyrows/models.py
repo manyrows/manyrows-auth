@@ -203,6 +203,13 @@ class FeatureFlag:
 
 
 @dataclass
+class FeatureFlagOverride:
+    enabled: bool = False
+    roles: list[str] = field(default_factory=list)
+    status: str = ""
+
+
+@dataclass
 class UserField:
     id: str = ""
     user_pool_id: str = ""

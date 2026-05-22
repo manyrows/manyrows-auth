@@ -90,7 +90,8 @@ except ManyRowsServerError as err:
 | `get_user_field_values(user_id)` | `GET /user-fields/users/{id}` |
 | `set_user_field_value(field_id, user_id, value)` | `PUT /user-fields/{fieldId}/users/{id}` |
 | `delete_user_field_value(field_id, user_id)` | `DELETE /user-fields/{fieldId}/users/{id}` |
-| `set_config_value(config_key, value)` / `delete_config_value(config_key)` | `PUT` · `DELETE /config/{key}` |
+| `get_config_value(config_key)` / `set_config_value(config_key, value)` / `delete_config_value(config_key)` | `GET` · `PUT` · `DELETE /config/{key}` |
+| `get_feature_flag_override(flag_key)` | `GET /features/{key}` |
 | `set_feature_flag_override(flag_key, enabled, roles=…)` / `clear_feature_flag_override(flag_key)` | `PUT` · `DELETE /features/{key}` |
 | `list_config_keys()` / `get_config_key(key)` | `GET /config-keys` · `/config-keys/{key}` |
 | `create_config_key(...)` / `update_config_key(key, ...)` / `delete_config_key(key)` | `POST /config-keys` · `PATCH`·`DELETE /config-keys/{key}` |

@@ -93,7 +93,8 @@ if errors.As(err, &apiErr) && apiErr.Status == http.StatusNotFound {
 | `GetUserFieldValues(ctx, userID)` | `GET /user-fields/users/{id}` |
 | `SetUserFieldValue(ctx, fieldID, userID, value)` | `PUT /user-fields/{fieldId}/users/{id}` |
 | `DeleteUserFieldValue(ctx, fieldID, userID)` | `DELETE /user-fields/{fieldId}/users/{id}` |
-| `SetConfigValue(ctx, configKey, value)` / `DeleteConfigValue(ctx, configKey)` | `PUT` · `DELETE /config/{key}` |
+| `GetConfigValue(ctx, configKey)` / `SetConfigValue(ctx, configKey, value)` / `DeleteConfigValue(ctx, configKey)` | `GET` · `PUT` · `DELETE /config/{key}` |
+| `GetFeatureFlagOverride(ctx, flagKey)` | `GET /features/{key}` |
 | `SetFeatureFlagOverride(ctx, flagKey, enabled, roles)` / `ClearFeatureFlagOverride(ctx, flagKey)` | `PUT` · `DELETE /features/{key}` |
 | `ListConfigKeys(ctx)` / `GetConfigKey(ctx, key)` | `GET /config-keys` · `/config-keys/{key}` |
 | `CreateConfigKey` / `UpdateConfigKey` / `DeleteConfigKey` | `POST /config-keys` · `PATCH`·`DELETE /config-keys/{key}` |

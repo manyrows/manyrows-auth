@@ -21,6 +21,7 @@ from .models import (
     BatchUserResult,
     ConfigKey,
     FeatureFlag,
+    FeatureFlagOverride,
     Identity,
     Passkey,
     ServerUser,
@@ -397,6 +398,15 @@ class ManyRowsServer:
     def set_config_value(self, config_key: str, value: Any) -> None:
         """Set this app's value for a public/private config key (read back via get_delivery)."""
         self._request("PUT", f"/config/{urllib.parse.quote(config_key, safe='')}", body={"value": value})
+
+    def get_config_value(self, config_key: str) -> Any:
+        """Read this app's value for a config key (raises 404 if unset; secret keys raise 400)."""
+        return self._request("GET", f"/config/{urllib.parse.quote(config_key, safe='')}").get("value")
+
+    def get_feature_flag_override(self, flag_key: str) -> FeatureFlagOverride:
+        """Read this app's override for a feature flag (raises 404 if no override set)."""
+        path = f"/features/{urllib.parse.quote(flag_key, safe='')}"
+        return from_dict(FeatureFlagOverride, self._request("GET", path))
 
     def delete_config_value(self, config_key: str) -> None:
         """Clear this app's value for a config key."""

@@ -93,7 +93,8 @@ try {
 | `getUserFieldValues(userId)` | `GET /user-fields/users/{id}` |
 | `setUserFieldValue(fieldId, userId, value)` | `PUT /user-fields/{fieldId}/users/{id}` |
 | `deleteUserFieldValue(fieldId, userId)` | `DELETE /user-fields/{fieldId}/users/{id}` |
-| `setConfigValue(configKey, value)` / `deleteConfigValue(configKey)` | `PUT` · `DELETE /config/{key}` |
+| `getConfigValue(configKey)` / `setConfigValue(configKey, value)` / `deleteConfigValue(configKey)` | `GET` · `PUT` · `DELETE /config/{key}` |
+| `getFeatureFlagOverride(flagKey)` | `GET /features/{key}` |
 | `setFeatureFlagOverride(flagKey, enabled, roles?)` / `clearFeatureFlagOverride(flagKey)` | `PUT` · `DELETE /features/{key}` |
 | `listConfigKeys()` / `getConfigKey(key)` | `GET /config-keys` · `/config-keys/{key}` |
 | `createConfigKey(...)` / `updateConfigKey(key, patch)` / `deleteConfigKey(key)` | `POST /config-keys` · `PATCH`·`DELETE /config-keys/{key}` |

@@ -183,9 +183,11 @@ func (a *AppService) serverAPIRouter(h *api.RequestHandler) *chi.Mux {
 	appRouter.Delete("/webhooks/{webhookId}", h.ServerDeleteWebhook)
 	appRouter.Post("/webhooks/{webhookId}/rotate-secret", h.ServerRotateWebhookSecret)
 
-	// Config-value + feature-flag management (read via the delivery endpoint).
+	// Config-value + feature-flag management (effective values also via delivery).
+	appRouter.Get("/config/{configKey}", h.ServerGetConfigValue)
 	appRouter.Put("/config/{configKey}", h.ServerSetConfigValue)
 	appRouter.Delete("/config/{configKey}", h.ServerDeleteConfigValue)
+	appRouter.Get("/features/{flagKey}", h.ServerGetFeatureFlagOverride)
 	appRouter.Put("/features/{flagKey}", h.ServerSetFeatureFlag)
 	appRouter.Delete("/features/{flagKey}", h.ServerDeleteFeatureFlag)
 	// Config-key + feature-flag DEFINITION management (the schema itself).

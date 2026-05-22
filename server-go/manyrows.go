@@ -720,6 +720,30 @@ func (c *Client) SetConfigValue(ctx context.Context, configKey string, value any
 	return c.do(ctx, http.MethodPut, "/config/"+url.PathEscape(configKey), nil, body, nil)
 }
 
+// FeatureFlagOverride is this app's override for a feature flag.
+type FeatureFlagOverride struct {
+	Enabled bool     `json:"enabled"`
+	Roles   []string `json:"roles"`
+	Status  string   `json:"status"`
+}
+
+// GetConfigValue reads this app's value for a config key as raw JSON. Returns a
+// *Error with Status 404 if no value is set, or 400 for a secret key.
+func (c *Client) GetConfigValue(ctx context.Context, configKey string) (json.RawMessage, error) {
+	var out struct {
+		Key   string          `json:"key"`
+		Value json.RawMessage `json:"value"`
+	}
+	return out.Value, c.do(ctx, http.MethodGet, "/config/"+url.PathEscape(configKey), nil, nil, &out)
+}
+
+// GetFeatureFlagOverride reads this app's override for a flag. Returns a *Error
+// with Status 404 if no override is set.
+func (c *Client) GetFeatureFlagOverride(ctx context.Context, flagKey string) (*FeatureFlagOverride, error) {
+	var out FeatureFlagOverride
+	return &out, c.do(ctx, http.MethodGet, "/features/"+url.PathEscape(flagKey), nil, nil, &out)
+}
+
 // DeleteConfigValue clears this app's value for a config key.
 func (c *Client) DeleteConfigValue(ctx context.Context, configKey string) error {
 	return c.do(ctx, http.MethodDelete, "/config/"+url.PathEscape(configKey), nil, nil, nil)

@@ -222,6 +222,13 @@ export interface FeatureFlag {
   description?: string;
 }
 
+/** This app's override for a feature flag (enabled state + targeted role slugs). */
+export interface FeatureFlagOverride {
+  enabled: boolean;
+  roles: string[];
+  status: string;
+}
+
 export interface UserField {
   id: string;
   userPoolId: string;
@@ -619,6 +626,20 @@ export class ManyRowsServer {
       body: { value },
       expectNoContent: true,
     });
+  }
+
+  /** Read this app's value for a config key (throws 404 if unset; secret keys 400). */
+  async getConfigValue(configKey: string): Promise<unknown> {
+    const { value } = await this.request<{ key: string; value: unknown }>(
+      "GET",
+      `/config/${encodeURIComponent(configKey)}`,
+    );
+    return value;
+  }
+
+  /** Read this app's override for a feature flag (throws 404 if no override set). */
+  getFeatureFlagOverride(flagKey: string): Promise<FeatureFlagOverride> {
+    return this.request("GET", `/features/${encodeURIComponent(flagKey)}`);
   }
 
   /** Clear this app's value for a config key. */

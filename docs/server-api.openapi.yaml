@@ -259,6 +259,19 @@ paths:
         required: true
         description: The config key's string identifier.
         schema: { type: string }
+    get:
+      tags: [Config and flags]
+      summary: Get a config value
+      description: This app's raw value for the key (for read-modify-write). Secret keys 400; no value set 404.
+      operationId: getConfigValue
+      responses:
+        "200":
+          description: The app's value for the key.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ConfigValueResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
     put:
       tags: [Config and flags]
       summary: Set a config value
@@ -292,6 +305,18 @@ paths:
         required: true
         description: The feature flag's string identifier.
         schema: { type: string }
+    get:
+      tags: [Config and flags]
+      summary: Get a feature-flag override
+      description: This app's override for the flag (enabled, targeted role slugs, status). 404 if no override is set.
+      operationId: getFeatureFlagOverride
+      responses:
+        "200":
+          description: The app's override for the flag.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/FeatureFlagOverrideResponse" }
+        "404": { $ref: "#/components/responses/NotFound" }
     put:
       tags: [Config and flags]
       summary: Set a feature-flag override
@@ -1412,6 +1437,23 @@ components:
         configKeys:
           type: array
           items: { $ref: "#/components/schemas/ConfigKeyDef" }
+
+    ConfigValueResponse:
+      type: object
+      properties:
+        key: { type: string }
+        value:
+          description: The stored value as JSON (string/number/bool/array/object).
+
+    FeatureFlagOverrideResponse:
+      type: object
+      properties:
+        enabled: { type: boolean }
+        roles:
+          type: array
+          items: { type: string }
+          description: Targeted role slugs; empty applies to everyone.
+        status: { type: string }
 
     FeatureFlagsListResponse:
       type: object
