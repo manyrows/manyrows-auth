@@ -20,6 +20,7 @@ var apiTranslations = map[string]map[string]string{
 		"error.badRequest":              "Bad request",
 		"error.internalError":           "Internal server error",
 		"error.tooManyRequests":         "Too many requests. Please wait and try again.",
+		"error.limitReached":            "You've reached the maximum number of %s (limit %d).",
 		"error.invalidJson":             "Invalid JSON",
 		"error.invalidCode":             "Invalid code",
 		"error.currentPasswordRequired": "Current password is required",

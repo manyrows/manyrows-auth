@@ -667,6 +667,28 @@ export class ManyRowsServer {
     return this.request("DELETE", `/feature-flags/${encodeURIComponent(key)}`, { expectNoContent: true });
   }
 
+  /** List the product's config-key definitions. */
+  async listConfigKeys(): Promise<ConfigKey[]> {
+    const { configKeys } = await this.request<{ configKeys: ConfigKey[] }>("GET", "/config-keys");
+    return configKeys;
+  }
+
+  /** Fetch one config-key definition by key. */
+  getConfigKey(key: string): Promise<ConfigKey> {
+    return this.request("GET", `/config-keys/${encodeURIComponent(key)}`);
+  }
+
+  /** List the product's feature-flag definitions. */
+  async listFeatureFlags(): Promise<FeatureFlag[]> {
+    const { featureFlags } = await this.request<{ featureFlags: FeatureFlag[] }>("GET", "/feature-flags");
+    return featureFlags;
+  }
+
+  /** Fetch one feature-flag definition by key. */
+  getFeatureFlag(key: string): Promise<FeatureFlag> {
+    return this.request("GET", `/feature-flags/${encodeURIComponent(key)}`);
+  }
+
   /** Reset (disable) a member's 2FA — for a user who lost their authenticator. */
   resetUserTotp(userId: string): Promise<void> {
     return this.request("DELETE", `/users/${encodeURIComponent(userId)}/totp`, { expectNoContent: true });

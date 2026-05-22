@@ -813,6 +813,34 @@ func (c *Client) DeleteFeatureFlag(ctx context.Context, key string) error {
 	return c.do(ctx, http.MethodDelete, "/feature-flags/"+url.PathEscape(key), nil, nil, nil)
 }
 
+// ListConfigKeys lists the product's config-key definitions.
+func (c *Client) ListConfigKeys(ctx context.Context) ([]ConfigKey, error) {
+	var out struct {
+		ConfigKeys []ConfigKey `json:"configKeys"`
+	}
+	return out.ConfigKeys, c.do(ctx, http.MethodGet, "/config-keys", nil, nil, &out)
+}
+
+// GetConfigKey fetches one config-key definition by key.
+func (c *Client) GetConfigKey(ctx context.Context, key string) (*ConfigKey, error) {
+	var out ConfigKey
+	return &out, c.do(ctx, http.MethodGet, "/config-keys/"+url.PathEscape(key), nil, nil, &out)
+}
+
+// ListFeatureFlags lists the product's feature-flag definitions.
+func (c *Client) ListFeatureFlags(ctx context.Context) ([]FeatureFlag, error) {
+	var out struct {
+		FeatureFlags []FeatureFlag `json:"featureFlags"`
+	}
+	return out.FeatureFlags, c.do(ctx, http.MethodGet, "/feature-flags", nil, nil, &out)
+}
+
+// GetFeatureFlag fetches one feature-flag definition by key.
+func (c *Client) GetFeatureFlag(ctx context.Context, key string) (*FeatureFlag, error) {
+	var out FeatureFlag
+	return &out, c.do(ctx, http.MethodGet, "/feature-flags/"+url.PathEscape(key), nil, nil, &out)
+}
+
 // ResetUserTOTP disables a member's 2FA (for a user who lost their authenticator).
 func (c *Client) ResetUserTOTP(ctx context.Context, userID string) error {
 	return c.do(ctx, http.MethodDelete, "/users/"+url.PathEscape(userID)+"/totp", nil, nil, nil)

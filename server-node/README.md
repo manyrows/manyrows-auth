@@ -94,7 +94,9 @@ try {
 | `deleteUserFieldValue(fieldId, userId)` | `DELETE /user-fields/{fieldId}/users/{id}` |
 | `setConfigValue(configKey, value)` / `deleteConfigValue(configKey)` | `PUT` · `DELETE /config/{key}` |
 | `setFeatureFlagOverride(flagKey, enabled, roles?)` / `clearFeatureFlagOverride(flagKey)` | `PUT` · `DELETE /features/{key}` |
+| `listConfigKeys()` / `getConfigKey(key)` | `GET /config-keys` · `/config-keys/{key}` |
 | `createConfigKey(...)` / `updateConfigKey(key, patch)` / `deleteConfigKey(key)` | `POST /config-keys` · `PATCH`·`DELETE /config-keys/{key}` |
+| `listFeatureFlags()` / `getFeatureFlag(key)` | `GET /feature-flags` · `/feature-flags/{key}` |
 | `createFeatureFlag(...)` / `updateFeatureFlag(key, patch)` / `deleteFeatureFlag(key)` | `POST /feature-flags` · `PATCH`·`DELETE /feature-flags/{key}` |
 | `resetUserTotp(userId)` / `unlockUser(userId)` | `DELETE /users/{id}/totp` · `POST .../unlock` |
 | `listUserIdentities(userId)` / `deleteUserIdentity(userId, provider)` | `GET` · `DELETE /users/{id}/identities[/{provider}]` |

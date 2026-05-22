@@ -335,9 +335,13 @@ func setupServerAPIRouter(t *testing.T) *chi.Mux {
 	appRouter.Delete("/config/{configKey}", requestHandler.ServerDeleteConfigValue)
 	appRouter.Put("/features/{flagKey}", requestHandler.ServerSetFeatureFlag)
 	appRouter.Delete("/features/{flagKey}", requestHandler.ServerDeleteFeatureFlag)
+	appRouter.Get("/config-keys", requestHandler.ServerListConfigKeys)
+	appRouter.Get("/config-keys/{key}", requestHandler.ServerGetConfigKey)
 	appRouter.Post("/config-keys", requestHandler.ServerCreateConfigKey)
 	appRouter.Patch("/config-keys/{key}", requestHandler.ServerUpdateConfigKey)
 	appRouter.Delete("/config-keys/{key}", requestHandler.ServerDeleteConfigKey)
+	appRouter.Get("/feature-flags", requestHandler.ServerListFeatureFlagDefs)
+	appRouter.Get("/feature-flags/{key}", requestHandler.ServerGetFeatureFlagDef)
 	appRouter.Post("/feature-flags", requestHandler.ServerCreateFeatureFlagDef)
 	appRouter.Patch("/feature-flags/{key}", requestHandler.ServerUpdateFeatureFlagDef)
 	appRouter.Delete("/feature-flags/{key}", requestHandler.ServerDeleteFeatureFlagDef)
@@ -3625,6 +3629,28 @@ func TestServerConfigDefCrud(t *testing.T) {
 	if rr := send(http.MethodPatch, "/config-keys/GREETING", `{"description":"updated"}`); rr.Code != http.StatusOK {
 		t.Fatalf("update config key: %d %s", rr.Code, rr.Body.String())
 	}
+	// List + single GET (read-back the definitions you can write).
+	rr = send(http.MethodGet, "/config-keys", "")
+	if rr.Code != http.StatusOK {
+		t.Fatalf("list config keys: %d", rr.Code)
+	}
+	var ckList api.ServerConfigKeysResponse
+	_ = json.Unmarshal(rr.Body.Bytes(), &ckList)
+	foundCK := false
+	for _, k := range ckList.ConfigKeys {
+		if k.Key == "GREETING" {
+			foundCK = true
+		}
+	}
+	if !foundCK {
+		t.Fatalf("list config keys: GREETING missing, got %+v", ckList.ConfigKeys)
+	}
+	if rr := send(http.MethodGet, "/config-keys/GREETING", ""); rr.Code != http.StatusOK {
+		t.Fatalf("get config key: %d", rr.Code)
+	}
+	if rr := send(http.MethodGet, "/config-keys/nope", ""); rr.Code != http.StatusNotFound {
+		t.Fatalf("get unknown config key: expected 404, got %d", rr.Code)
+	}
 	if rr := send(http.MethodDelete, "/config-keys/GREETING", ""); rr.Code != http.StatusNoContent {
 		t.Fatalf("delete config key: %d", rr.Code)
 	}
@@ -3642,6 +3668,9 @@ func TestServerConfigDefCrud(t *testing.T) {
 	if rr := send(http.MethodPost, "/feature-flags", `{"key":"bad","scope":"nope"}`); rr.Code != http.StatusBadRequest {
 		t.Fatalf("bad scope: expected 400, got %d", rr.Code)
 	}
+	if rr := send(http.MethodPost, "/feature-flags", `{"key":"new_ui","scope":"client"}`); rr.Code != http.StatusConflict {
+		t.Fatalf("dup flag: expected 409, got %d", rr.Code)
+	}
 	rr = send(http.MethodPatch, "/feature-flags/new_ui", `{"defaultEnabled":true}`)
 	if rr.Code != http.StatusOK {
 		t.Fatalf("update flag: %d %s", rr.Code, rr.Body.String())
@@ -3649,6 +3678,28 @@ func TestServerConfigDefCrud(t *testing.T) {
 	_ = json.Unmarshal(rr.Body.Bytes(), &ff)
 	if !ff.DefaultEnabled {
 		t.Fatalf("flag defaultEnabled should be true, got %+v", ff)
+	}
+	// List + single GET.
+	rr = send(http.MethodGet, "/feature-flags", "")
+	if rr.Code != http.StatusOK {
+		t.Fatalf("list flags: %d", rr.Code)
+	}
+	var ffList api.ServerFeatureFlagDefsResponse
+	_ = json.Unmarshal(rr.Body.Bytes(), &ffList)
+	foundFF := false
+	for _, f := range ffList.FeatureFlags {
+		if f.Key == "new_ui" {
+			foundFF = true
+		}
+	}
+	if !foundFF {
+		t.Fatalf("list flags: new_ui missing, got %+v", ffList.FeatureFlags)
+	}
+	if rr := send(http.MethodGet, "/feature-flags/new_ui", ""); rr.Code != http.StatusOK {
+		t.Fatalf("get flag: %d", rr.Code)
+	}
+	if rr := send(http.MethodGet, "/feature-flags/ghost", ""); rr.Code != http.StatusNotFound {
+		t.Fatalf("get unknown flag: expected 404, got %d", rr.Code)
 	}
 	if rr := send(http.MethodDelete, "/feature-flags/new_ui", ""); rr.Code != http.StatusNoContent {
 		t.Fatalf("delete flag: %d", rr.Code)

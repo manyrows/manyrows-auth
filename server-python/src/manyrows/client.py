@@ -471,6 +471,24 @@ class ManyRowsServer:
         """Delete a feature flag and its per-app overrides."""
         self._request("DELETE", f"/feature-flags/{urllib.parse.quote(key, safe='')}")
 
+    def list_config_keys(self) -> list[ConfigKey]:
+        """The product's config-key definitions."""
+        data = self._request("GET", "/config-keys")
+        return [from_dict(ConfigKey, c) for c in data.get("configKeys", [])]
+
+    def get_config_key(self, key: str) -> ConfigKey:
+        """Fetch one config-key definition by key."""
+        return from_dict(ConfigKey, self._request("GET", f"/config-keys/{urllib.parse.quote(key, safe='')}"))
+
+    def list_feature_flags(self) -> list[FeatureFlag]:
+        """The product's feature-flag definitions."""
+        data = self._request("GET", "/feature-flags")
+        return [from_dict(FeatureFlag, f) for f in data.get("featureFlags", [])]
+
+    def get_feature_flag(self, key: str) -> FeatureFlag:
+        """Fetch one feature-flag definition by key."""
+        return from_dict(FeatureFlag, self._request("GET", f"/feature-flags/{urllib.parse.quote(key, safe='')}"))
+
     def reset_user_totp(self, user_id: str) -> None:
         """Reset (disable) a member's 2FA — for a user who lost their authenticator."""
         self._request("DELETE", f"/users/{urllib.parse.quote(user_id, safe='')}/totp")

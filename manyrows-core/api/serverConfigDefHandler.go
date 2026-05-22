@@ -43,6 +43,50 @@ func validConfigExposure(e string) bool {
 	return false
 }
 
+type ServerConfigKeysResponse struct {
+	ConfigKeys []ServerConfigKey `json:"configKeys"`
+}
+
+// ServerListConfigKeys lists the product's config-key definitions.
+// GET /x/{workspaceSlug}/api/v1/apps/{appId}/config-keys
+func (handler *RequestHandler) ServerListConfigKeys(w http.ResponseWriter, r *http.Request) {
+	project, ok := handler.serverProductCtx(w, r)
+	if !ok {
+		return
+	}
+	keys, err := handler.repo.GetConfigKeysByProductID(r.Context(), project.ID)
+	if err != nil {
+		log.Err(err).Msg("ServerListConfigKeys: failed")
+		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
+		return
+	}
+	out := make([]ServerConfigKey, 0, len(keys))
+	for _, ck := range keys {
+		out = append(out, toServerConfigKey(ck))
+	}
+	utils.WriteJson(w, ServerConfigKeysResponse{ConfigKeys: out})
+}
+
+// ServerGetConfigKey fetches one config-key definition by key.
+// GET /x/{workspaceSlug}/api/v1/apps/{appId}/config-keys/{key}
+func (handler *RequestHandler) ServerGetConfigKey(w http.ResponseWriter, r *http.Request) {
+	project, ok := handler.serverProductCtx(w, r)
+	if !ok {
+		return
+	}
+	ck, err := handler.repo.GetConfigKeyByProductIDAndKey(r.Context(), project.ID, chi.URLParam(r, "key"))
+	if err != nil {
+		if errors.Is(err, repo.ErrNotFound) {
+			WriteError(w, r, "error.configKeyNotFound", http.StatusNotFound)
+			return
+		}
+		log.Err(err).Msg("ServerGetConfigKey: failed")
+		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
+		return
+	}
+	utils.WriteJson(w, toServerConfigKey(ck))
+}
+
 type ServerCreateConfigKeyRequest struct {
 	Key         string  `json:"key"`
 	Exposure    string  `json:"exposure"`
@@ -189,6 +233,50 @@ func toServerFeatureFlagDef(ff core.FeatureFlag) ServerFeatureFlagDef {
 
 func validFlagScope(s string) bool {
 	return s == string(core.FeatureFlagScopeServer) || s == string(core.FeatureFlagScopeClient)
+}
+
+type ServerFeatureFlagDefsResponse struct {
+	FeatureFlags []ServerFeatureFlagDef `json:"featureFlags"`
+}
+
+// ServerListFeatureFlagDefs lists the product's feature-flag definitions.
+// GET /x/{workspaceSlug}/api/v1/apps/{appId}/feature-flags
+func (handler *RequestHandler) ServerListFeatureFlagDefs(w http.ResponseWriter, r *http.Request) {
+	project, ok := handler.serverProductCtx(w, r)
+	if !ok {
+		return
+	}
+	flags, err := handler.repo.GetFeatureFlagsByProductID(r.Context(), project.ID)
+	if err != nil {
+		log.Err(err).Msg("ServerListFeatureFlagDefs: failed")
+		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
+		return
+	}
+	out := make([]ServerFeatureFlagDef, 0, len(flags))
+	for _, ff := range flags {
+		out = append(out, toServerFeatureFlagDef(ff))
+	}
+	utils.WriteJson(w, ServerFeatureFlagDefsResponse{FeatureFlags: out})
+}
+
+// ServerGetFeatureFlagDef fetches one feature-flag definition by key.
+// GET /x/{workspaceSlug}/api/v1/apps/{appId}/feature-flags/{key}
+func (handler *RequestHandler) ServerGetFeatureFlagDef(w http.ResponseWriter, r *http.Request) {
+	project, ok := handler.serverProductCtx(w, r)
+	if !ok {
+		return
+	}
+	ff, err := handler.repo.GetFeatureFlagByProductIDAndKey(r.Context(), project.ID, chi.URLParam(r, "key"))
+	if err != nil {
+		if errors.Is(err, repo.ErrNotFound) {
+			WriteError(w, r, "error.featureFlagNotFound", http.StatusNotFound)
+			return
+		}
+		log.Err(err).Msg("ServerGetFeatureFlagDef: failed")
+		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
+		return
+	}
+	utils.WriteJson(w, toServerFeatureFlagDef(ff))
 }
 
 type ServerCreateFeatureFlagRequest struct {

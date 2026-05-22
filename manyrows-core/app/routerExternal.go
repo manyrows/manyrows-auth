@@ -187,9 +187,13 @@ func (a *AppService) serverAPIRouter(h *api.RequestHandler) *chi.Mux {
 	appRouter.Put("/features/{flagKey}", h.ServerSetFeatureFlag)
 	appRouter.Delete("/features/{flagKey}", h.ServerDeleteFeatureFlag)
 	// Config-key + feature-flag DEFINITION management (the schema itself).
+	appRouter.Get("/config-keys", h.ServerListConfigKeys)
+	appRouter.Get("/config-keys/{key}", h.ServerGetConfigKey)
 	appRouter.Post("/config-keys", h.ServerCreateConfigKey)
 	appRouter.Patch("/config-keys/{key}", h.ServerUpdateConfigKey)
 	appRouter.Delete("/config-keys/{key}", h.ServerDeleteConfigKey)
+	appRouter.Get("/feature-flags", h.ServerListFeatureFlagDefs)
+	appRouter.Get("/feature-flags/{key}", h.ServerGetFeatureFlagDef)
 	appRouter.Post("/feature-flags", h.ServerCreateFeatureFlagDef)
 	appRouter.Patch("/feature-flags/{key}", h.ServerUpdateFeatureFlagDef)
 	appRouter.Delete("/feature-flags/{key}", h.ServerDeleteFeatureFlagDef)
