@@ -184,8 +184,13 @@ func (a *AppService) serverAPIRouter(h *api.RequestHandler) *chi.Mux {
 	appRouter.Post("/users/{userId}/magic-link", h.ServerCreateMagicLink)
 
 	// User mutations (force-logout, role assignment, removal), app/pool-scoped.
+	appRouter.Get("/users/{userId}/sessions", h.ServerListUserSessions)
 	appRouter.Delete("/users/{userId}/sessions", h.ServerRevokeUserSessions)
+	appRouter.Delete("/users/{userId}/sessions/{sessionId}", h.ServerRevokeUserSession)
 	appRouter.Put("/users/{userId}/roles", h.ServerReplaceUserRoles)
+	// Password management.
+	appRouter.Put("/users/{userId}/password", h.ServerSetUserPassword)
+	appRouter.Delete("/users/{userId}/password", h.ServerClearUserPassword)
 	// Remove a user from this app; prunes the pool identity if the user is
 	// left with no app memberships.
 	appRouter.Delete("/users/{userId}", h.ServerRemoveUser)

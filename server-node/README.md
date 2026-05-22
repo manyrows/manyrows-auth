@@ -72,6 +72,8 @@ try {
 | `removeUser(userId)` | `DELETE /users/{id}` |
 | `replaceUserRoles(userId, roles)` | `PUT /users/{id}/roles` |
 | `revokeUserSessions(userId)` | `DELETE /users/{id}/sessions` |
+| `listUserSessions(userId)` / `revokeUserSession(userId, sessionId)` | `GET` · `DELETE /users/{id}/sessions[/{sid}]` |
+| `setUserPassword(userId, password)` / `clearUserPassword(userId)` | `PUT` · `DELETE /users/{id}/password` |
 | `createMagicLink(userId, { rememberMe? })` | `POST /users/{id}/magic-link` |
 | `listUserFields()` | `GET /user-fields` |
 | `getUserFieldValues(userId)` | `GET /user-fields/users/{id}` |

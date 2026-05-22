@@ -319,8 +319,12 @@ func setupServerAPIRouter(t *testing.T) *chi.Mux {
 	appRouter.Get("/user-fields/users/{userId}", requestHandler.HandleServerGetUserFieldValues)
 	appRouter.Put("/user-fields/{userFieldId}/users/{userId}", requestHandler.ServerUpsertUserFieldValue)
 	appRouter.Delete("/user-fields/{userFieldId}/users/{userId}", requestHandler.ServerDeleteUserFieldValue)
+	appRouter.Get("/users/{userId}/sessions", requestHandler.ServerListUserSessions)
 	appRouter.Delete("/users/{userId}/sessions", requestHandler.ServerRevokeUserSessions)
+	appRouter.Delete("/users/{userId}/sessions/{sessionId}", requestHandler.ServerRevokeUserSession)
 	appRouter.Put("/users/{userId}/roles", requestHandler.ServerReplaceUserRoles)
+	appRouter.Put("/users/{userId}/password", requestHandler.ServerSetUserPassword)
+	appRouter.Delete("/users/{userId}/password", requestHandler.ServerClearUserPassword)
 	appRouter.Delete("/users/{userId}", requestHandler.ServerRemoveUser)
 
 	serverRouter.Mount("/v1/apps/{appId}", appRouter)
@@ -2386,6 +2390,140 @@ func TestServerSetUserStatus_NotMemberAndInvalid(t *testing.T) {
 	router.ServeHTTP(rr, httptest.NewRequest(http.MethodPatch, base+uuid.Must(uuid.NewV4()).String(), bytes.NewReader(ok)))
 	if rr.Code != http.StatusNotFound {
 		t.Fatalf("non-member: expected 404, got %d: %s", rr.Code, rr.Body.String())
+	}
+}
+
+// =====================
+// Server API credentials + sessions tests
+// =====================
+
+func TestServerSetAndClearUserPassword(t *testing.T) {
+	router := setupServerAPIRouter(t)
+
+	acc := testEnv.CreateTestAccount(t, "srv-pw-"+GenerateUniqueSlug("test")+"@example.com")
+	ws := testEnv.CreateTestWorkspace(t, acc, "Test WS", GenerateUniqueSlug("ws"))
+	project := testEnv.CreateTestProduct(t, ws, acc, "Test Product", GenerateUniqueSlug("proj"))
+	appID := createTestApp(t, ws.ID, project.ID, uuid.Nil, "Test App")
+
+	fixtures := &TestFixtures{Account: acc, Workspace: ws, Products: []core.Product{*project}}
+	defer testEnv.CleanupTestData(t, fixtures)
+	defer func() {
+		pool := testEnv.DB.Pool()
+		_, _ = pool.Exec(context.Background(), "DELETE FROM apps WHERE id = $1", appID)
+	}()
+
+	ctx := context.Background()
+	user, _, err := testEnv.GetOrCreateUserWithMembership(ctx, acc.Email, &core.App{ID: appID}, core.UserSourceInvited)
+	if err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	defer func() {
+		pool := testEnv.DB.Pool()
+		_, _ = pool.Exec(ctx, "DELETE FROM users WHERE id = $1", user.ID)
+	}()
+
+	base := "/x/" + ws.Slug + "/api/v1/apps/" + appID.String() + "/users/" + user.ID.String() + "/password"
+
+	// Too weak → 400 (default policy: length>=8, zxcvbn>=2).
+	weak, _ := json.Marshal(api.ServerSetPasswordRequest{Password: "password"})
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, httptest.NewRequest(http.MethodPut, base, bytes.NewReader(weak)))
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("weak password: expected 400, got %d: %s", rr.Code, rr.Body.String())
+	}
+
+	// Strong → 204, and password is now set.
+	strong, _ := json.Marshal(api.ServerSetPasswordRequest{Password: "Zq7!vKp2$wLm9xRt"})
+	rr = httptest.NewRecorder()
+	router.ServeHTTP(rr, httptest.NewRequest(http.MethodPut, base, bytes.NewReader(strong)))
+	if rr.Code != http.StatusNoContent {
+		t.Fatalf("set password: expected 204, got %d: %s", rr.Code, rr.Body.String())
+	}
+	if u, _ := testEnv.Repo.GetUserByID(ctx, user.ID); u == nil || u.PasswordSetAt == nil {
+		t.Fatalf("password should be set, got %+v", u)
+	}
+
+	// Clear → 204, password unset.
+	rr = httptest.NewRecorder()
+	router.ServeHTTP(rr, httptest.NewRequest(http.MethodDelete, base, nil))
+	if rr.Code != http.StatusNoContent {
+		t.Fatalf("clear password: expected 204, got %d: %s", rr.Code, rr.Body.String())
+	}
+	if u, _ := testEnv.Repo.GetUserByID(ctx, user.ID); u == nil || u.PasswordSetAt != nil {
+		t.Fatalf("password should be cleared, got %+v", u)
+	}
+}
+
+func TestServerListAndRevokeOneSession(t *testing.T) {
+	router := setupServerAPIRouter(t)
+
+	acc := testEnv.CreateTestAccount(t, "srv-sess-"+GenerateUniqueSlug("test")+"@example.com")
+	ws := testEnv.CreateTestWorkspace(t, acc, "Test WS", GenerateUniqueSlug("ws"))
+	project := testEnv.CreateTestProduct(t, ws, acc, "Test Product", GenerateUniqueSlug("proj"))
+	appID := createTestApp(t, ws.ID, project.ID, uuid.Nil, "Test App")
+
+	fixtures := &TestFixtures{Account: acc, Workspace: ws, Products: []core.Product{*project}}
+	defer testEnv.CleanupTestData(t, fixtures)
+	defer func() {
+		pool := testEnv.DB.Pool()
+		_, _ = pool.Exec(context.Background(), "DELETE FROM apps WHERE id = $1", appID)
+	}()
+
+	ctx := context.Background()
+	user, _, err := testEnv.GetOrCreateUserWithMembership(ctx, acc.Email, &core.App{ID: appID}, core.UserSourceInvited)
+	if err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	defer func() {
+		pool := testEnv.DB.Pool()
+		_, _ = pool.Exec(ctx, "DELETE FROM client_sessions WHERE user_id = $1", user.ID)
+		_, _ = pool.Exec(ctx, "DELETE FROM users WHERE id = $1", user.ID)
+	}()
+
+	now := time.Now().UTC()
+	aID := appID
+	var firstSessionID uuid.UUID
+	for i := 0; i < 2; i++ {
+		s := &core.ClientSession{ID: uuid.Must(uuid.NewV4()), UserID: user.ID, AppID: &aID, CreatedAt: now, LastSeenAt: now, ExpiresAt: now.Add(24 * time.Hour)}
+		if i == 0 {
+			firstSessionID = s.ID
+		}
+		if err := testEnv.Repo.InsertClientSession(ctx, s); err != nil {
+			t.Fatalf("InsertClientSession: %v", err)
+		}
+	}
+
+	sessBase := "/x/" + ws.Slug + "/api/v1/apps/" + appID.String() + "/users/" + user.ID.String() + "/sessions"
+
+	// List → 2.
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, sessBase, nil))
+	if rr.Code != http.StatusOK {
+		t.Fatalf("list sessions: expected 200, got %d: %s", rr.Code, rr.Body.String())
+	}
+	var listResp api.ServerSessionsResponse
+	if err := json.Unmarshal(rr.Body.Bytes(), &listResp); err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if len(listResp.Sessions) != 2 {
+		t.Fatalf("expected 2 sessions, got %d", len(listResp.Sessions))
+	}
+
+	// Revoke an unknown session id → 404.
+	rr = httptest.NewRecorder()
+	router.ServeHTTP(rr, httptest.NewRequest(http.MethodDelete, sessBase+"/"+uuid.Must(uuid.NewV4()).String(), nil))
+	if rr.Code != http.StatusNotFound {
+		t.Fatalf("revoke unknown: expected 404, got %d: %s", rr.Code, rr.Body.String())
+	}
+
+	// Revoke the real one → 204, one remains.
+	rr = httptest.NewRecorder()
+	router.ServeHTTP(rr, httptest.NewRequest(http.MethodDelete, sessBase+"/"+firstSessionID.String(), nil))
+	if rr.Code != http.StatusNoContent {
+		t.Fatalf("revoke one: expected 204, got %d: %s", rr.Code, rr.Body.String())
+	}
+	if remaining, _ := testEnv.Repo.GetActiveClientSessionsByUserID(ctx, user.ID); len(remaining) != 1 {
+		t.Fatalf("expected 1 session remaining, got %d", len(remaining))
 	}
 }
 

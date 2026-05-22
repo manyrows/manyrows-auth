@@ -112,6 +112,16 @@ class MagicLinkResult:
 
 
 @dataclass
+class Session:
+    id: str = ""
+    created_at: str = ""
+    last_seen_at: str = ""
+    expires_at: str = ""
+    user_agent: str = ""
+    ip: str = ""
+
+
+@dataclass
 class UserField:
     id: str = ""
     user_pool_id: str = ""

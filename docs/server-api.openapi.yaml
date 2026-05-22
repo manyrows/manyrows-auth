@@ -261,9 +261,20 @@ paths:
     parameters:
       - $ref: "#/components/parameters/AppId"
       - $ref: "#/components/parameters/UserId"
+    get:
+      tags: [Users]
+      summary: List a user's sessions for this app
+      operationId: listUserSessions
+      responses:
+        "200":
+          description: The user's active sessions in this app.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SessionsListResponse" }
+        "404": { $ref: "#/components/responses/NotFound" }
     delete:
       tags: [Users]
-      summary: Revoke a user's sessions (force-logout)
+      summary: Revoke all a user's sessions (force-logout)
       operationId: revokeUserSessions
       responses:
         "200":
@@ -271,6 +282,54 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/RevokeSessionsResponse" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /apps/{appId}/users/{userId}/sessions/{sessionId}:
+    parameters:
+      - $ref: "#/components/parameters/AppId"
+      - $ref: "#/components/parameters/UserId"
+      - name: sessionId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    delete:
+      tags: [Users]
+      summary: Revoke a single session
+      operationId: revokeUserSession
+      responses:
+        "204": { description: Revoked. }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /apps/{appId}/users/{userId}/password:
+    parameters:
+      - $ref: "#/components/parameters/AppId"
+      - $ref: "#/components/parameters/UserId"
+    put:
+      tags: [Users]
+      summary: Set a user's password
+      description: >
+        Set or replace the member's password. Enforced against the app's
+        password policy (length + zxcvbn strength). Existing sessions are left
+        intact — revoke them separately to force re-login.
+      operationId: setUserPassword
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SetPasswordRequest" }
+      responses:
+        "204": { description: Password set. }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      tags: [Users]
+      summary: Clear a user's password
+      description: >
+        Remove the member's password; they can't sign in with email+password
+        until a new one is set (OAuth/passkey still work).
+      operationId: clearUserPassword
+      responses:
+        "204": { description: Password cleared. }
         "404": { $ref: "#/components/responses/NotFound" }
 
   /apps/{appId}/users/{userId}/magic-link:
@@ -536,6 +595,27 @@ components:
       type: object
       properties:
         revoked: { type: integer }
+
+    SetPasswordRequest:
+      type: object
+      required: [password]
+      properties:
+        password: { type: string, description: "Validated against the app's password policy." }
+
+    Session:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        createdAt: { type: string, format: date-time }
+        lastSeenAt: { type: string, format: date-time }
+        expiresAt: { type: string, format: date-time }
+        userAgent: { type: string }
+        ip: { type: string }
+
+    SessionsListResponse:
+      type: object
+      properties:
+        sessions: { type: array, items: { $ref: "#/components/schemas/Session" } }
 
     ReplaceRolesRequest:
       type: object

@@ -176,6 +176,15 @@ type MagicLinkResult struct {
 	ExpiresAt string `json:"expiresAt"`
 }
 
+type Session struct {
+	ID         string `json:"id"`
+	CreatedAt  string `json:"createdAt"`
+	LastSeenAt string `json:"lastSeenAt"`
+	ExpiresAt  string `json:"expiresAt"`
+	UserAgent  string `json:"userAgent,omitempty"`
+	IP         string `json:"ip,omitempty"`
+}
+
 type UserField struct {
 	ID           string `json:"id"`
 	UserPoolID   string `json:"userPoolId"`
@@ -330,6 +339,31 @@ func (c *Client) RevokeUserSessions(ctx context.Context, userID string) (int64, 
 		Revoked int64 `json:"revoked"`
 	}
 	return out.Revoked, c.do(ctx, http.MethodDelete, "/users/"+url.PathEscape(userID)+"/sessions", nil, nil, &out)
+}
+
+// ListUserSessions lists a member's active sessions for this app.
+func (c *Client) ListUserSessions(ctx context.Context, userID string) ([]Session, error) {
+	var out struct {
+		Sessions []Session `json:"sessions"`
+	}
+	return out.Sessions, c.do(ctx, http.MethodGet, "/users/"+url.PathEscape(userID)+"/sessions", nil, nil, &out)
+}
+
+// RevokeUserSession revokes a single session of a member.
+func (c *Client) RevokeUserSession(ctx context.Context, userID, sessionID string) error {
+	path := "/users/" + url.PathEscape(userID) + "/sessions/" + url.PathEscape(sessionID)
+	return c.do(ctx, http.MethodDelete, path, nil, nil, nil)
+}
+
+// SetUserPassword sets or replaces a member's password (enforced against the app's policy).
+func (c *Client) SetUserPassword(ctx context.Context, userID, password string) error {
+	body := map[string]string{"password": password}
+	return c.do(ctx, http.MethodPut, "/users/"+url.PathEscape(userID)+"/password", nil, body, nil)
+}
+
+// ClearUserPassword removes a member's password (email+password sign-in disabled until reset).
+func (c *Client) ClearUserPassword(ctx context.Context, userID string) error {
+	return c.do(ctx, http.MethodDelete, "/users/"+url.PathEscape(userID)+"/password", nil, nil, nil)
 }
 
 // CreateMagicLink generates a one-time passwordless sign-in link for a member

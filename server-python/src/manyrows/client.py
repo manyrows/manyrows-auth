@@ -18,6 +18,7 @@ from .models import (
     RemoveUserResult,
     RoleSummary,
     ServerUser,
+    Session,
     UserField,
     UserFieldValue,
     UserStatus,
@@ -146,9 +147,27 @@ class ManyRowsServer:
         return data.get("roles", [])
 
     def revoke_user_sessions(self, user_id: str) -> int:
-        """Force-logout: revoke a member's sessions for this app. Returns the count revoked."""
+        """Force-logout: revoke all of a member's sessions for this app. Returns the count revoked."""
         data = self._request("DELETE", f"/users/{urllib.parse.quote(user_id, safe='')}/sessions")
         return data.get("revoked", 0)
+
+    def list_user_sessions(self, user_id: str) -> list[Session]:
+        """A member's active sessions for this app."""
+        data = self._request("GET", f"/users/{urllib.parse.quote(user_id, safe='')}/sessions")
+        return [from_dict(Session, s) for s in data.get("sessions", [])]
+
+    def revoke_user_session(self, user_id: str, session_id: str) -> None:
+        """Revoke a single session of a member."""
+        path = f"/users/{urllib.parse.quote(user_id, safe='')}/sessions/{urllib.parse.quote(session_id, safe='')}"
+        self._request("DELETE", path)
+
+    def set_user_password(self, user_id: str, password: str) -> None:
+        """Set or replace a member's password (enforced against the app's policy)."""
+        self._request("PUT", f"/users/{urllib.parse.quote(user_id, safe='')}/password", body={"password": password})
+
+    def clear_user_password(self, user_id: str) -> None:
+        """Clear a member's password (email+password sign-in disabled until a new one is set)."""
+        self._request("DELETE", f"/users/{urllib.parse.quote(user_id, safe='')}/password")
 
     def create_magic_link(self, user_id: str, *, remember_me: bool = False) -> MagicLinkResult:
         """Generate a one-time passwordless sign-in link (requires magic-link auth on the app)."""

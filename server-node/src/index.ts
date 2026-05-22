@@ -135,6 +135,15 @@ export interface MagicLinkResult {
   expiresAt: string;
 }
 
+export interface Session {
+  id: string;
+  createdAt: string;
+  lastSeenAt: string;
+  expiresAt: string;
+  userAgent?: string;
+  ip?: string;
+}
+
 export interface UserField {
   id: string;
   userPoolId: string;
@@ -280,9 +289,40 @@ export class ManyRowsServer {
     return this.request("PUT", `/users/${encodeURIComponent(userId)}/roles`, { body: { roles } });
   }
 
-  /** Force-logout: revoke a member's sessions for this app. */
+  /** Force-logout: revoke all of a member's sessions for this app. */
   revokeUserSessions(userId: string): Promise<{ revoked: number }> {
     return this.request("DELETE", `/users/${encodeURIComponent(userId)}/sessions`);
+  }
+
+  /** List a member's active sessions for this app. */
+  async listUserSessions(userId: string): Promise<Session[]> {
+    const { sessions } = await this.request<{ sessions: Session[] }>(
+      "GET",
+      `/users/${encodeURIComponent(userId)}/sessions`,
+    );
+    return sessions;
+  }
+
+  /** Revoke a single session of a member. */
+  revokeUserSession(userId: string, sessionId: string): Promise<void> {
+    return this.request(
+      "DELETE",
+      `/users/${encodeURIComponent(userId)}/sessions/${encodeURIComponent(sessionId)}`,
+      { expectNoContent: true },
+    );
+  }
+
+  /** Set (or replace) a member's password; enforced against the app's policy. */
+  setUserPassword(userId: string, password: string): Promise<void> {
+    return this.request("PUT", `/users/${encodeURIComponent(userId)}/password`, {
+      body: { password },
+      expectNoContent: true,
+    });
+  }
+
+  /** Clear a member's password (email+password sign-in disabled until a new one is set). */
+  clearUserPassword(userId: string): Promise<void> {
+    return this.request("DELETE", `/users/${encodeURIComponent(userId)}/password`, { expectNoContent: true });
   }
 
   /** Generate a one-time passwordless sign-in link for a member (requires magic-link auth). */
