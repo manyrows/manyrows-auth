@@ -589,6 +589,20 @@ func (c *Client) SetUserEmailVerified(ctx context.Context, userID string, verifi
 	return c.do(ctx, http.MethodPut, "/users/"+url.PathEscape(userID)+"/email-verified", nil, body, nil)
 }
 
+// SetUserEnabled enables/disables a user's identity pool-wide (ban). Disabling
+// blocks sign-in to every app sharing the pool and revokes the user's sessions.
+func (c *Client) SetUserEnabled(ctx context.Context, userID string, enabled bool) error {
+	body := map[string]bool{"enabled": enabled}
+	return c.do(ctx, http.MethodPut, "/users/"+url.PathEscape(userID)+"/enabled", nil, body, nil)
+}
+
+// ChangeUserEmail changes a member's email and marks it verified. Returns a
+// *Error with Status 409 if the address is already in use in the pool.
+func (c *Client) ChangeUserEmail(ctx context.Context, userID, email string) error {
+	body := map[string]string{"email": email}
+	return c.do(ctx, http.MethodPut, "/users/"+url.PathEscape(userID)+"/email", nil, body, nil)
+}
+
 // CreateMagicLink generates a one-time passwordless sign-in link for a member
 // (requires the app's primary auth method to be Magic Link).
 func (c *Client) CreateMagicLink(ctx context.Context, userID string, rememberMe bool) (*MagicLinkResult, error) {

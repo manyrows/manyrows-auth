@@ -215,6 +215,9 @@ func (a *AppService) serverAPIRouter(h *api.RequestHandler) *chi.Mux {
 	appRouter.Delete("/users/{userId}/password", h.ServerClearUserPassword)
 	// Email verification.
 	appRouter.Put("/users/{userId}/email-verified", h.ServerSetUserEmailVerified)
+	// Pool-level identity state: global enable/disable (ban) and email change.
+	appRouter.Put("/users/{userId}/enabled", h.ServerSetUserEnabled)
+	appRouter.Put("/users/{userId}/email", h.ServerChangeUserEmail)
 	// Account recovery + credential management.
 	appRouter.Delete("/users/{userId}/totp", h.ServerResetUserTOTP)
 	appRouter.Post("/users/{userId}/unlock", h.ServerUnlockUser)

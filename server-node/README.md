@@ -78,6 +78,8 @@ try {
 | `listUserSessions(userId)` / `revokeUserSession(userId, sessionId)` | `GET` · `DELETE /users/{id}/sessions[/{sid}]` |
 | `setUserPassword(userId, password)` / `clearUserPassword(userId)` | `PUT` · `DELETE /users/{id}/password` |
 | `setUserEmailVerified(userId, verified)` | `PUT /users/{id}/email-verified` |
+| `setUserEnabled(userId, enabled)` | `PUT /users/{id}/enabled` (pool-wide ban) |
+| `changeUserEmail(userId, email)` | `PUT /users/{id}/email` |
 | `createMagicLink(userId, { rememberMe? })` | `POST /users/{id}/magic-link` |
 | `getUserAuthLogs(userId, { page?, pageSize? })` | `GET /users/{id}/auth-logs` |
 | `listAuthLogs({ since?, until?, outcome?, page?, pageSize? })` | `GET /auth-logs` |

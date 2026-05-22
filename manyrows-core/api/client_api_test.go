@@ -349,6 +349,8 @@ func setupServerAPIRouter(t *testing.T) *chi.Mux {
 	appRouter.Put("/users/{userId}/password", requestHandler.ServerSetUserPassword)
 	appRouter.Delete("/users/{userId}/password", requestHandler.ServerClearUserPassword)
 	appRouter.Put("/users/{userId}/email-verified", requestHandler.ServerSetUserEmailVerified)
+	appRouter.Put("/users/{userId}/enabled", requestHandler.ServerSetUserEnabled)
+	appRouter.Put("/users/{userId}/email", requestHandler.ServerChangeUserEmail)
 	appRouter.Delete("/users/{userId}/totp", requestHandler.ServerResetUserTOTP)
 	appRouter.Post("/users/{userId}/unlock", requestHandler.ServerUnlockUser)
 	appRouter.Get("/users/{userId}/identities", requestHandler.ServerListUserIdentities)
@@ -3318,6 +3320,129 @@ func TestServerIncrementalUserRoles(t *testing.T) {
 	// Unknown slug → 400.
 	if rr := send(http.MethodPost, "no-such-role"); rr.Code != http.StatusBadRequest {
 		t.Fatalf("unknown role: expected 400, got %d", rr.Code)
+	}
+}
+
+func TestServerSetUserEnabled(t *testing.T) {
+	router := setupServerAPIRouter(t)
+
+	acc := testEnv.CreateTestAccount(t, "srv-en-"+GenerateUniqueSlug("test")+"@example.com")
+	ws := testEnv.CreateTestWorkspace(t, acc, "Test WS", GenerateUniqueSlug("ws"))
+	project := testEnv.CreateTestProduct(t, ws, acc, "Test Product", GenerateUniqueSlug("proj"))
+	appID := createTestApp(t, ws.ID, project.ID, uuid.Nil, "Test App")
+
+	fixtures := &TestFixtures{Account: acc, Workspace: ws, Products: []core.Product{*project}}
+	defer testEnv.CleanupTestData(t, fixtures)
+	defer func() {
+		pool := testEnv.DB.Pool()
+		_, _ = pool.Exec(context.Background(), "DELETE FROM apps WHERE id = $1", appID)
+	}()
+
+	ctx := context.Background()
+	user, _, err := testEnv.GetOrCreateUserWithMembership(ctx, acc.Email, &core.App{ID: appID}, core.UserSourceInvited)
+	if err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	defer func() {
+		pool := testEnv.DB.Pool()
+		_, _ = pool.Exec(ctx, "DELETE FROM client_sessions WHERE user_id = $1", user.ID)
+		_, _ = pool.Exec(ctx, "DELETE FROM users WHERE id = $1", user.ID)
+	}()
+
+	now := time.Now().UTC()
+	aID := appID
+	if err := testEnv.Repo.InsertClientSession(ctx, &core.ClientSession{
+		ID: uuid.Must(uuid.NewV4()), UserID: user.ID, AppID: &aID, CreatedAt: now, LastSeenAt: now, ExpiresAt: now.Add(24 * time.Hour),
+	}); err != nil {
+		t.Fatalf("InsertClientSession: %v", err)
+	}
+
+	base := "/x/" + ws.Slug + "/api/v1/apps/" + appID.String() + "/users/" + user.ID.String() + "/enabled"
+
+	// Disable → 200, user disabled, sessions revoked pool-wide.
+	body, _ := json.Marshal(api.ServerSetUserEnabledRequest{Enabled: false})
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, httptest.NewRequest(http.MethodPut, base, bytes.NewReader(body)))
+	if rr.Code != http.StatusOK {
+		t.Fatalf("disable: expected 200, got %d: %s", rr.Code, rr.Body.String())
+	}
+	if u, _ := testEnv.Repo.GetUserByID(ctx, user.ID); u == nil || u.Enabled {
+		t.Fatalf("user should be disabled, got %+v", u)
+	}
+	if sess, _ := testEnv.Repo.GetActiveClientSessionsByUserID(ctx, user.ID); len(sess) != 0 {
+		t.Fatalf("disable should revoke sessions, got %d", len(sess))
+	}
+
+	// Re-enable → 200.
+	body, _ = json.Marshal(api.ServerSetUserEnabledRequest{Enabled: true})
+	rr = httptest.NewRecorder()
+	router.ServeHTTP(rr, httptest.NewRequest(http.MethodPut, base, bytes.NewReader(body)))
+	if rr.Code != http.StatusOK {
+		t.Fatalf("enable: expected 200, got %d: %s", rr.Code, rr.Body.String())
+	}
+	if u, _ := testEnv.Repo.GetUserByID(ctx, user.ID); u == nil || !u.Enabled {
+		t.Fatalf("user should be enabled, got %+v", u)
+	}
+}
+
+func TestServerChangeUserEmail(t *testing.T) {
+	router := setupServerAPIRouter(t)
+
+	acc := testEnv.CreateTestAccount(t, "srv-cem-"+GenerateUniqueSlug("test")+"@example.com")
+	ws := testEnv.CreateTestWorkspace(t, acc, "Test WS", GenerateUniqueSlug("ws"))
+	project := testEnv.CreateTestProduct(t, ws, acc, "Test Product", GenerateUniqueSlug("proj"))
+	appID := createTestApp(t, ws.ID, project.ID, uuid.Nil, "Test App")
+
+	fixtures := &TestFixtures{Account: acc, Workspace: ws, Products: []core.Product{*project}}
+	defer testEnv.CleanupTestData(t, fixtures)
+	defer func() {
+		pool := testEnv.DB.Pool()
+		_, _ = pool.Exec(context.Background(), "DELETE FROM apps WHERE id = $1", appID)
+	}()
+
+	ctx := context.Background()
+	user, _, err := testEnv.GetOrCreateUserWithMembership(ctx, acc.Email, &core.App{ID: appID}, core.UserSourceInvited)
+	if err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	otherEmail := "cem-other-" + GenerateUniqueSlug("u") + "@example.com"
+	other, _, err := testEnv.GetOrCreateUserWithMembership(ctx, otherEmail, &core.App{ID: appID}, core.UserSourceInvited)
+	if err != nil {
+		t.Fatalf("create other user: %v", err)
+	}
+	defer func() {
+		pool := testEnv.DB.Pool()
+		_, _ = pool.Exec(ctx, "DELETE FROM users WHERE id = $1 OR id = $2", user.ID, other.ID)
+	}()
+
+	base := "/x/" + ws.Slug + "/api/v1/apps/" + appID.String() + "/users/" + user.ID.String() + "/email"
+
+	// Change to a fresh address → 200, stored + marked verified.
+	newEmail := "cem-new-" + GenerateUniqueSlug("u") + "@example.com"
+	body, _ := json.Marshal(api.ServerChangeEmailRequest{Email: newEmail})
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, httptest.NewRequest(http.MethodPut, base, bytes.NewReader(body)))
+	if rr.Code != http.StatusOK {
+		t.Fatalf("change email: expected 200, got %d: %s", rr.Code, rr.Body.String())
+	}
+	if u, _ := testEnv.Repo.GetUserByID(ctx, user.ID); u == nil || u.Email != newEmail || u.EmailVerifiedAt == nil {
+		t.Fatalf("email should be changed + verified, got %+v", u)
+	}
+
+	// Collision with another user in the same pool → 409.
+	body, _ = json.Marshal(api.ServerChangeEmailRequest{Email: otherEmail})
+	rr = httptest.NewRecorder()
+	router.ServeHTTP(rr, httptest.NewRequest(http.MethodPut, base, bytes.NewReader(body)))
+	if rr.Code != http.StatusConflict {
+		t.Fatalf("collision: expected 409, got %d: %s", rr.Code, rr.Body.String())
+	}
+
+	// Invalid email → 400.
+	body, _ = json.Marshal(api.ServerChangeEmailRequest{Email: "not-an-email"})
+	rr = httptest.NewRecorder()
+	router.ServeHTTP(rr, httptest.NewRequest(http.MethodPut, base, bytes.NewReader(body)))
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("invalid email: expected 400, got %d", rr.Code)
 	}
 }
 

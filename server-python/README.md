@@ -75,6 +75,8 @@ except ManyRowsServerError as err:
 | `list_user_sessions(user_id)` / `revoke_user_session(user_id, session_id)` | `GET` · `DELETE /users/{id}/sessions[/{sid}]` |
 | `set_user_password(user_id, password)` / `clear_user_password(user_id)` | `PUT` · `DELETE /users/{id}/password` |
 | `set_user_email_verified(user_id, verified)` | `PUT /users/{id}/email-verified` |
+| `set_user_enabled(user_id, enabled)` | `PUT /users/{id}/enabled` (pool-wide ban) |
+| `change_user_email(user_id, email)` | `PUT /users/{id}/email` |
 | `create_magic_link(user_id, remember_me=…)` | `POST /users/{id}/magic-link` |
 | `get_user_auth_logs(user_id, page=…, page_size=…)` | `GET /users/{id}/auth-logs` |
 | `list_auth_logs(since=…, until=…, outcome=…, …)` | `GET /auth-logs` |

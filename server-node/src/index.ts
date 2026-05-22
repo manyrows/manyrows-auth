@@ -492,6 +492,22 @@ export class ManyRowsServer {
     });
   }
 
+  /** Enable/disable a user's identity pool-wide (ban). Disabling blocks all apps and revokes sessions. */
+  setUserEnabled(userId: string, enabled: boolean): Promise<void> {
+    return this.request("PUT", `/users/${encodeURIComponent(userId)}/enabled`, {
+      body: { enabled },
+      expectNoContent: true,
+    });
+  }
+
+  /** Change a member's email (marks it verified). Throws 409 if taken in the pool. */
+  changeUserEmail(userId: string, email: string): Promise<void> {
+    return this.request("PUT", `/users/${encodeURIComponent(userId)}/email`, {
+      body: { email },
+      expectNoContent: true,
+    });
+  }
+
   /** Generate a one-time passwordless sign-in link for a member (requires magic-link auth). */
   createMagicLink(userId: string, opts: { rememberMe?: boolean } = {}): Promise<MagicLinkResult> {
     return this.request("POST", `/users/${encodeURIComponent(userId)}/magic-link`, { body: opts });

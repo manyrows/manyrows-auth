@@ -306,6 +306,14 @@ class ManyRowsServer:
             "PUT", f"/users/{urllib.parse.quote(user_id, safe='')}/email-verified", body={"verified": verified}
         )
 
+    def set_user_enabled(self, user_id: str, enabled: bool) -> None:
+        """Enable/disable a user's identity pool-wide (ban). Disabling blocks all apps + revokes sessions."""
+        self._request("PUT", f"/users/{urllib.parse.quote(user_id, safe='')}/enabled", body={"enabled": enabled})
+
+    def change_user_email(self, user_id: str, email: str) -> None:
+        """Change a member's email (marks it verified). Raises ManyRowsServerError 409 if taken in the pool."""
+        self._request("PUT", f"/users/{urllib.parse.quote(user_id, safe='')}/email", body={"email": email})
+
     def create_magic_link(self, user_id: str, *, remember_me: bool = False) -> MagicLinkResult:
         """Generate a one-time passwordless sign-in link (requires magic-link auth on the app)."""
         data = self._request(

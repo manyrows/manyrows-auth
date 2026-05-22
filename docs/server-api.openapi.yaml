@@ -495,6 +495,63 @@ paths:
         "204": { description: Password cleared. }
         "404": { $ref: "#/components/responses/NotFound" }
 
+  /apps/{appId}/users/{userId}/enabled:
+    parameters:
+      - $ref: "#/components/parameters/AppId"
+      - $ref: "#/components/parameters/UserId"
+    put:
+      tags: [Users]
+      summary: Enable/disable a user pool-wide (ban)
+      description: >
+        Sets the identity's global enabled flag — distinct from per-app suspend
+        (PATCH /users/{userId}). Disabling blocks sign-in to EVERY app sharing
+        the pool and revokes all the user's sessions.
+      operationId: setUserEnabled
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SetEnabledRequest" }
+      responses:
+        "200":
+          description: The resulting enabled state.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/UserEnabledResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /apps/{appId}/users/{userId}/email:
+    parameters:
+      - $ref: "#/components/parameters/AppId"
+      - $ref: "#/components/parameters/UserId"
+    put:
+      tags: [Users]
+      summary: Change a user's email
+      description: >
+        Set the user's email and mark it verified (the caller vouches for it;
+        no re-verification round-trip). The new address must be unique within
+        the pool.
+      operationId: changeUserEmail
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ChangeEmailRequest" }
+      responses:
+        "200":
+          description: The updated email.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ChangeEmailResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409":
+          description: The email is already in use in this pool.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
   /apps/{appId}/users/{userId}/email-verified:
     parameters:
       - $ref: "#/components/parameters/AppId"
@@ -1065,6 +1122,30 @@ components:
       required: [password]
       properties:
         password: { type: string, description: "Validated against the app's password policy." }
+
+    SetEnabledRequest:
+      type: object
+      required: [enabled]
+      properties:
+        enabled: { type: boolean }
+
+    UserEnabledResponse:
+      type: object
+      properties:
+        userId: { type: string, format: uuid }
+        enabled: { type: boolean }
+
+    ChangeEmailRequest:
+      type: object
+      required: [email]
+      properties:
+        email: { type: string, format: email }
+
+    ChangeEmailResponse:
+      type: object
+      properties:
+        userId: { type: string, format: uuid }
+        email: { type: string, format: email }
 
     SetEmailVerifiedRequest:
       type: object
