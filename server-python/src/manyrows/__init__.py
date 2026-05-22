@@ -2,6 +2,8 @@
 
 from .client import ManyRowsServer, ManyRowsServerError
 from .models import (
+    AuthLogEntry,
+    AuthLogsPage,
     CheckPermissionResult,
     CreateUserResult,
     Delivery,
@@ -28,6 +30,8 @@ __version__ = "0.1.0"
 __all__ = [
     "ManyRowsServer",
     "ManyRowsServerError",
+    "AuthLogEntry",
+    "AuthLogsPage",
     "CheckPermissionResult",
     "CreateUserResult",
     "Delivery",

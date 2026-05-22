@@ -76,6 +76,7 @@ if errors.As(err, &apiErr) && apiErr.Status == http.StatusNotFound {
 | `ListUserSessions(ctx, userID)` / `RevokeUserSession(ctx, userID, sessionID)` | `GET` · `DELETE /users/{id}/sessions[/{sid}]` |
 | `SetUserPassword(ctx, userID, password)` / `ClearUserPassword(ctx, userID)` | `PUT` · `DELETE /users/{id}/password` |
 | `CreateMagicLink(ctx, userID, rememberMe)` | `POST /users/{id}/magic-link` |
+| `GetUserAuthLogs(ctx, userID, page, pageSize)` | `GET /users/{id}/auth-logs` |
 | `ListUserFields(ctx)` | `GET /user-fields` |
 | `GetUserFieldValues(ctx, userID)` | `GET /user-fields/users/{id}` |
 | `SetUserFieldValue(ctx, fieldID, userID, value)` | `PUT /user-fields/{fieldId}/users/{id}` |

@@ -122,6 +122,28 @@ class Session:
 
 
 @dataclass
+class AuthLogEntry:
+    id: str = ""
+    created_at: str = ""
+    event: str = ""
+    method: str = ""
+    outcome: str = ""
+    failure_reason: str = ""
+    actor_type: str = ""
+    ip: str = ""
+    user_agent: str = ""
+    request_id: str = ""
+
+
+@dataclass
+class AuthLogsPage:
+    logs: list[AuthLogEntry] = field(default_factory=list)
+    total: int = 0
+    page: int = 0
+    page_size: int = 0
+
+
+@dataclass
 class UserField:
     id: str = ""
     user_pool_id: str = ""

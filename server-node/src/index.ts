@@ -144,6 +144,26 @@ export interface Session {
   ip?: string;
 }
 
+export interface AuthLogEntry {
+  id: string;
+  createdAt: string;
+  event: string;
+  method?: string;
+  outcome: string;
+  failureReason?: string;
+  actorType: string;
+  ip?: string;
+  userAgent?: string;
+  requestId?: string;
+}
+
+export interface AuthLogsPage {
+  logs: AuthLogEntry[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
+
 export interface UserField {
   id: string;
   userPoolId: string;
@@ -306,6 +326,13 @@ export class ManyRowsServer {
       { body: { permissions } },
     );
     return res.permissions;
+  }
+
+  /** A member's authentication-event history for this app (newest first, paginated). */
+  getUserAuthLogs(userId: string, opts: { page?: number; pageSize?: number } = {}): Promise<AuthLogsPage> {
+    return this.request("GET", `/users/${encodeURIComponent(userId)}/auth-logs`, {
+      query: { page: opts.page, pageSize: opts.pageSize },
+    });
   }
 
   /** Force-logout: revoke all of a member's sessions for this app. */

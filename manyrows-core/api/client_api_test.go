@@ -325,6 +325,7 @@ func setupServerAPIRouter(t *testing.T) *chi.Mux {
 	appRouter.Put("/users/{userId}/roles", requestHandler.ServerReplaceUserRoles)
 	appRouter.Get("/users/{userId}/permissions", requestHandler.ServerGetUserPermissions)
 	appRouter.Put("/users/{userId}/permissions", requestHandler.ServerSetUserPermissions)
+	appRouter.Get("/users/{userId}/auth-logs", requestHandler.ServerGetUserAuthLogs)
 	appRouter.Put("/users/{userId}/password", requestHandler.ServerSetUserPassword)
 	appRouter.Delete("/users/{userId}/password", requestHandler.ServerClearUserPassword)
 	appRouter.Delete("/users/{userId}", requestHandler.ServerRemoveUser)
@@ -2611,6 +2612,63 @@ func TestServerUserDirectPermissions(t *testing.T) {
 	_ = json.Unmarshal(rr.Body.Bytes(), &resp)
 	if len(resp.Permissions) != 0 {
 		t.Fatalf("expected no permissions after clear, got %v", resp.Permissions)
+	}
+}
+
+func TestServerGetUserAuthLogs(t *testing.T) {
+	router := setupServerAPIRouter(t)
+
+	acc := testEnv.CreateTestAccount(t, "srv-log-"+GenerateUniqueSlug("test")+"@example.com")
+	ws := testEnv.CreateTestWorkspace(t, acc, "Test WS", GenerateUniqueSlug("ws"))
+	project := testEnv.CreateTestProduct(t, ws, acc, "Test Product", GenerateUniqueSlug("proj"))
+	appID := createTestApp(t, ws.ID, project.ID, uuid.Nil, "Test App")
+
+	fixtures := &TestFixtures{Account: acc, Workspace: ws, Products: []core.Product{*project}}
+	defer testEnv.CleanupTestData(t, fixtures)
+	defer func() {
+		pool := testEnv.DB.Pool()
+		_, _ = pool.Exec(context.Background(), "DELETE FROM auth_logs WHERE app_id = $1", appID)
+		_, _ = pool.Exec(context.Background(), "DELETE FROM apps WHERE id = $1", appID)
+	}()
+
+	ctx := context.Background()
+	user, _, err := testEnv.GetOrCreateUserWithMembership(ctx, acc.Email, &core.App{ID: appID}, core.UserSourceInvited)
+	if err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	defer func() {
+		pool := testEnv.DB.Pool()
+		_, _ = pool.Exec(ctx, "DELETE FROM users WHERE id = $1", user.ID)
+	}()
+
+	appIDp := appID
+	if _, err := testEnv.Repo.InsertAuthLog(ctx, core.AuthLog{
+		WorkspaceID:   ws.ID,
+		AppID:         &appIDp,
+		Event:         core.AuthEventLoginSuccess,
+		Outcome:       core.AuthOutcomeSuccess,
+		SubjectUserID: &user.ID,
+		ActorType:     core.AuthActorSelf,
+		CreatedAt:     time.Now().UTC(),
+	}); err != nil {
+		t.Fatalf("InsertAuthLog: %v", err)
+	}
+
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, httptest.NewRequest(http.MethodGet,
+		"/x/"+ws.Slug+"/api/v1/apps/"+appID.String()+"/users/"+user.ID.String()+"/auth-logs", nil))
+	if rr.Code != http.StatusOK {
+		t.Fatalf("auth-logs: expected 200, got %d: %s", rr.Code, rr.Body.String())
+	}
+	var resp api.ServerAuthLogsResponse
+	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if resp.Total < 1 || len(resp.Logs) < 1 {
+		t.Fatalf("expected at least one log, got total=%d len=%d", resp.Total, len(resp.Logs))
+	}
+	if resp.Logs[0].Event != string(core.AuthEventLoginSuccess) {
+		t.Fatalf("expected event login.success, got %q", resp.Logs[0].Event)
 	}
 }
 

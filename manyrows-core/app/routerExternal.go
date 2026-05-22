@@ -191,6 +191,8 @@ func (a *AppService) serverAPIRouter(h *api.RequestHandler) *chi.Mux {
 	// Direct per-user permission overrides (on top of role-granted permissions).
 	appRouter.Get("/users/{userId}/permissions", h.ServerGetUserPermissions)
 	appRouter.Put("/users/{userId}/permissions", h.ServerSetUserPermissions)
+	// Authentication-event history for a member.
+	appRouter.Get("/users/{userId}/auth-logs", h.ServerGetUserAuthLogs)
 	// Password management.
 	appRouter.Put("/users/{userId}/password", h.ServerSetUserPassword)
 	appRouter.Delete("/users/{userId}/password", h.ServerClearUserPassword)

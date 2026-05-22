@@ -17,6 +17,7 @@ from .models import (
     PermissionSummary,
     RemoveUserResult,
     RoleSummary,
+    AuthLogsPage,
     ServerUser,
     Session,
     UserField,
@@ -157,6 +158,16 @@ class ManyRowsServer:
             "PUT", f"/users/{urllib.parse.quote(user_id, safe='')}/permissions", body={"permissions": permissions}
         )
         return data.get("permissions", [])
+
+    def get_user_auth_logs(self, user_id: str, *, page: Optional[int] = None, page_size: Optional[int] = None) -> AuthLogsPage:
+        """A member's authentication-event history for this app (newest first, paginated)."""
+        query: dict[str, Any] = {}
+        if page:
+            query["page"] = page
+        if page_size:
+            query["pageSize"] = page_size
+        data = self._request("GET", f"/users/{urllib.parse.quote(user_id, safe='')}/auth-logs", query=query)
+        return from_dict(AuthLogsPage, data)
 
     def revoke_user_sessions(self, user_id: str) -> int:
         """Force-logout: revoke all of a member's sessions for this app. Returns the count revoked."""

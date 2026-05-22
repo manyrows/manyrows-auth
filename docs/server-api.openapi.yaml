@@ -366,6 +366,30 @@ paths:
         "204": { description: Password cleared. }
         "404": { $ref: "#/components/responses/NotFound" }
 
+  /apps/{appId}/users/{userId}/auth-logs:
+    parameters:
+      - $ref: "#/components/parameters/AppId"
+      - $ref: "#/components/parameters/UserId"
+    get:
+      tags: [Users]
+      summary: A user's authentication-event history
+      description: Sign-ins, password changes, status changes, etc. for this app, newest first.
+      operationId: getUserAuthLogs
+      parameters:
+        - name: page
+          in: query
+          schema: { type: integer, default: 0, minimum: 0 }
+        - name: pageSize
+          in: query
+          schema: { type: integer, default: 50, maximum: 200 }
+      responses:
+        "200":
+          description: A page of auth-log entries.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AuthLogsResponse" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
   /apps/{appId}/users/{userId}/magic-link:
     parameters:
       - $ref: "#/components/parameters/AppId"
@@ -650,6 +674,28 @@ components:
       type: object
       properties:
         sessions: { type: array, items: { $ref: "#/components/schemas/Session" } }
+
+    AuthLogEntry:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        createdAt: { type: string, format: date-time }
+        event: { type: string, description: "e.g. login.success, password.set" }
+        method: { type: string }
+        outcome: { type: string, description: "success | failure" }
+        failureReason: { type: string }
+        actorType: { type: string, description: "self | api_key | admin | system" }
+        ip: { type: string }
+        userAgent: { type: string }
+        requestId: { type: string }
+
+    AuthLogsResponse:
+      type: object
+      properties:
+        logs: { type: array, items: { $ref: "#/components/schemas/AuthLogEntry" } }
+        total: { type: integer }
+        page: { type: integer }
+        pageSize: { type: integer }
 
     UserPermissionsResponse:
       type: object

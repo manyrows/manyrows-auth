@@ -185,6 +185,26 @@ type Session struct {
 	IP         string `json:"ip,omitempty"`
 }
 
+type AuthLogEntry struct {
+	ID            string `json:"id"`
+	CreatedAt     string `json:"createdAt"`
+	Event         string `json:"event"`
+	Method        string `json:"method,omitempty"`
+	Outcome       string `json:"outcome"`
+	FailureReason string `json:"failureReason,omitempty"`
+	ActorType     string `json:"actorType"`
+	IP            string `json:"ip,omitempty"`
+	UserAgent     string `json:"userAgent,omitempty"`
+	RequestID     string `json:"requestId,omitempty"`
+}
+
+type AuthLogsPage struct {
+	Logs     []AuthLogEntry `json:"logs"`
+	Total    int            `json:"total"`
+	Page     int            `json:"page"`
+	PageSize int            `json:"pageSize"`
+}
+
 type UserField struct {
 	ID           string `json:"id"`
 	UserPoolID   string `json:"userPoolId"`
@@ -353,6 +373,20 @@ func (c *Client) SetUserPermissions(ctx context.Context, userID string, permissi
 	}
 	body := map[string][]string{"permissions": permissions}
 	return out.Permissions, c.do(ctx, http.MethodPut, "/users/"+url.PathEscape(userID)+"/permissions", nil, body, &out)
+}
+
+// GetUserAuthLogs returns a member's authentication-event history for this app
+// (newest first, paginated). Pass page/pageSize <= 0 to use the defaults.
+func (c *Client) GetUserAuthLogs(ctx context.Context, userID string, page, pageSize int) (*AuthLogsPage, error) {
+	q := url.Values{}
+	if page > 0 {
+		q.Set("page", strconv.Itoa(page))
+	}
+	if pageSize > 0 {
+		q.Set("pageSize", strconv.Itoa(pageSize))
+	}
+	var out AuthLogsPage
+	return &out, c.do(ctx, http.MethodGet, "/users/"+url.PathEscape(userID)+"/auth-logs", q, nil, &out)
 }
 
 // RevokeUserSessions force-logs-out a member from this app and returns the count revoked.

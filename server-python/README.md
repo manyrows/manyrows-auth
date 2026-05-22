@@ -73,6 +73,7 @@ except ManyRowsServerError as err:
 | `list_user_sessions(user_id)` / `revoke_user_session(user_id, session_id)` | `GET` · `DELETE /users/{id}/sessions[/{sid}]` |
 | `set_user_password(user_id, password)` / `clear_user_password(user_id)` | `PUT` · `DELETE /users/{id}/password` |
 | `create_magic_link(user_id, remember_me=…)` | `POST /users/{id}/magic-link` |
+| `get_user_auth_logs(user_id, page=…, page_size=…)` | `GET /users/{id}/auth-logs` |
 | `list_user_fields()` | `GET /user-fields` |
 | `get_user_field_values(user_id)` | `GET /user-fields/users/{id}` |
 | `set_user_field_value(field_id, user_id, value)` | `PUT /user-fields/{fieldId}/users/{id}` |
