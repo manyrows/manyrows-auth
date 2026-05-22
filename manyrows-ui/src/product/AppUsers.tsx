@@ -115,6 +115,15 @@ async function clearUserPassword(workspaceId: string, userId: string): Promise<v
   await axios.delete(`/admin/workspace/${workspaceId}/accounts/${userId}/password`);
 }
 
+// Account-recovery support ops (app-scoped, mirror the identities/passkeys admin paths).
+async function resetUserTotp(workspaceId: string, productId: string, appId: string, userId: string): Promise<void> {
+  await axios.delete(`/admin/workspace/${workspaceId}/products/${productId}/apps/${appId}/users/${userId}/totp`);
+}
+
+async function unlockUserAccount(workspaceId: string, productId: string, appId: string, userId: string): Promise<void> {
+  await axios.post(`/admin/workspace/${workspaceId}/products/${productId}/apps/${appId}/users/${userId}/unlock`);
+}
+
 // workspace accounts (so we can resolve email -> accountId when adding)
 function workspaceAccountsUrl(workspaceId: string) {
   return `/admin/workspace/${workspaceId}/accounts`;
@@ -825,6 +834,10 @@ export default function AppUsers({ project, appId: appIdProp }: Props) {
   const [clearPwOpen, setClearPwOpen] = React.useState(false);
   const [clearPwMember, setClearPwMember] = React.useState<WorkspaceMember | null>(null);
   const [clearPwLoading, setClearPwLoading] = React.useState(false);
+  const [resetTotpOpen, setResetTotpOpen] = React.useState(false);
+  const [resetTotpLoading, setResetTotpLoading] = React.useState(false);
+  const [unlockOpen, setUnlockOpen] = React.useState(false);
+  const [unlockLoading, setUnlockLoading] = React.useState(false);
 
   // User info dialog
   const [infoOpen, setInfoOpen] = React.useState(false);
@@ -2188,6 +2201,28 @@ export default function AppUsers({ project, appId: appIdProp }: Props) {
                 </Stack>
               </Stack>
 
+              <Stack spacing={0.5}>
+                <Typography variant="caption" color="text.secondary">{t("projectMembers.accountRecovery", "Account recovery")}</Typography>
+                <Stack direction="row" spacing={1}>
+                  <Button
+                    size="small"
+                    variant="outlined"
+                    onClick={() => setResetTotpOpen(true)}
+                    sx={{ textTransform: "none", fontSize: 12 }}
+                  >
+                    {t("projectMembers.reset2fa", "Reset 2FA")}
+                  </Button>
+                  <Button
+                    size="small"
+                    variant="outlined"
+                    onClick={() => setUnlockOpen(true)}
+                    sx={{ textTransform: "none", fontSize: 12 }}
+                  >
+                    {t("projectMembers.unlockAccount", "Unlock account")}
+                  </Button>
+                </Stack>
+              </Stack>
+
               <Stack direction="row" spacing={3}>
                 <Stack spacing={0.5}>
                   <Typography variant="caption" color="text.secondary">{t("projectMembers.lastLogin", "Last Login")}</Typography>
@@ -2531,6 +2566,87 @@ export default function AppUsers({ project, appId: appIdProp }: Props) {
             }}
           >
             {clearPwLoading ? "..." : "Clear password"}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Reset 2FA — removes the user's authenticator so a locked-out user can re-enroll. */}
+      <Dialog
+        open={resetTotpOpen}
+        onClose={() => (resetTotpLoading ? null : setResetTotpOpen(false))}
+        maxWidth="xs"
+        fullWidth
+      >
+        <DialogTitle>{t("projectMembers.reset2fa", "Reset 2FA")}?</DialogTitle>
+        <DialogContent>
+          <Typography variant="body2">
+            {t("projectMembers.reset2faBody", "The user's two-factor authentication (authenticator app) will be removed. They'll sign in without a second factor until they set it up again — use this when a user has lost their authenticator.")}
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setResetTotpOpen(false)} disabled={resetTotpLoading}>
+            {t("common.cancel")}
+          </Button>
+          <Button
+            variant="contained"
+            disableElevation
+            color="error"
+            disabled={resetTotpLoading}
+            onClick={async () => {
+              if (!infoMember || !selectedAppId) return;
+              setResetTotpLoading(true);
+              try {
+                await resetUserTotp(project.workspaceId, project.id, selectedAppId, infoMember.accountId);
+                setResetTotpOpen(false);
+                enqueueSnackbar(t("projectMembers.reset2faDone", "2FA reset"), { variant: "success" });
+              } catch {
+                enqueueSnackbar(t("projectMembers.reset2faFailed", "Failed to reset 2FA"), { variant: "error" });
+              } finally {
+                setResetTotpLoading(false);
+              }
+            }}
+          >
+            {resetTotpLoading ? "..." : t("projectMembers.reset2fa", "Reset 2FA")}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Unlock account — clears a failed-login lockout. */}
+      <Dialog
+        open={unlockOpen}
+        onClose={() => (unlockLoading ? null : setUnlockOpen(false))}
+        maxWidth="xs"
+        fullWidth
+      >
+        <DialogTitle>{t("projectMembers.unlockAccount", "Unlock account")}?</DialogTitle>
+        <DialogContent>
+          <Typography variant="body2">
+            {t("projectMembers.unlockBody", "Clears a failed-login lockout so the user can sign in again immediately.")}
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setUnlockOpen(false)} disabled={unlockLoading}>
+            {t("common.cancel")}
+          </Button>
+          <Button
+            variant="contained"
+            disableElevation
+            disabled={unlockLoading}
+            onClick={async () => {
+              if (!infoMember || !selectedAppId) return;
+              setUnlockLoading(true);
+              try {
+                await unlockUserAccount(project.workspaceId, project.id, selectedAppId, infoMember.accountId);
+                setUnlockOpen(false);
+                enqueueSnackbar(t("projectMembers.unlockDone", "Account unlocked"), { variant: "success" });
+              } catch {
+                enqueueSnackbar(t("projectMembers.unlockFailed", "Failed to unlock account"), { variant: "error" });
+              } finally {
+                setUnlockLoading(false);
+              }
+            }}
+          >
+            {unlockLoading ? "..." : t("projectMembers.unlockAccount", "Unlock account")}
           </Button>
         </DialogActions>
       </Dialog>

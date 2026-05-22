@@ -333,6 +333,10 @@ func (a *AppService) initRouter() error {
 			// Social-account identities (Google/Apple/Microsoft/GitHub)
 			r.Get("/users/{userId}/identities", requestHandler.HandleAdminListUserIdentities)
 			r.Delete("/users/{userId}/identities/{provider}", requestHandler.HandleAdminDeleteUserIdentity)
+
+			// Account recovery (support ops)
+			r.Delete("/users/{userId}/totp", requestHandler.HandleAdminResetUserTOTP)
+			r.Post("/users/{userId}/unlock", requestHandler.HandleAdminUnlockUser)
 		})
 	})
 
