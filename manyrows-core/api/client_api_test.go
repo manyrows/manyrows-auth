@@ -1955,6 +1955,28 @@ func TestServerUpsertAndDeleteUserFieldValue(t *testing.T) {
 		t.Fatalf("expected stored value \"ace\", got %+v", values)
 	}
 
+	// GET the user-field schema list + this user's values (both via the API).
+	appBase := "/x/" + ws.Slug + "/api/v1/apps/" + appID.String()
+	if rr := httptest.NewRecorder(); true {
+		router.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, appBase+"/user-fields", nil))
+		if rr.Code != http.StatusOK || !strings.Contains(rr.Body.String(), `"nickname"`) {
+			t.Fatalf("list user-fields: code %d body %s", rr.Code, rr.Body.String())
+		}
+	}
+	if rr := httptest.NewRecorder(); true {
+		router.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, appBase+"/user-fields/users/"+user.ID.String(), nil))
+		if rr.Code != http.StatusOK || !strings.Contains(rr.Body.String(), `"ace"`) {
+			t.Fatalf("get user-field values: code %d body %s", rr.Code, rr.Body.String())
+		}
+	}
+	// Values for a non-member → 404.
+	if rr := httptest.NewRecorder(); true {
+		router.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, appBase+"/user-fields/users/"+uuid.Must(uuid.NewV4()).String(), nil))
+		if rr.Code != http.StatusNotFound {
+			t.Fatalf("get values for non-member: expected 404, got %d", rr.Code)
+		}
+	}
+
 	// Delete → 204 and gone.
 	del := httptest.NewRequest(http.MethodDelete, base, nil)
 	delRR := httptest.NewRecorder()
@@ -3219,6 +3241,31 @@ func TestServerWebhookCRUD(t *testing.T) {
 	_ = json.Unmarshal(rr.Body.Bytes(), &listResp)
 	if len(listResp.Webhooks) != 1 || listResp.Webhooks[0].Secret != "" {
 		t.Fatalf("list: expected 1 webhook with redacted secret, got %+v", listResp.Webhooks)
+	}
+
+	// GET one webhook → 200 with the secret redacted.
+	rr = send(http.MethodGet, base+"/"+whID, "")
+	if rr.Code != http.StatusOK {
+		t.Fatalf("get webhook: expected 200, got %d", rr.Code)
+	}
+	var got core.Webhook
+	_ = json.Unmarshal(rr.Body.Bytes(), &got)
+	if got.ID.String() != whID || got.Secret != "" {
+		t.Fatalf("get webhook: expected id %s with redacted secret, got %+v", whID, got)
+	}
+	// Unknown webhook id → 404 on get/patch/delete/rotate.
+	missing := uuid.Must(uuid.NewV4()).String()
+	if rr := send(http.MethodGet, base+"/"+missing, ""); rr.Code != http.StatusNotFound {
+		t.Fatalf("get unknown webhook: expected 404, got %d", rr.Code)
+	}
+	if rr := send(http.MethodPatch, base+"/"+missing, `{"status":"disabled"}`); rr.Code != http.StatusNotFound {
+		t.Fatalf("patch unknown webhook: expected 404, got %d", rr.Code)
+	}
+	if rr := send(http.MethodPost, base+"/"+missing+"/rotate-secret", ""); rr.Code != http.StatusNotFound {
+		t.Fatalf("rotate unknown webhook: expected 404, got %d", rr.Code)
+	}
+	if rr := send(http.MethodDelete, base+"/"+missing, ""); rr.Code != http.StatusNotFound {
+		t.Fatalf("delete unknown webhook: expected 404, got %d", rr.Code)
 	}
 
 	// Rotate secret → 200 with a fresh secret different from the original.
