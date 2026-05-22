@@ -14,6 +14,7 @@ import (
 	"manyrows-core/utils"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -2439,6 +2440,75 @@ func TestServerCreateMagicLink_Success(t *testing.T) {
 	}
 	if !resp.ExpiresAt.After(time.Now()) {
 		t.Fatalf("expected a future expiry, got %v", resp.ExpiresAt)
+	}
+}
+
+// TestServerCreateMagicLink_RoundTripLogsIn proves the issue→consume contract:
+// a link minted by the S2S endpoint is actually redeemable at the public
+// consume endpoint and logs the holder in (302 + session). This pins the
+// otherwise-only-by-inspection guarantee that token/purpose/URL/TTL all line up.
+func TestServerCreateMagicLink_RoundTripLogsIn(t *testing.T) {
+	serverRouter := setupServerAPIRouter(t)
+	clientRouter := setupClientAPIRouter(t)
+
+	acc := testEnv.CreateTestAccount(t, "srv-ml-rt-"+GenerateUniqueSlug("test")+"@example.com")
+	ws := testEnv.CreateTestWorkspace(t, acc, "Test WS", GenerateUniqueSlug("ws"))
+	project := testEnv.CreateTestProduct(t, ws, acc, "Test Product", GenerateUniqueSlug("proj"))
+	appID := createTestApp(t, ws.ID, project.ID, uuid.Nil, "Test App")
+	appRow, err := testEnv.Repo.GetAppByID(context.Background(), appID)
+	if err != nil {
+		t.Fatalf("GetAppByID: %v", err)
+	}
+	configureAppForMagicLink(t, &appRow)
+
+	fixtures := &TestFixtures{Account: acc, Workspace: ws, Products: []core.Product{*project}}
+	defer testEnv.CleanupTestData(t, fixtures)
+	defer func() {
+		pool := testEnv.DB.Pool()
+		_, _ = pool.Exec(context.Background(), "DELETE FROM apps WHERE id = $1", appID)
+	}()
+
+	ctx := context.Background()
+	user, _, err := testEnv.GetOrCreateUserWithMembership(ctx, acc.Email, &core.App{ID: appID}, core.UserSourceInvited)
+	if err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	defer func() {
+		pool := testEnv.DB.Pool()
+		_, _ = pool.Exec(ctx, "DELETE FROM magic_links WHERE lower(email) = lower($1)", user.Email)
+		_, _ = pool.Exec(ctx, "DELETE FROM client_sessions WHERE user_id = $1", user.ID)
+		_, _ = pool.Exec(ctx, "DELETE FROM users WHERE id = $1", user.ID)
+	}()
+
+	// Issue the link via the S2S endpoint.
+	rr := httptest.NewRecorder()
+	serverRouter.ServeHTTP(rr, httptest.NewRequest(http.MethodPost,
+		"/x/"+ws.Slug+"/api/v1/apps/"+appID.String()+"/users/"+user.ID.String()+"/magic-link", nil))
+	if rr.Code != http.StatusOK {
+		t.Fatalf("issue: expected 200, got %d: %s", rr.Code, rr.Body.String())
+	}
+	var resp api.ServerMagicLinkResponse
+	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	parsed, err := url.Parse(resp.URL)
+	if err != nil {
+		t.Fatalf("parse url: %v", err)
+	}
+	token := parsed.Query().Get("token")
+	if token == "" {
+		t.Fatalf("no token in issued URL %q", resp.URL)
+	}
+
+	// Consume it at the public endpoint — should log the user in.
+	cr := httptest.NewRecorder()
+	clientRouter.ServeHTTP(cr, httptest.NewRequest(http.MethodGet,
+		"/x/"+ws.Slug+"/apps/"+appID.String()+"/auth/magic-link?token="+token, nil))
+	if cr.Code != http.StatusFound {
+		t.Fatalf("consume: expected 302, got %d: %s", cr.Code, cr.Body.String())
+	}
+	if loc := cr.Header().Get("Location"); !strings.Contains(loc, "mr_session=") {
+		t.Fatalf("consume redirect should carry a session, got %q", loc)
 	}
 }
 

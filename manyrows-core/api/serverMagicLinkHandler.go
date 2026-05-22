@@ -29,6 +29,9 @@ type ServerMagicLinkResponse struct {
 // GET /x/{ws}/apps/{appId}/auth/magic-link endpoint, so it requires the same
 // preconditions that endpoint enforces — the app's primary auth method is
 // Magic Link and an App URL is configured (checked by requireMagicLinkContext).
+// Issuing a new link invalidates any previously issued unconsumed link for the
+// same user, so a backend that issues links in parallel should treat only the
+// latest as valid.
 // POST /x/{workspaceSlug}/api/v1/apps/{appId}/users/{userId}/magic-link
 func (handler *RequestHandler) ServerCreateMagicLink(w http.ResponseWriter, r *http.Request) {
 	ws, app, ok := handler.requireMagicLinkContext(w, r)
