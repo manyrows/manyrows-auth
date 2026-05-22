@@ -165,6 +165,12 @@ func (a *AppService) serverAPIRouter(h *api.RequestHandler) *chi.Mux {
 	appRouter.Get("/roles", h.ServerListRoles)
 	appRouter.Get("/permissions", h.ServerListPermissions)
 
+	// Config-value + feature-flag management (read via the delivery endpoint).
+	appRouter.Put("/config/{configKey}", h.ServerSetConfigValue)
+	appRouter.Delete("/config/{configKey}", h.ServerDeleteConfigValue)
+	appRouter.Put("/features/{flagKey}", h.ServerSetFeatureFlag)
+	appRouter.Delete("/features/{flagKey}", h.ServerDeleteFeatureFlag)
+
 	// User fields (app-scoped). Schema is read-only; values can be read
 	// and written per user (handlers pool-scope every userId).
 	appRouter.Get("/user-fields", h.HandleServerGetUserFields)

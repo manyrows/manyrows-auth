@@ -245,6 +245,25 @@ class ManyRowsServer:
         path = f"/user-fields/{urllib.parse.quote(field_id, safe='')}/users/{urllib.parse.quote(user_id, safe='')}"
         self._request("DELETE", path)
 
+    def set_config_value(self, config_key: str, value: Any) -> None:
+        """Set this app's value for a public/private config key (read back via get_delivery)."""
+        self._request("PUT", f"/config/{urllib.parse.quote(config_key, safe='')}", body={"value": value})
+
+    def delete_config_value(self, config_key: str) -> None:
+        """Clear this app's value for a config key."""
+        self._request("DELETE", f"/config/{urllib.parse.quote(config_key, safe='')}")
+
+    def set_feature_flag(self, flag_key: str, enabled: bool, roles: Optional[list[str]] = None) -> None:
+        """Set this app's feature-flag override, optionally targeting role slugs."""
+        body: dict[str, Any] = {"enabled": enabled}
+        if roles is not None:
+            body["roles"] = roles
+        self._request("PUT", f"/features/{urllib.parse.quote(flag_key, safe='')}", body=body)
+
+    def delete_feature_flag(self, flag_key: str) -> None:
+        """Clear this app's feature-flag override (falls back to the flag's default)."""
+        self._request("DELETE", f"/features/{urllib.parse.quote(flag_key, safe='')}")
+
     # ---- internal ----
 
     def _request(

@@ -83,6 +83,8 @@ try {
 | `getUserFieldValues(userId)` | `GET /user-fields/users/{id}` |
 | `setUserFieldValue(fieldId, userId, value)` | `PUT /user-fields/{fieldId}/users/{id}` |
 | `deleteUserFieldValue(fieldId, userId)` | `DELETE /user-fields/{fieldId}/users/{id}` |
+| `setConfigValue(configKey, value)` / `deleteConfigValue(configKey)` | `PUT` · `DELETE /config/{key}` |
+| `setFeatureFlag(flagKey, enabled, roles?)` / `deleteFeatureFlag(flagKey)` | `PUT` · `DELETE /features/{key}` |
 
 The full HTTP contract is in [`docs/server-api.openapi.yaml`](../docs/server-api.openapi.yaml).
 

@@ -80,6 +80,8 @@ except ManyRowsServerError as err:
 | `get_user_field_values(user_id)` | `GET /user-fields/users/{id}` |
 | `set_user_field_value(field_id, user_id, value)` | `PUT /user-fields/{fieldId}/users/{id}` |
 | `delete_user_field_value(field_id, user_id)` | `DELETE /user-fields/{fieldId}/users/{id}` |
+| `set_config_value(config_key, value)` / `delete_config_value(config_key)` | `PUT` · `DELETE /config/{key}` |
+| `set_feature_flag(flag_key, enabled, roles=…)` / `delete_feature_flag(flag_key)` | `PUT` · `DELETE /features/{key}` |
 
 The full HTTP contract is in [`docs/server-api.openapi.yaml`](../docs/server-api.openapi.yaml).
 

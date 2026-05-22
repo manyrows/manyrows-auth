@@ -443,6 +443,32 @@ export class ManyRowsServer {
     );
   }
 
+  /** Set this app's value for a public/private config key (read back via getDelivery). */
+  setConfigValue(configKey: string, value: unknown): Promise<void> {
+    return this.request("PUT", `/config/${encodeURIComponent(configKey)}`, {
+      body: { value },
+      expectNoContent: true,
+    });
+  }
+
+  /** Clear this app's value for a config key. */
+  deleteConfigValue(configKey: string): Promise<void> {
+    return this.request("DELETE", `/config/${encodeURIComponent(configKey)}`, { expectNoContent: true });
+  }
+
+  /** Set this app's feature-flag override, optionally targeting role slugs. */
+  setFeatureFlag(flagKey: string, enabled: boolean, roles?: string[]): Promise<void> {
+    return this.request("PUT", `/features/${encodeURIComponent(flagKey)}`, {
+      body: { enabled, roles },
+      expectNoContent: true,
+    });
+  }
+
+  /** Clear this app's feature-flag override (falls back to the flag's default). */
+  deleteFeatureFlag(flagKey: string): Promise<void> {
+    return this.request("DELETE", `/features/${encodeURIComponent(flagKey)}`, { expectNoContent: true });
+  }
+
   // ---- internal ----
 
   private async request<T>(

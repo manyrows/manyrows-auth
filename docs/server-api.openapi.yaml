@@ -35,6 +35,8 @@ tags:
     description: Provision, look up, modify, and remove app members.
   - name: User fields
     description: Read and write per-user metadata.
+  - name: Config and flags
+    description: Manage config values and feature-flag overrides (read via delivery).
 
 paths:
   /apps/{appId}:
@@ -117,6 +119,70 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/PermissionsListResponse" }
         "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /apps/{appId}/config/{configKey}:
+    parameters:
+      - $ref: "#/components/parameters/AppId"
+      - name: configKey
+        in: path
+        required: true
+        description: The config key's string identifier.
+        schema: { type: string }
+    put:
+      tags: [Config and flags]
+      summary: Set a config value
+      description: >
+        Set this app's value for a public or private config key. Secret keys are
+        rejected (their values are sealed client-side; set them in the dashboard).
+        Read values back via the delivery endpoint (`GET /`).
+      operationId: setConfigValue
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SetConfigValueRequest" }
+      responses:
+        "204": { description: Set. }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      tags: [Config and flags]
+      summary: Clear a config value
+      operationId: deleteConfigValue
+      responses:
+        "204": { description: Cleared (idempotent). }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /apps/{appId}/features/{flagKey}:
+    parameters:
+      - $ref: "#/components/parameters/AppId"
+      - name: flagKey
+        in: path
+        required: true
+        description: The feature flag's string identifier.
+        schema: { type: string }
+    put:
+      tags: [Config and flags]
+      summary: Set a feature-flag override
+      description: Enable/disable a flag for this app, optionally targeting a set of role slugs.
+      operationId: setFeatureFlag
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SetFeatureFlagRequest" }
+      responses:
+        "204": { description: Set. }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      tags: [Config and flags]
+      summary: Clear a feature-flag override
+      description: Removes the override so the flag falls back to its default.
+      operationId: deleteFeatureFlag
+      responses:
+        "204": { description: Cleared (idempotent). }
+        "404": { $ref: "#/components/responses/NotFound" }
 
   /apps/{appId}/users:
     parameters:
@@ -652,6 +718,23 @@ components:
       properties:
         slug: { type: string }
         name: { type: string }
+
+    SetConfigValueRequest:
+      type: object
+      required: [value]
+      properties:
+        value:
+          description: The config value as JSON, matching the key's value type.
+
+    SetFeatureFlagRequest:
+      type: object
+      required: [enabled]
+      properties:
+        enabled: { type: boolean }
+        roles:
+          type: array
+          items: { type: string }
+          description: Optional role slugs to target; empty/omitted applies to everyone.
 
     PermissionsListResponse:
       type: object

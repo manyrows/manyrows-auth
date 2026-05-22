@@ -83,6 +83,8 @@ if errors.As(err, &apiErr) && apiErr.Status == http.StatusNotFound {
 | `GetUserFieldValues(ctx, userID)` | `GET /user-fields/users/{id}` |
 | `SetUserFieldValue(ctx, fieldID, userID, value)` | `PUT /user-fields/{fieldId}/users/{id}` |
 | `DeleteUserFieldValue(ctx, fieldID, userID)` | `DELETE /user-fields/{fieldId}/users/{id}` |
+| `SetConfigValue(ctx, configKey, value)` / `DeleteConfigValue(ctx, configKey)` | `PUT` · `DELETE /config/{key}` |
+| `SetFeatureFlag(ctx, flagKey, enabled, roles)` / `DeleteFeatureFlag(ctx, flagKey)` | `PUT` · `DELETE /features/{key}` |
 
 The full HTTP contract is in [`docs/server-api.openapi.yaml`](../docs/server-api.openapi.yaml).
 

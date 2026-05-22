@@ -498,6 +498,33 @@ func (c *Client) DeleteUserFieldValue(ctx context.Context, fieldID, userID strin
 	return c.do(ctx, http.MethodDelete, path, nil, nil, nil)
 }
 
+// SetConfigValue sets this app's value for a public/private config key (read it
+// back via GetDelivery). value is JSON-encoded as sent.
+func (c *Client) SetConfigValue(ctx context.Context, configKey string, value any) error {
+	body := map[string]any{"value": value}
+	return c.do(ctx, http.MethodPut, "/config/"+url.PathEscape(configKey), nil, body, nil)
+}
+
+// DeleteConfigValue clears this app's value for a config key.
+func (c *Client) DeleteConfigValue(ctx context.Context, configKey string) error {
+	return c.do(ctx, http.MethodDelete, "/config/"+url.PathEscape(configKey), nil, nil, nil)
+}
+
+// SetFeatureFlag sets this app's override for a feature flag, optionally
+// targeting a set of role slugs (nil/empty applies to everyone).
+func (c *Client) SetFeatureFlag(ctx context.Context, flagKey string, enabled bool, roles []string) error {
+	body := map[string]any{"enabled": enabled}
+	if roles != nil {
+		body["roles"] = roles
+	}
+	return c.do(ctx, http.MethodPut, "/features/"+url.PathEscape(flagKey), nil, body, nil)
+}
+
+// DeleteFeatureFlag clears this app's override for a flag (falls back to default).
+func (c *Client) DeleteFeatureFlag(ctx context.Context, flagKey string) error {
+	return c.do(ctx, http.MethodDelete, "/features/"+url.PathEscape(flagKey), nil, nil, nil)
+}
+
 // ---- internal ----
 
 func (c *Client) do(ctx context.Context, method, path string, query url.Values, body, out any) error {

@@ -120,7 +120,7 @@ func (handler *RequestHandler) GetDeliveryForServer(w http.ResponseWriter, r *ht
 	cvByKey := make(map[string]cvInfo, 64)
 	for i := range values {
 		cv := values[i]
-		if cv.ID != app.ID {
+		if cv.AppID != app.ID {
 			continue
 		}
 		cvByKey[cv.ConfigKeyID.String()] = cvInfo{

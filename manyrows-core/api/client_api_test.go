@@ -253,6 +253,13 @@ func setupServerAPIRouter(t *testing.T) *chi.Mux {
 				return
 			}
 			ctx = core.WithWorkspace(ctx, ws)
+			// Production always has an API key in context here; the real
+			// apiKeyMiddleware sets it. Inject a synthetic one attributed to
+			// the workspace creator so serverActorID resolves to a real
+			// account (config/flag writes FK updated_by to accounts).
+			if ws.CreatedBy != nil {
+				ctx = core.WithAPIKey(ctx, &core.APIKey{CreatedBy: *ws.CreatedBy})
+			}
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}
@@ -310,6 +317,10 @@ func setupServerAPIRouter(t *testing.T) *chi.Mux {
 	appRouter.Get("/check-permission", requestHandler.ServerCheckPermission)
 	appRouter.Get("/roles", requestHandler.ServerListRoles)
 	appRouter.Get("/permissions", requestHandler.ServerListPermissions)
+	appRouter.Put("/config/{configKey}", requestHandler.ServerSetConfigValue)
+	appRouter.Delete("/config/{configKey}", requestHandler.ServerDeleteConfigValue)
+	appRouter.Put("/features/{flagKey}", requestHandler.ServerSetFeatureFlag)
+	appRouter.Delete("/features/{flagKey}", requestHandler.ServerDeleteFeatureFlag)
 	appRouter.Get("/users", requestHandler.HandleServerGetUser)
 	appRouter.Get("/users/{userId}", requestHandler.ServerGetUserByID)
 	appRouter.Post("/users", requestHandler.ServerCreateUser)
@@ -2787,6 +2798,119 @@ func TestServerBatchCreateUsers(t *testing.T) {
 	router.ServeHTTP(rr, httptest.NewRequest(http.MethodPost, base, bytes.NewReader(body)))
 	if rr.Code != http.StatusBadRequest {
 		t.Fatalf("empty batch: expected 400, got %d", rr.Code)
+	}
+}
+
+func TestServerConfigAndFlagManagement(t *testing.T) {
+	router := setupServerAPIRouter(t)
+
+	acc := testEnv.CreateTestAccount(t, "srv-cfg-"+GenerateUniqueSlug("test")+"@example.com")
+	ws := testEnv.CreateTestWorkspace(t, acc, "Test WS", GenerateUniqueSlug("ws"))
+	project := testEnv.CreateTestProduct(t, ws, acc, "Test Product", GenerateUniqueSlug("proj"))
+	appID := createTestApp(t, ws.ID, project.ID, uuid.Nil, "Test App")
+
+	fixtures := &TestFixtures{Account: acc, Workspace: ws, Products: []core.Product{*project}}
+	defer testEnv.CleanupTestData(t, fixtures)
+	defer func() {
+		pool := testEnv.DB.Pool()
+		ctx := context.Background()
+		_, _ = pool.Exec(ctx, "DELETE FROM config_values WHERE app_id = $1", appID)
+		_, _ = pool.Exec(ctx, "DELETE FROM config_keys WHERE product_id = $1", project.ID)
+		_, _ = pool.Exec(ctx, "DELETE FROM feature_flag_overrides WHERE app_id = $1", appID)
+		_, _ = pool.Exec(ctx, "DELETE FROM feature_flags WHERE product_id = $1", project.ID)
+		_, _ = pool.Exec(ctx, "DELETE FROM apps WHERE id = $1", appID)
+	}()
+
+	ctx := context.Background()
+	now := time.Now().UTC()
+	mkKey := func(key, exposure string) {
+		if _, err := testEnv.Repo.CreateConfigKey(ctx, core.ConfigKey{
+			ID: utils.NewUUID(), ProductID: project.ID, Key: key, Exposure: exposure,
+			ValueType: core.ConfigValueTypeString, Status: "active", CreatedAt: now, UpdatedAt: now, CreatedBy: acc.ID,
+		}); err != nil {
+			t.Fatalf("CreateConfigKey %s: %v", key, err)
+		}
+	}
+	mkKey("GREETING", core.ConfigExposurePublic)
+	mkKey("API_SECRET", core.ConfigExposureSecret)
+	if _, err := testEnv.Repo.CreateFeatureFlag(ctx, core.FeatureFlag{
+		ID: utils.NewUUID(), ProductID: project.ID, Key: "new_ui", Scope: core.FeatureFlagScopeClient,
+		DefaultEnabled: false, Status: "active", CreatedAt: now, UpdatedAt: now, CreatedBy: acc.ID,
+	}); err != nil {
+		t.Fatalf("CreateFeatureFlag: %v", err)
+	}
+
+	base := "/x/" + ws.Slug + "/api/v1/apps/" + appID.String()
+	put := func(path string, payload any) *httptest.ResponseRecorder {
+		body, _ := json.Marshal(payload)
+		rr := httptest.NewRecorder()
+		router.ServeHTTP(rr, httptest.NewRequest(http.MethodPut, base+path, bytes.NewReader(body)))
+		return rr
+	}
+	delivery := func() api.DeliveryResponse {
+		rr := httptest.NewRecorder()
+		router.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, base+"/", nil))
+		if rr.Code != http.StatusOK {
+			t.Fatalf("delivery: expected 200, got %d: %s", rr.Code, rr.Body.String())
+		}
+		var d api.DeliveryResponse
+		if err := json.Unmarshal(rr.Body.Bytes(), &d); err != nil {
+			t.Fatalf("delivery parse: %v", err)
+		}
+		return d
+	}
+
+	// Set a public config value → 204.
+	if rr := put("/config/GREETING", api.ServerSetConfigValueRequest{Value: json.RawMessage(`"hello"`)}); rr.Code != http.StatusNoContent {
+		t.Fatalf("set config: expected 204, got %d: %s", rr.Code, rr.Body.String())
+	}
+	// Secret key is rejected.
+	if rr := put("/config/API_SECRET", api.ServerSetConfigValueRequest{Value: json.RawMessage(`"x"`)}); rr.Code != http.StatusBadRequest {
+		t.Fatalf("secret config: expected 400, got %d: %s", rr.Code, rr.Body.String())
+	}
+	// Unknown key → 404.
+	if rr := put("/config/NOPE", api.ServerSetConfigValueRequest{Value: json.RawMessage(`"x"`)}); rr.Code != http.StatusNotFound {
+		t.Fatalf("unknown config key: expected 404, got %d", rr.Code)
+	}
+	// Enable a feature flag → 204.
+	if rr := put("/features/new_ui", api.ServerSetFeatureFlagRequest{Enabled: true}); rr.Code != http.StatusNoContent {
+		t.Fatalf("set flag: expected 204, got %d: %s", rr.Code, rr.Body.String())
+	}
+
+	// Read back via delivery — verifies both the writes and the delivery read.
+	d := delivery()
+	greeting := ""
+	for _, it := range d.Config.Public {
+		if it.Key == "GREETING" {
+			greeting = string(it.Value)
+		}
+	}
+	if greeting != `"hello"` {
+		t.Fatalf("expected GREETING=\"hello\" via delivery, got %q", greeting)
+	}
+	flagOn, flagSeen := false, false
+	for _, it := range d.Flags.Client {
+		if it.Key == "new_ui" {
+			flagSeen, flagOn = true, it.Enabled
+		}
+	}
+	if !flagSeen || !flagOn {
+		t.Fatalf("expected new_ui enabled via delivery, seen=%v enabled=%v", flagSeen, flagOn)
+	}
+
+	// Delete both → 204, and the value/override are gone from delivery.
+	for _, path := range []string{"/config/GREETING", "/features/new_ui"} {
+		rr := httptest.NewRecorder()
+		router.ServeHTTP(rr, httptest.NewRequest(http.MethodDelete, base+path, nil))
+		if rr.Code != http.StatusNoContent {
+			t.Fatalf("delete %s: expected 204, got %d: %s", path, rr.Code, rr.Body.String())
+		}
+	}
+	d = delivery()
+	for _, it := range d.Config.Public {
+		if it.Key == "GREETING" && len(it.Value) > 0 {
+			t.Fatalf("GREETING value should be cleared after delete, got %s", it.Value)
+		}
 	}
 }
 
