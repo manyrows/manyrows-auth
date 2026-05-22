@@ -115,8 +115,19 @@ func (handler *RequestHandler) ServerDeleteUserIdentity(w http.ResponseWriter, r
 	if !ok {
 		return
 	}
-	provider := chi.URLParam(r, "provider")
-	if err := handler.repo.DeleteUserIdentity(r.Context(), userID, core.UserSource(provider)); err != nil {
+	provider := core.UserSource(chi.URLParam(r, "provider"))
+	// Validate the provider (mirrors the admin handler) so a typo'd provider is
+	// a clear 400 rather than a silent no-op delete.
+	switch provider {
+	case core.UserSourceGoogle, core.UserSourceApple,
+		core.UserSourceMicrosoft, core.UserSourceGithub:
+	default:
+		if !core.IsExternalIDPProviderKey(string(provider)) {
+			WriteError(w, r, "error.badRequest", http.StatusBadRequest)
+			return
+		}
+	}
+	if err := handler.repo.DeleteUserIdentity(r.Context(), userID, provider); err != nil {
 		log.Err(err).Msg("ServerDeleteUserIdentity: failed")
 		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 		return

@@ -2975,6 +2975,9 @@ func TestServerAccountRecoveryAndCredentials(t *testing.T) {
 	if rr := do(http.MethodDelete, "/identities/google"); rr.Code != http.StatusNoContent {
 		t.Fatalf("unlink identity: expected 204, got %d", rr.Code)
 	}
+	if rr := do(http.MethodDelete, "/identities/not-a-provider"); rr.Code != http.StatusBadRequest {
+		t.Fatalf("unlink unknown provider: expected 400, got %d", rr.Code)
+	}
 
 	// Passkeys: list (empty) + delete by id (idempotent) + bad id → 400.
 	rr = do(http.MethodGet, "/passkeys")
