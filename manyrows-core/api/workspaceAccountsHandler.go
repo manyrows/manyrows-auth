@@ -380,9 +380,9 @@ func (handler *RequestHandler) HandleBulkImportWorkspaceAccounts(w http.Response
 	if !ok {
 		return
 	}
-	if !handler.requireOwner(w, r) {
-		return
-	}
+	// Any workspace admin may bulk-import, matching single-user create
+	// (HandleCreateWorkspaceAccount) — bulk import is just non-destructive
+	// creation, so gating it to owner-only was an inconsistency.
 
 	ctx := r.Context()
 
