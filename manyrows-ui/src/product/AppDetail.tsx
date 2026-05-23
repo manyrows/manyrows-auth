@@ -388,7 +388,7 @@ export default function AppDetail({ project, workspace, appId, onAppUpdated }: P
                       )}
                       {currentPool && (
                         <Typography sx={{ fontSize: 11.5, color: "text.secondary" }}>
-                          ({currentPool.appCount} {currentPool.appCount === 1 ? "app" : "apps"})
+                          ({currentPool.appCount} {currentPool.appCount === 1 ? t("apps.detail.appSingular", { defaultValue: "app" }) : t("apps.detail.appPlural", { defaultValue: "apps" })})
                         </Typography>
                       )}
                       <Button size="small" variant="text" onClick={openRepoint} sx={{ ml: 0.5 }}>
@@ -398,7 +398,7 @@ export default function AppDetail({ project, workspace, appId, onAppUpdated }: P
                   }
                 />
                 <DetailRow
-                  label="App ID"
+                  label={t("apps.detail.appId", { defaultValue: "App ID" })}
                   value={
                     <Stack direction="row" spacing={0.5} alignItems="center">
                       <Typography sx={{ fontFamily: "var(--font-mono)", fontSize: 12.5, color: "text.secondary", wordBreak: "break-all" }}>
@@ -616,7 +616,7 @@ export default function AppDetail({ project, workspace, appId, onAppUpdated }: P
                     <MenuItem key={p.id} value={p.id}>
                       {p.name}
                       <Typography component="span" sx={{ ml: 1, color: "text.secondary", fontSize: 12 }}>
-                        ({p.appCount} {p.appCount === 1 ? "app" : "apps"}, {p.userCount} {p.userCount === 1 ? "user" : "users"})
+                        ({p.appCount} {p.appCount === 1 ? t("apps.detail.appSingular", { defaultValue: "app" }) : t("apps.detail.appPlural", { defaultValue: "apps" })}, {p.userCount} {p.userCount === 1 ? t("apps.detail.userSingular", { defaultValue: "user" }) : t("apps.detail.userPlural", { defaultValue: "users" })})
                       </Typography>
                     </MenuItem>
                   ))}

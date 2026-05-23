@@ -1,6 +1,8 @@
 import { Box, CircularProgress, Typography } from "@mui/material";
+import { useTranslation } from "react-i18next";
 
 export default function Loader() {
+  const { t } = useTranslation();
   return (
     <Box
       sx={{
@@ -22,7 +24,7 @@ export default function Loader() {
           textTransform: "uppercase",
         }}
       >
-        Loading
+        {t("common.loadingShort")}
       </Typography>
     </Box>
   );

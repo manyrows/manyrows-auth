@@ -28,6 +28,7 @@ import Eyebrow from "../components/Eyebrow.tsx";
 import { useTranslation } from "react-i18next";
 
 function QRCodeImg({ data, size }: { data: string; size: number }) {
+  const { t } = useTranslation();
   const [src, setSrc] = React.useState<string | null>(null);
   React.useEffect(() => {
     let cancelled = false;
@@ -42,7 +43,7 @@ function QRCodeImg({ data, size }: { data: string; size: number }) {
       <Box
         component="img"
         src={src}
-        alt="TOTP QR Code"
+        alt={t("profile.totp.qrAlt")}
         sx={{ width: size, height: size, borderRadius: 2 }}
       />
     </Box>
@@ -459,7 +460,7 @@ export default function Profile() {
           </Avatar>
 
           <Box sx={{ minWidth: 0, flex: 1 }}>
-            <Eyebrow dot sx={{ mb: 1 }}>Account</Eyebrow>
+            <Eyebrow dot sx={{ mb: 1 }}>{t("profile.account")}</Eyebrow>
             <Typography
               sx={{
                 fontFamily: "var(--font-serif)",

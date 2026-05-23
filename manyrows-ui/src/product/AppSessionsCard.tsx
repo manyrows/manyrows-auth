@@ -19,7 +19,7 @@ import {
 import { X } from "lucide-react";
 import Eyebrow from "../components/Eyebrow.tsx";
 import { Link as RouterLink } from "react-router-dom";
-import { useTranslation } from "react-i18next";
+import { useTranslation, Trans } from "react-i18next";
 import type { App } from "./AppAuthMethods.tsx";
 import AppCookieDomainCard from "./AppCookieDomainCard.tsx";
 import SaveBar from "../components/SaveBar.tsx";
@@ -79,6 +79,7 @@ function SessionTransportPane({
   onSuccess,
   onError,
 }: Props) {
+  const { t } = useTranslation();
   // Local radio state - not persisted until the user hits Save. The
   // per-mode reveal panes below switch on the *persisted* value
   // (currentTransport(app)), so picking a different radio doesn't
@@ -112,9 +113,7 @@ function SessionTransportPane({
     <Stack spacing={3} sx={{ maxWidth: 680 }}>
       <Stack spacing={2}>
         <Typography variant="body2" color="text.secondary" sx={{ maxWidth: 620 }}>
-          How the session token is delivered to the user's browser.
-          AppKit picks up this setting from the boot response, so the
-          SDK doesn't need a separate prop on the customer side.
+          {t("sessionTransport.intro", { defaultValue: "How the session token is delivered to the user's browser. AppKit picks up this setting from the boot response, so the SDK doesn't need a separate prop on the customer side." })}
         </Typography>
 
           <RadioGroup
@@ -128,14 +127,12 @@ function SessionTransportPane({
               label={
                 <Stack>
                   <Typography variant="body2" sx={{ fontWeight: 500 }}>
-                    Local (browser storage)
+                    {t("sessionTransport.localTitle", { defaultValue: "Local (browser storage)" })}
                   </Typography>
                   <Typography variant="caption" color="text.secondary">
-                    ManyRows issues a JWT to your frontend, which keeps it in
-                    localStorage and sends it as a <code>Bearer</code>{" "}
-                    token. Simplest to set up - no backend code, no DNS -
-                    but the token is visible to any JS running on your
-                    origin.
+                    <Trans i18nKey="sessionTransport.localDesc" components={{ code: <code /> }}>
+                      ManyRows issues a JWT to your frontend, which keeps it in localStorage and sends it as a <code>Bearer</code> token. Simplest to set up - no backend code, no DNS - but the token is visible to any JS running on your origin.
+                    </Trans>
                   </Typography>
                 </Stack>
               }
@@ -149,17 +146,12 @@ function SessionTransportPane({
               label={
                 <Stack>
                   <Typography variant="body2" sx={{ fontWeight: 500 }}>
-                    First-party cookie (same-host deploy OR custom-domain CNAME)
+                    {t("sessionTransport.cookieTitle", { defaultValue: "First-party cookie (same-host deploy OR custom-domain CNAME)" })}
                   </Typography>
                   <Typography variant="caption" color="text.secondary">
-                    ManyRows sets an <code>HttpOnly; Secure; SameSite=Lax</code>{" "}
-                    session cookie on a host that's same-site as your app
-                    (e.g. <code>auth.yourdomain.com</code> alongside{" "}
-                    <code>www.yourdomain.com</code>). The token never
-                    touches JS. Works whether ManyRows is reached via a
-                    custom-domain CNAME or a same-host deploy. Configure
-                    the cookie domain below; setup details for the
-                    custom-domain shape are in the dialog.
+                    <Trans i18nKey="sessionTransport.cookieDesc" components={{ code: <code /> }}>
+                      ManyRows sets an <code>HttpOnly; Secure; SameSite=Lax</code> session cookie on a host that's same-site as your app (e.g. <code>auth.yourdomain.com</code> alongside <code>www.yourdomain.com</code>). The token never touches JS. Works whether ManyRows is reached via a custom-domain CNAME or a same-host deploy. Configure the cookie domain below; setup details for the custom-domain shape are in the dialog.
+                    </Trans>
                   </Typography>
                 </Stack>
               }
@@ -170,10 +162,7 @@ function SessionTransportPane({
 
           {dirty && (
             <Alert severity="warning" sx={{ fontSize: 13 }}>
-              You've picked a different transport than what's currently
-              configured. The change isn't applied until you save -
-              switching modes also clears the per-mode setup panel below
-              so you can configure the new mode after committing.
+              {t("sessionTransport.dirtyWarning", { defaultValue: "You've picked a different transport than what's currently configured. The change isn't applied until you save - switching modes also clears the per-mode setup panel below so you can configure the new mode after committing." })}
             </Alert>
           )}
 
@@ -190,12 +179,11 @@ function SessionTransportPane({
             py: 2.5,
           }}
         >
-          <Eyebrow sx={{ mb: 0.75 }}>No extra setup</Eyebrow>
+          <Eyebrow sx={{ mb: 0.75 }}>{t("sessionTransport.noSetupTitle", { defaultValue: "No extra setup" })}</Eyebrow>
           <Typography variant="body2" color="text.secondary">
-            Local mode is the AppKit default. There's nothing to
-            configure here - embed <code>&lt;AppKit /&gt;</code> on
-            your site and sign-in just works. To switch later, choose
-            First-party cookie or Backend proxy.
+            <Trans i18nKey="sessionTransport.noSetupBody" components={{ code: <code /> }}>
+              Local mode is the AppKit default. There's nothing to configure here - embed <code>&lt;AppKit /&gt;</code> on your site and sign-in just works. To switch later, choose First-party cookie or Backend proxy.
+            </Trans>
           </Typography>
         </Box>
       )}
@@ -219,20 +207,19 @@ function SessionTransportPane({
           />
           <Stack spacing={2.5} sx={{ pt: 1 }}>
             <Box>
-              <Eyebrow sx={{ mb: 0.75 }}>Custom-domain setup (optional)</Eyebrow>
+              <Eyebrow sx={{ mb: 0.75 }}>{t("sessionTransport.customDomainTitle", { defaultValue: "Custom-domain setup (optional)" })}</Eyebrow>
               <Typography variant="body2" color="text.secondary">
-                If ManyRows isn't already on a same-site host with your
-                app, you can CNAME a subdomain (e.g.{" "}
-                <code>auth.yourdomain.com</code>) to this install. The
-                dialog covers DNS, TLS, and Cloudflare-specific gotchas.
+                <Trans i18nKey="sessionTransport.customDomainBody" components={{ code: <code /> }}>
+                  If ManyRows isn't already on a same-site host with your app, you can CNAME a subdomain (e.g. <code>auth.yourdomain.com</code>) to this install. The dialog covers DNS, TLS, and Cloudflare-specific gotchas.
+                </Trans>
               </Typography>
               <Box sx={{ pt: 1 }}>
                 <Button
                   variant="outlined"
                   onClick={() => setInstructionsOpen(true)}
-                 
+
                 >
-                  Show setup instructions
+                  {t("sessionTransport.showInstructions", { defaultValue: "Show setup instructions" })}
                 </Button>
               </Box>
             </Box>
@@ -265,6 +252,7 @@ function minutesField(opts: {
   placeholder: string;
   helper: string;
   invalid: boolean;
+  invalidText: string;
 }) {
   return (
     <TextField
@@ -276,7 +264,7 @@ function minutesField(opts: {
       disabled={opts.disabled}
       placeholder={opts.placeholder}
       error={opts.invalid}
-      helperText={opts.invalid ? "Must be a non-negative integer" : opts.helper}
+      helperText={opts.invalid ? opts.invalidText : opts.helper}
       sx={{ maxWidth: 360 }}
     />
   );
@@ -349,7 +337,7 @@ function LifetimePane({ app, cardURL, onSaved, onSuccess, onError }: Props) {
   return (
     <Stack spacing={2.5} sx={{ maxWidth: 680 }}>
       <Typography variant="body2" color="text.secondary" sx={{ maxWidth: 620 }}>
-        How long an end-user's session stays valid before they have to sign in again.
+        {t("sessionLifetime.intro", { defaultValue: "How long an end-user's session stays valid before they have to sign in again." })}
       </Typography>
 
         {minutesField({
@@ -362,6 +350,7 @@ function LifetimePane({ app, cardURL, onSaved, onSuccess, onError }: Props) {
             defaultValue: "Absolute lifetime. Leave blank for the default (7 days / 10080 minutes).",
           }),
           invalid: session.invalid,
+          invalidText: t("apps.detail.minutesInvalid", { defaultValue: "Must be a non-negative integer" }),
         })}
 
         {minutesField({
@@ -375,6 +364,7 @@ function LifetimePane({ app, cardURL, onSaved, onSuccess, onError }: Props) {
               "Refresh is refused when the session hasn't been active for this many minutes; the session then dies once the current access token expires. Leave blank to disable idle enforcement.",
           }),
           invalid: idle.invalid,
+          invalidText: t("apps.detail.minutesInvalid", { defaultValue: "Must be a non-negative integer" }),
         })}
 
         {minutesField({
@@ -388,6 +378,7 @@ function LifetimePane({ app, cardURL, onSaved, onSuccess, onError }: Props) {
               "Applied when the user opted into \"Keep me signed in\" at login. Leave blank for the default (30 days / 43200 minutes).",
           }),
           invalid: remember.invalid,
+          invalidText: t("apps.detail.minutesInvalid", { defaultValue: "Must be a non-negative integer" }),
         })}
 
         {minutesField({
@@ -401,6 +392,7 @@ function LifetimePane({ app, cardURL, onSaved, onSuccess, onError }: Props) {
               "Trades JWT-replay window against refresh-call frequency. Don't drop below ~5 minutes unless your SDK can handle refresh storms. Leave blank for the default (15 minutes).",
           }),
           invalid: access.invalid,
+          invalidText: t("apps.detail.minutesInvalid", { defaultValue: "Must be a non-negative integer" }),
         })}
 
         {minutesField({
@@ -414,10 +406,11 @@ function LifetimePane({ app, cardURL, onSaved, onSuccess, onError }: Props) {
               "Logging in beyond this cap prunes the user's oldest session for this app. Set 1 for single-device apps; raise it for productivity tools where users span phone + laptop + tablet. Leave blank for the default (5).",
           }),
           invalid: max.invalid,
+          invalidText: t("apps.detail.minutesInvalid", { defaultValue: "Must be a non-negative integer" }),
         })}
 
       <Alert severity="info" sx={{ fontSize: 13 }}>
-        Existing sessions stay alive until they reach the new absolute limit; nothing is invalidated retroactively.
+        {t("sessionLifetime.existingNote", { defaultValue: "Existing sessions stay alive until they reach the new absolute limit; nothing is invalidated retroactively." })}
       </Alert>
 
       <SaveBar
@@ -457,6 +450,7 @@ function CookieStrictnessCard({ app, cardURL, onSaved, onSuccess, onError }: {
   onSuccess: () => void;
   onError: (e: unknown) => void;
 }) {
+  const { t } = useTranslation();
   type SameSite = "lax" | "strict";
   const persisted: SameSite = app.sessionCookieSameSite ?? "lax";
   const [value, setValue] = React.useState<SameSite>(persisted);
@@ -466,13 +460,13 @@ function CookieStrictnessCard({ app, cardURL, onSaved, onSuccess, onError }: {
   // Strict precondition: no link-based auth flow active. Mirror the
   // server-side check so the UI shows why Strict is unavailable.
   const blockers: string[] = [];
-  if (app.primaryAuthMethod === "magicLink") blockers.push("magic links");
-  if (app.authMethodGoogle) blockers.push("Google sign-in");
-  if (app.authMethodApple) blockers.push("Apple sign-in");
-  if (app.authMethodMicrosoft) blockers.push("Microsoft sign-in");
-  if (app.authMethodGithub) blockers.push("GitHub sign-in");
-  if (app.authMethodKakao) blockers.push("Kakao sign-in");
-  if (app.authMethodNaver) blockers.push("Naver sign-in");
+  if (app.primaryAuthMethod === "magicLink") blockers.push(t("cookieStrictness.blocker.magicLinks", { defaultValue: "magic links" }));
+  if (app.authMethodGoogle) blockers.push(t("cookieStrictness.blocker.google", { defaultValue: "Google sign-in" }));
+  if (app.authMethodApple) blockers.push(t("cookieStrictness.blocker.apple", { defaultValue: "Apple sign-in" }));
+  if (app.authMethodMicrosoft) blockers.push(t("cookieStrictness.blocker.microsoft", { defaultValue: "Microsoft sign-in" }));
+  if (app.authMethodGithub) blockers.push(t("cookieStrictness.blocker.github", { defaultValue: "GitHub sign-in" }));
+  if (app.authMethodKakao) blockers.push(t("cookieStrictness.blocker.kakao", { defaultValue: "Kakao sign-in" }));
+  if (app.authMethodNaver) blockers.push(t("cookieStrictness.blocker.naver", { defaultValue: "Naver sign-in" }));
   const strictDisabled = blockers.length > 0;
   const dirty = value !== persisted;
 
@@ -509,17 +503,13 @@ function CookieStrictnessCard({ app, cardURL, onSaved, onSuccess, onError }: {
             mb: 0.75,
           }}
         >
-          Sessions
+          {t("cookieStrictness.overline", { defaultValue: "Sessions" })}
         </Typography>
         <Typography sx={{ fontSize: 15, fontWeight: 600, letterSpacing: "-0.005em" }}>
-          Cookie strictness
+          {t("cookieStrictness.title", { defaultValue: "Cookie strictness" })}
         </Typography>
         <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5, maxWidth: 620 }}>
-          SameSite attribute on the session cookies. Lax (the default)
-          works with every auth flow. Strict adds a marginal CSRF
-          hardening but breaks any flow that lands the user on this
-          app via a top-level cross-site GET - magic links, OAuth
-          redirects, link-based password resets.
+          {t("cookieStrictness.description", { defaultValue: "SameSite attribute on the session cookies. Lax (the default) works with every auth flow. Strict adds a marginal CSRF hardening but breaks any flow that lands the user on this app via a top-level cross-site GET - magic links, OAuth redirects, link-based password resets." })}
         </Typography>
       </Box>
 
@@ -534,12 +524,10 @@ function CookieStrictnessCard({ app, cardURL, onSaved, onSuccess, onError }: {
             label={
               <Stack>
                 <Typography variant="body2" sx={{ fontWeight: 500 }}>
-                  Lax (default)
+                  {t("cookieStrictness.laxTitle", { defaultValue: "Lax (default)" })}
                 </Typography>
                 <Typography variant="caption" color="text.secondary">
-                  Cookies ride along on top-level navigation from
-                  another site. Required for magic links, OAuth, and
-                  any "click a link in email → land logged in" flow.
+                  {t("cookieStrictness.laxDesc", { defaultValue: "Cookies ride along on top-level navigation from another site. Required for magic links, OAuth, and any \"click a link in email → land logged in\" flow." })}
                 </Typography>
               </Stack>
             }
@@ -553,13 +541,10 @@ function CookieStrictnessCard({ app, cardURL, onSaved, onSuccess, onError }: {
             label={
               <Stack>
                 <Typography variant="body2" sx={{ fontWeight: 500 }}>
-                  Strict
+                  {t("cookieStrictness.strictTitle", { defaultValue: "Strict" })}
                 </Typography>
                 <Typography variant="caption" color="text.secondary">
-                  Cookies are sent only on same-site requests. A user
-                  who clicks a link from another site lands logged-out
-                  and has to navigate within this app once before the
-                  cookie returns.
+                  {t("cookieStrictness.strictDesc", { defaultValue: "Cookies are sent only on same-site requests. A user who clicks a link from another site lands logged-out and has to navigate within this app once before the cookie returns." })}
                 </Typography>
               </Stack>
             }
@@ -569,9 +554,13 @@ function CookieStrictnessCard({ app, cardURL, onSaved, onSuccess, onError }: {
 
         {strictDisabled && (
           <Alert severity="info" sx={{ fontSize: 13 }}>
-            Strict requires no link-based auth flows. Currently active:{" "}
-            <strong>{blockers.join(", ")}</strong>. Disable those before
-            switching to Strict.
+            <Trans
+              i18nKey="cookieStrictness.strictDisabledNote"
+              values={{ blockers: blockers.join(", ") }}
+              components={{ strong: <strong /> }}
+            >
+              {"Strict requires no link-based auth flows. Currently active: <strong>{{blockers}}</strong>. Disable those before switching to Strict."}
+            </Trans>
           </Alert>
         )}
 
@@ -596,6 +585,7 @@ function CustomDomainInstructionsDialog({
   onClose: () => void;
   workspaceID: string;
 }) {
+  const { t } = useTranslation();
   const Code = ({ children }: { children: React.ReactNode }) => (
     <Box
       component="code"
@@ -615,7 +605,7 @@ function CustomDomainInstructionsDialog({
   return (
     <Dialog open={open} onClose={onClose} fullWidth maxWidth="md">
       <DialogTitle sx={{ pr: 6 }}>
-        Custom domain setup
+        {t("customDomain.title", { defaultValue: "Custom domain setup" })}
         <IconButton
           onClick={onClose}
           sx={{ position: "absolute", right: 8, top: 8 }}
@@ -637,19 +627,17 @@ function CustomDomainInstructionsDialog({
           </Typography>
 
           <Alert severity="info" sx={{ fontSize: 13 }}>
-            Origin Rules (Host + SNI rewrite) are Enterprise-only. The Worker
-            below does the same thing on Free/Paid plans for a few dollars
-            a month.
+            {t("customDomain.originRulesNote", { defaultValue: "Origin Rules (Host + SNI rewrite) are Enterprise-only. The Worker below does the same thing on Free/Paid plans for a few dollars a month." })}
           </Alert>
 
           {/* ---------- One-time ManyRows-side ---------- */}
           <Typography sx={{ fontFamily: "var(--font-mono)", textTransform: "uppercase", letterSpacing: "0.14em", fontSize: 10.5, fontWeight: 500, color: "text.disabled" }}>
-            One-time setup (ManyRows side)
+            {t("customDomain.oneTimeSetupLabel", { defaultValue: "One-time setup (ManyRows side)" })}
           </Typography>
 
           <Box>
             <Typography sx={{ fontSize: 13, fontWeight: 600, letterSpacing: "-0.005em", mb: 1 }}>
-              1. Cloudflare zone for ManyRows
+              {t("customDomain.step1", { defaultValue: "1. Cloudflare zone for ManyRows" })}
             </Typography>
             <Stack component="ul" sx={{ pl: 2.5, m: 0, gap: 0.5 }}>
               <Typography component="li" variant="body2" color="text.secondary">
@@ -669,7 +657,7 @@ function CustomDomainInstructionsDialog({
 
           <Box>
             <Typography sx={{ fontSize: 13, fontWeight: 600, letterSpacing: "-0.005em", mb: 1 }}>
-              2. Deploy the host-rewrite Worker
+              {t("customDomain.step2", { defaultValue: "2. Deploy the host-rewrite Worker" })}
             </Typography>
             <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
               <strong>Workers &amp; Pages → Create Worker → "saas-host-rewrite"</strong>.
@@ -718,12 +706,12 @@ function CustomDomainInstructionsDialog({
 
           {/* ---------- Per-customer ---------- */}
           <Typography sx={{ fontFamily: "var(--font-mono)", textTransform: "uppercase", letterSpacing: "0.14em", fontSize: 10.5, fontWeight: 500, color: "text.disabled", mt: 1 }}>
-            Per customer (repeat for each app)
+            {t("customDomain.perCustomerLabel", { defaultValue: "Per customer (repeat for each app)" })}
           </Typography>
 
           <Box>
             <Typography sx={{ fontSize: 13, fontWeight: 600, letterSpacing: "-0.005em", mb: 1 }}>
-              3. Add the Custom Hostname in Cloudflare
+              {t("customDomain.step3", { defaultValue: "3. Add the Custom Hostname in Cloudflare" })}
             </Typography>
             <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
               Cloudflare → <Code>example.com</Code> zone → SSL/TLS → Custom
@@ -755,7 +743,7 @@ Custom origin server:   Default origin server`}</Box>
 
           <Box>
             <Typography sx={{ fontSize: 13, fontWeight: 600, letterSpacing: "-0.005em", mb: 1 }}>
-              4. Customer adds three DNS records
+              {t("customDomain.step4", { defaultValue: "4. Customer adds three DNS records" })}
             </Typography>
             <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
               On <Code>&lt;customer&gt;.com</Code> - DNS provider doesn't
@@ -797,7 +785,7 @@ TXT    _cf-custom-hostname.auth   <hostname ownership UUID>`}</Box>
 
           <Box>
             <Typography sx={{ fontSize: 13, fontWeight: 600, letterSpacing: "-0.005em", mb: 1 }}>
-              5. Wait for Cloudflare to validate
+              {t("customDomain.step5", { defaultValue: "5. Wait for Cloudflare to validate" })}
             </Typography>
             <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
               On the Custom Hostnames page, the row flips:
@@ -842,7 +830,7 @@ TXT    _cf-custom-hostname.auth   <hostname ownership UUID>`}</Box>
 
           <Box>
             <Typography sx={{ fontSize: 13, fontWeight: 600, letterSpacing: "-0.005em", mb: 1 }}>
-              6. Bind the Worker route
+              {t("customDomain.step6", { defaultValue: "6. Bind the Worker route" })}
             </Typography>
             <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
               <strong>Workers &amp; Pages → saas-host-rewrite → Domains
@@ -867,7 +855,7 @@ Failure mode:   Fail closed (block)`}</Box>
 
           <Box>
             <Typography sx={{ fontSize: 13, fontWeight: 600, letterSpacing: "-0.005em", mb: 1 }}>
-              7. Smoke test
+              {t("customDomain.step7", { defaultValue: "7. Smoke test" })}
             </Typography>
             <Box
               component="pre"
@@ -893,7 +881,7 @@ curl -i https://app.example.com/health     # should match`}</Box>
 
           <Box>
             <Typography sx={{ fontSize: 13, fontWeight: 600, letterSpacing: "-0.005em", mb: 1 }}>
-              8. Tell ManyRows the hostname
+              {t("customDomain.step8", { defaultValue: "8. Tell ManyRows the hostname" })}
             </Typography>
             <Typography variant="body2" color="text.secondary">
               Save <Code>auth.&lt;customer&gt;.com</Code> in the{" "}
@@ -906,7 +894,7 @@ curl -i https://app.example.com/health     # should match`}</Box>
 
           <Box>
             <Typography sx={{ fontSize: 13, fontWeight: 600, letterSpacing: "-0.005em", mb: 1 }}>
-              Cookie domain settings (recommended)
+              {t("customDomain.cookieSettingsHeading", { defaultValue: "Cookie domain settings (recommended)" })}
             </Typography>
             <Typography variant="body2" color="text.secondary">
               For multi-env safety, ManyRows issues <strong>host-only</strong>{" "}
@@ -929,7 +917,7 @@ curl -i https://app.example.com/health     # should match`}</Box>
 
           <Box>
             <Typography sx={{ fontSize: 13, fontWeight: 600, letterSpacing: "-0.005em", mb: 1 }}>
-              Common gotchas
+              {t("customDomain.gotchasHeading", { defaultValue: "Common gotchas" })}
             </Typography>
             <Stack component="ul" sx={{ pl: 2.5, m: 0, gap: 0.5 }}>
               <Typography component="li" variant="body2" color="text.secondary">
@@ -957,7 +945,7 @@ curl -i https://app.example.com/health     # should match`}</Box>
         </Stack>
       </DialogContent>
       <DialogActions>
-        <Button onClick={onClose}>Close</Button>
+        <Button onClick={onClose}>{t("common.close", { defaultValue: "Close" })}</Button>
       </DialogActions>
     </Dialog>
   );

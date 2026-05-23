@@ -132,7 +132,7 @@ export default function AppDiff({ project }: Props) {
         return nextApps.length > 1 ? nextApps[1].id : "";
       });
     } catch (e) {
-      setError(extractApiError(e, "Failed to load data"));
+      setError(extractApiError(e, t("appDiff.failedToLoad", { defaultValue: "Failed to load data" })));
     } finally {
       setLoading(false);
     }
@@ -396,7 +396,7 @@ export default function AppDiff({ project }: Props) {
                             <TableCell>
                               <Stack direction="row" spacing={0.5} alignItems="center">
                                 <Chip
-                                  label={leftState.enabled ? "ON" : "OFF"}
+                                  label={leftState.enabled ? t("appDiff.on", { defaultValue: "ON" }) : t("appDiff.off", { defaultValue: "OFF" })}
                                   size="small"
                                   color={leftState.enabled ? "success" : "default"}
                                   sx={{ fontSize: 11, height: 20, fontWeight: 600 }}
@@ -411,7 +411,7 @@ export default function AppDiff({ project }: Props) {
                             <TableCell>
                               <Stack direction="row" spacing={0.5} alignItems="center">
                                 <Chip
-                                  label={rightState.enabled ? "ON" : "OFF"}
+                                  label={rightState.enabled ? t("appDiff.on", { defaultValue: "ON" }) : t("appDiff.off", { defaultValue: "OFF" })}
                                   size="small"
                                   color={rightState.enabled ? "success" : "default"}
                                   sx={{ fontSize: 11, height: 20, fontWeight: 600 }}

@@ -13,7 +13,8 @@ import (
 )
 
 // SupportedLanguages is the list of supported language codes for i18n.
-var SupportedLanguages = []string{"en"}
+// Keep in sync with the UI i18n locales and the api/email translation catalogs.
+var SupportedLanguages = []string{"en", "ko"}
 
 type updateNameReq struct {
 	Name string `json:"name"`

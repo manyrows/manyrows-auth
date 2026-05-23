@@ -793,7 +793,7 @@ export default function AppUsers({ project, appId: appIdProp }: Props) {
         if (fetchedApps[0]) setSelectedAppId(fetchedApps[0].id);
       }
     } catch (e) {
-      setErr(extractApiError(e, "Failed to load roles/apps"));
+      setErr(extractApiError(e, t("projectMembers.failedToLoadCore", { defaultValue: "Failed to load roles/apps" })));
     } finally {
       setCoreLoading(false);
     }
@@ -814,7 +814,7 @@ export default function AppUsers({ project, appId: appIdProp }: Props) {
       setProductMembers(pmPaged.members);
       setProductMembersTotal(pmPaged.total);
     } catch (e) {
-      setErr(extractApiError(e, "Failed to load product members"));
+      setErr(extractApiError(e, t("projectMembers.failedToLoadList", { defaultValue: "Failed to load product members" })));
     } finally {
       setListLoading(false);
     }
@@ -927,9 +927,9 @@ export default function AppUsers({ project, appId: appIdProp }: Props) {
         permissionIds: [...directPermIds],
       });
       setDirectPermEditing(false);
-      enqueueSnackbar("Permissions saved", { variant: "success" });
+      enqueueSnackbar(t("projectMembers.permissionsSaved", { defaultValue: "Permissions saved" }), { variant: "success" });
     } catch {
-      enqueueSnackbar("Failed to save permissions", { variant: "error" });
+      enqueueSnackbar(t("projectMembers.permissionsSaveFailed", { defaultValue: "Failed to save permissions" }), { variant: "error" });
     } finally {
       setDirectPermSaving(false);
     }
@@ -1011,9 +1011,9 @@ export default function AppUsers({ project, appId: appIdProp }: Props) {
       }
       setUserFieldValues({ ...userFieldEdits });
       setUserFieldEditing(false);
-      enqueueSnackbar("Fields saved", { variant: "success" });
+      enqueueSnackbar(t("projectMembers.fieldsSaved", { defaultValue: "Fields saved" }), { variant: "success" });
     } catch {
-      enqueueSnackbar("Failed to save fields", { variant: "error" });
+      enqueueSnackbar(t("projectMembers.fieldsSaveFailed", { defaultValue: "Failed to save fields" }), { variant: "error" });
     } finally {
       setUserFieldSaving(false);
     }
@@ -1174,7 +1174,7 @@ export default function AppUsers({ project, appId: appIdProp }: Props) {
             return {
               id,
               email: emailById.get(id) ?? id,
-              message: extractApiError(e, "Failed"),
+              message: extractApiError(e, t("projectMembers.bulkItemFailed", { defaultValue: "Failed" })),
             };
           }
         }),
@@ -1200,17 +1200,21 @@ export default function AppUsers({ project, appId: appIdProp }: Props) {
     }
     await refreshList();
 
-    const verb = bulkMode === "disable" ? "disabled" : bulkMode === "enable" ? "enabled" : "removed";
+    const verb = bulkMode === "disable"
+      ? t("projectMembers.bulkVerbDisabled", { defaultValue: "disabled" })
+      : bulkMode === "enable"
+        ? t("projectMembers.bulkVerbEnabled", { defaultValue: "enabled" })
+        : t("projectMembers.bulkVerbRemoved", { defaultValue: "removed" });
     const okCount = ids.length - failures.length;
 
     if (failures.length === 0) {
-      enqueueSnackbar(`${ids.length} user${ids.length === 1 ? "" : "s"} ${verb}`, { variant: "success" });
+      enqueueSnackbar(t("projectMembers.bulkSuccess", { count: ids.length, verb, defaultValue: "{{count}} users {{verb}}" }), { variant: "success" });
       setBulkMode(null);
       clearSelection();
     } else {
       // Keep the dialog open so the user can see which users failed and
       // retry just those - the snackbar alone hides the detail.
-      enqueueSnackbar(`${okCount} ${verb}, ${failures.length} failed`, { variant: "warning" });
+      enqueueSnackbar(t("projectMembers.bulkPartialSnack", { ok: okCount, verb, fail: failures.length, defaultValue: "{{ok}} {{verb}}, {{fail}} failed" }), { variant: "warning" });
     }
   };
 
@@ -1353,9 +1357,9 @@ export default function AppUsers({ project, appId: appIdProp }: Props) {
       a.download = buildExportFilename(project.name, appName, new Date());
       a.click();
       URL.revokeObjectURL(url);
-      enqueueSnackbar(`Exported ${exportData.length} users`, { variant: "success" });
+      enqueueSnackbar(t("projectMembers.exportSuccess", { count: exportData.length, defaultValue: "Exported {{count}} users" }), { variant: "success" });
     } catch {
-      enqueueSnackbar("Failed to export users", { variant: "error" });
+      enqueueSnackbar(t("projectMembers.exportFailed", { defaultValue: "Failed to export users" }), { variant: "error" });
     } finally {
       setExporting(false);
     }
@@ -1373,7 +1377,7 @@ export default function AppUsers({ project, appId: appIdProp }: Props) {
       const users = parseUsersJson(text);
 
       if (users.length === 0) {
-        enqueueSnackbar("No users found in file", { variant: "warning" });
+        enqueueSnackbar(t("projectMembers.importNoUsers", { defaultValue: "No users found in file" }), { variant: "warning" });
         return;
       }
 
@@ -1384,7 +1388,7 @@ export default function AppUsers({ project, appId: appIdProp }: Props) {
 
       setImportPreview({ filename: file.name, users, toCreate, toUpdate });
     } catch {
-      enqueueSnackbar("Invalid JSON file", { variant: "error" });
+      enqueueSnackbar(t("projectMembers.importInvalidJson", { defaultValue: "Invalid JSON file" }), { variant: "error" });
     } finally {
       setImporting(false);
     }
@@ -1520,7 +1524,7 @@ export default function AppUsers({ project, appId: appIdProp }: Props) {
               // operator's signal that "Users here = Users in pool X".
               <Stack direction="row" spacing={0.75} alignItems="center" sx={{ mt: 0.25, ml: 4.75 }}>
                 <Typography variant="caption" color="text.disabled" sx={{ fontFamily: "var(--font-mono)", fontSize: 11 }}>
-                  pool
+                  {t("projectMembers.poolLabel", { defaultValue: "pool" })}
                 </Typography>
                 <RouterLink
                   to={`/app/workspace/${project.workspaceId}/userPools`}
@@ -1547,14 +1551,14 @@ export default function AppUsers({ project, appId: appIdProp }: Props) {
               </IconButton>
             </span>
           </Tooltip>
-          <Tooltip title="Export users as JSON">
+          <Tooltip title={t("projectMembers.exportTooltip", { defaultValue: "Export users as JSON" })}>
             <span>
               <IconButton size="small" onClick={handleExport} disabled={!selectedAppId || loading || exporting}>
                 {exporting ? <CircularProgress size={16} /> : <FileDown size={14} strokeWidth={1.75} />}
               </IconButton>
             </span>
           </Tooltip>
-          <Tooltip title="Import users from JSON">
+          <Tooltip title={t("projectMembers.importTooltip", { defaultValue: "Import users from JSON" })}>
             <span>
               <IconButton size="small" onClick={() => fileInputRef.current?.click()} disabled={!selectedAppId || loading || importing}>
                 {importing ? <CircularProgress size={16} /> : <FileUp size={14} strokeWidth={1.75} />}
@@ -2233,7 +2237,7 @@ export default function AppUsers({ project, appId: appIdProp }: Props) {
                         onClick={() => { setClearPwMember(infoMember); setClearPwOpen(true); }}
                         sx={{ fontSize: 11, textTransform: "none", minWidth: 0, py: 0, color: "text.primary" }}
                       >
-                        Clear
+                        {t("projectMembers.clearPasswordBtn", { defaultValue: "Clear" })}
                       </Button>
                     )}
                   </Stack>
@@ -2454,7 +2458,7 @@ export default function AppUsers({ project, appId: appIdProp }: Props) {
                   ) : (
                     <Stack spacing={0.5}>
                       {directPermIds.size === 0 ? (
-                        <Typography variant="body2" color="text.secondary">None</Typography>
+                        <Typography variant="body2" color="text.secondary">{t("projectMembers.none", { defaultValue: "None" })}</Typography>
                       ) : (
                         allPermissions.filter((p) => directPermIds.has(p.id)).map((p) => (
                           <Typography key={p.id} variant="body2">{p.name} <Typography component="span" variant="caption" color="text.secondary">({p.slug})</Typography></Typography>
@@ -2541,7 +2545,7 @@ export default function AppUsers({ project, appId: appIdProp }: Props) {
                           <Typography variant="caption" color="text.secondary">{f.label || f.key}</Typography>
                           <Typography variant="body2">
                             {f.valueType === "bool"
-                              ? (userFieldValues[f.id] === "true" ? "Yes" : "No")
+                              ? (userFieldValues[f.id] === "true" ? t("projectMembers.yes", { defaultValue: "Yes" }) : t("projectMembers.no", { defaultValue: "No" }))
                               : (userFieldValues[f.id] || "-")}
                           </Typography>
                         </Stack>
@@ -2636,14 +2640,16 @@ export default function AppUsers({ project, appId: appIdProp }: Props) {
         maxWidth="xs"
         fullWidth
       >
-        <DialogTitle>Clear password?</DialogTitle>
+        <DialogTitle>{t("projectMembers.clearPwTitle", { defaultValue: "Clear password?" })}</DialogTitle>
         <DialogContent>
           <Stack spacing={1.5}>
             <Typography variant="body2">
-              The user's password will be unset. They can no longer sign in with email + password until they reset via the forgot-password flow. OAuth and passkey sign-in are unaffected.
+              {t("projectMembers.clearPwBody", { defaultValue: "The user's password will be unset. They can no longer sign in with email + password until they reset via the forgot-password flow. OAuth and passkey sign-in are unaffected." })}
             </Typography>
             <Typography variant="body2" color="text.secondary">
-              All active sessions for <strong>{clearPwMember?.email}</strong> will also be revoked.
+              <Trans i18nKey="projectMembers.clearPwSessions" values={{ email: clearPwMember?.email }} components={tc}>
+                All active sessions for <strong>{"{{email}}"}</strong> will also be revoked.
+              </Trans>
             </Typography>
           </Stack>
         </DialogContent>
@@ -2669,15 +2675,15 @@ export default function AppUsers({ project, appId: appIdProp }: Props) {
                 setInfoOpen(false);
                 setInfoMember(null);
                 await refreshList();
-                enqueueSnackbar("Password cleared", { variant: "success" });
+                enqueueSnackbar(t("projectMembers.passwordCleared", { defaultValue: "Password cleared" }), { variant: "success" });
               } catch {
-                enqueueSnackbar("Failed to clear password", { variant: "error" });
+                enqueueSnackbar(t("projectMembers.passwordClearFailed", { defaultValue: "Failed to clear password" }), { variant: "error" });
               } finally {
                 setClearPwLoading(false);
               }
             }}
           >
-            {clearPwLoading ? "..." : "Clear password"}
+            {clearPwLoading ? "..." : t("projectMembers.clearPasswordAction", { defaultValue: "Clear password" })}
           </Button>
         </DialogActions>
       </Dialog>
@@ -2858,12 +2864,12 @@ export default function AppUsers({ project, appId: appIdProp }: Props) {
         maxWidth="sm"
         fullWidth
       >
-        <DialogTitle>Import users</DialogTitle>
+        <DialogTitle>{t("projectMembers.importTitle", { defaultValue: "Import users" })}</DialogTitle>
         <DialogContent>
           {importProgress ? (
             <Stack spacing={2} sx={{ mt: 1 }}>
               <Typography variant="body2">
-                Importing {importProgress.current} of {importProgress.total}…
+                {t("projectMembers.importingProgress", { current: importProgress.current, total: importProgress.total, defaultValue: "Importing {{current}} of {{total}}…" })}
               </Typography>
               <LinearProgress
                 variant="determinate"
@@ -2873,36 +2879,39 @@ export default function AppUsers({ project, appId: appIdProp }: Props) {
           ) : importPreview ? (
             <Stack spacing={1.5} sx={{ mt: 1 }}>
               <Typography variant="body2" color="text.secondary">
-                From <code>{importPreview.filename}</code>
+                <Trans i18nKey="projectMembers.importFrom" values={{ filename: importPreview.filename }} components={tc}>
+                  From <code>{"{{filename}}"}</code>
+                </Trans>
               </Typography>
               <Typography>
-                <b>{importPreview.users.length}</b> user{importPreview.users.length !== 1 ? "s" : ""} in file:
+                <Trans i18nKey="projectMembers.importUsersInFile" count={importPreview.users.length} values={{ count: importPreview.users.length }} components={tc}>
+                  <b>{"{{count}}"}</b> users in file:
+                </Trans>
               </Typography>
               <Box sx={{ pl: 2 }}>
                 <Typography variant="body2" color="success.main">
-                  • {importPreview.toCreate} will be created
+                  • {t("projectMembers.importWillCreate", { count: importPreview.toCreate, defaultValue: "{{count}} will be created" })}
                 </Typography>
                 <Typography variant="body2" color="text.secondary">
-                  • {importPreview.toUpdate} will be updated (email already exists)
+                  • {t("projectMembers.importWillUpdate", { count: importPreview.toUpdate, defaultValue: "{{count}} will be updated (email already exists)" })}
                 </Typography>
               </Box>
               <Alert severity="info" sx={{ mt: 1, fontSize: 13 }}>
-                Roles and field values will be applied. Unknown role/permission/field slugs
-                are silently skipped; check the result for errors.
+                {t("projectMembers.importNote", { defaultValue: "Roles and field values will be applied. Unknown role/permission/field slugs are silently skipped; check the result for errors." })}
               </Alert>
             </Stack>
           ) : null}
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setImportPreview(null)} disabled={!!importProgress}>
-            Cancel
+            {t("common.cancel", { defaultValue: "Cancel" })}
           </Button>
           <Button
             onClick={runImport}
             variant="contained"
             disabled={!!importProgress || !importPreview || importPreview.users.length === 0}
           >
-            {importProgress ? "Importing…" : `Import ${importPreview?.users.length ?? 0}`}
+            {importProgress ? t("projectMembers.importingShort", { defaultValue: "Importing…" }) : t("projectMembers.importN", { count: importPreview?.users.length ?? 0, defaultValue: "Import {{count}}" })}
           </Button>
         </DialogActions>
       </Dialog>
@@ -2914,17 +2923,21 @@ export default function AppUsers({ project, appId: appIdProp }: Props) {
         maxWidth="sm"
         fullWidth
       >
-        <DialogTitle>Import complete</DialogTitle>
+        <DialogTitle>{t("projectMembers.importComplete", { defaultValue: "Import complete" })}</DialogTitle>
         <DialogContent>
           {importResult && (
             <Stack spacing={1.5} sx={{ mt: 1 }}>
               <Typography color="success.main">
-                Imported: <b>{importResult.imported}</b>
+                <Trans i18nKey="projectMembers.importedCount" values={{ count: importResult.imported }} components={tc}>
+                  Imported: <b>{"{{count}}"}</b>
+                </Trans>
               </Typography>
               {importResult.failed > 0 && (
                 <>
                   <Typography color="error.main">
-                    Failed: <b>{importResult.failed}</b>
+                    <Trans i18nKey="projectMembers.failedCount" values={{ count: importResult.failed }} components={tc}>
+                      Failed: <b>{"{{count}}"}</b>
+                    </Trans>
                   </Typography>
                   <Box
                     sx={{
@@ -2954,7 +2967,7 @@ export default function AppUsers({ project, appId: appIdProp }: Props) {
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setImportResult(null)} variant="contained">
-            Close
+            {t("common.close", { defaultValue: "Close" })}
           </Button>
         </DialogActions>
       </Dialog>

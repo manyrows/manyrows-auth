@@ -270,7 +270,7 @@ export default function Register(props: Props) {
                 {turnstileSiteKey && (
                   <Box sx={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 1 }}>
                     <Typography variant="caption" color="text.secondary">
-                      Let us know you are human
+                      {t("auth.turnstilePrompt")}
                     </Typography>
                     <Turnstile
                       key="register"

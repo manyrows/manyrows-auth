@@ -291,9 +291,9 @@ export default function Features({ project, appId: fixedAppId }: Props) {
       );
       setOverrides(overrideRes.featureFlagOverrides || []);
       setRoleDialogOpen(false);
-      enqueueSnackbar("Role targeting saved", { variant: "success" });
+      enqueueSnackbar(t("features.roleTargeting.saved"), { variant: "success" });
     } catch (e) {
-      enqueueSnackbar(extractApiError(e, "Failed to save"), { variant: "error" });
+      enqueueSnackbar(extractApiError(e, t("features.roleTargeting.saveFailed")), { variant: "error" });
     } finally {
       setRoleDialogSaving(false);
     }
@@ -974,7 +974,7 @@ export default function Features({ project, appId: fixedAppId }: Props) {
                               label={(() => {
                                 const o = overrideByKey.get(cellKey(flag.id, app.id));
                                 const rids = o?.roleIds ?? [];
-                                return rids.length === 0 ? "All users" : `${rids.length} role${rids.length > 1 ? "s" : ""}`;
+                                return rids.length === 0 ? t("features.roleTargeting.allUsers") : t("features.roleTargeting.roleCount", { count: rids.length });
                               })()}
                               sx={{
                                 height: 18,
@@ -1406,11 +1406,11 @@ export default function Features({ project, appId: fixedAppId }: Props) {
 
       {/* Role targeting dialog */}
       <Dialog open={roleDialogOpen} onClose={() => setRoleDialogOpen(false)} maxWidth="xs" fullWidth>
-        <DialogTitle>Role Targeting</DialogTitle>
+        <DialogTitle>{t("features.roleTargeting.title")}</DialogTitle>
         <DialogContent>
           <Stack spacing={1.5} sx={{ pt: 1 }}>
             <Typography variant="body2" color="text.secondary">
-              Select roles that should see this flag as enabled. Leave empty for all users.
+              {t("features.roleTargeting.description")}
             </Typography>
             {roles.map((role) => (
               <FormControlLabel
@@ -1434,15 +1434,15 @@ export default function Features({ project, appId: fixedAppId }: Props) {
             ))}
             {roleDialogSelected.size > 0 && (
               <Button size="small" onClick={() => setRoleDialogSelected(new Set())} sx={{ textTransform: "none", fontSize: 12, alignSelf: "flex-start" }}>
-                Clear all (target everyone)
+                {t("features.roleTargeting.clearAll")}
               </Button>
             )}
           </Stack>
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setRoleDialogOpen(false)} disabled={roleDialogSaving}>Cancel</Button>
+          <Button onClick={() => setRoleDialogOpen(false)} disabled={roleDialogSaving}>{t("features.dialog.cancel")}</Button>
           <Button variant="contained" disableElevation onClick={() => void saveRoleTargeting()} disabled={roleDialogSaving}>
-            {roleDialogSaving ? <CircularProgress size={16} /> : "Save"}
+            {roleDialogSaving ? <CircularProgress size={16} /> : t("features.dialog.save")}
           </Button>
         </DialogActions>
       </Dialog>

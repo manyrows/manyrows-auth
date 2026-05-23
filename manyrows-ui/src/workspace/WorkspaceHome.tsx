@@ -150,7 +150,7 @@ export default function WorkspaceHome({ workspace, page, poolId }: WorkspaceHome
           <IconButton
             size="small"
             onClick={() => setMobileNavOpen(true)}
-            aria-label="Open navigation"
+            aria-label={t("workspaceHome.openNavigation")}
           >
             <MenuIcon size={16} strokeWidth={1.75} />
           </IconButton>
@@ -164,7 +164,7 @@ export default function WorkspaceHome({ workspace, page, poolId }: WorkspaceHome
               color: "text.disabled",
             }}
           >
-            Menu
+            {t("workspaceHome.menu")}
           </Typography>
         </Box>
 

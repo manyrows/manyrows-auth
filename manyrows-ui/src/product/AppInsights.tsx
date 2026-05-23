@@ -110,6 +110,7 @@ function StatCard({
   loading: boolean;
 }) {
   const theme = useTheme();
+  const { t } = useTranslation();
   const hasDelta = !loading && typeof value === "number" && typeof prev === "number";
   const delta = hasDelta ? value! - prev! : 0;
   const pct = hasDelta && prev! > 0 ? Math.round((delta / prev!) * 100) : null;
@@ -152,7 +153,7 @@ function StatCard({
               <Minus size={12} strokeWidth={2} />
             )}
             <Typography variant="caption" sx={{ fontWeight: 600 }}>
-              {delta === 0 ? "no change" : `${delta > 0 ? "+" : ""}${formatNumber(delta)}`}
+              {delta === 0 ? t("appInsights.noChange", { defaultValue: "no change" }) : `${delta > 0 ? "+" : ""}${formatNumber(delta)}`}
               {pct !== null && delta !== 0 && ` (${pct > 0 ? "+" : ""}${pct}%)`}
             </Typography>
           </Stack>
@@ -237,7 +238,7 @@ export default function AppInsights({ project, appId }: Props) {
       })
       .catch((e) => {
         if (cancelled) return;
-        setErr(e?.response?.data?.error || e?.message || "Failed to load insights");
+        setErr(e?.response?.data?.error || e?.message || t("appInsights.failedToLoad", { defaultValue: "Failed to load insights" }));
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -311,19 +312,19 @@ export default function AppInsights({ project, appId }: Props) {
           loading={loading}
         />
         <StatCard
-          label={t("appInsights.cards.newUsers", { defaultValue: `New users · ${range}` })}
+          label={t("appInsights.cards.newUsers", { range })}
           value={summary?.newUsers}
           prev={summary?.newUsersPrev}
           loading={loading}
         />
         <StatCard
-          label={t("appInsights.cards.activeUsers", { defaultValue: `Active users · ${range}` })}
+          label={t("appInsights.cards.activeUsers", { range })}
           value={summary?.activeUsers}
           prev={summary?.activeUsersPrev}
           loading={loading}
         />
         <StatCard
-          label={t("appInsights.cards.loginFailures", { defaultValue: `Login failures · ${range}` })}
+          label={t("appInsights.cards.loginFailures", { range })}
           value={summary?.loginFailures}
           prev={summary?.loginFailuresPrev}
           invertColor
@@ -354,7 +355,7 @@ export default function AppInsights({ project, appId }: Props) {
           ) : (
             <LineChart
               xAxis={[{ scaleType: "point", data: labels }]}
-              series={[{ data: signups.map((p) => p.count), color: palette.primary, area: true, showMark: false, label: "Signups" }]}
+              series={[{ data: signups.map((p) => p.count), color: palette.primary, area: true, showMark: false, label: t("appInsights.series.signups", { defaultValue: "Signups" }) }]}
               height={360}
               margin={{ top: 10, right: 16, bottom: 28, left: 36 }}
               grid={{ horizontal: true }}
@@ -371,7 +372,7 @@ export default function AppInsights({ project, appId }: Props) {
           ) : (
             <LineChart
               xAxis={[{ scaleType: "point", data: labels }]}
-              series={[{ data: logins.map((p) => p.count), color: palette.success, area: true, showMark: false, label: "Logins" }]}
+              series={[{ data: logins.map((p) => p.count), color: palette.success, area: true, showMark: false, label: t("appInsights.series.logins", { defaultValue: "Logins" }) }]}
               height={360}
               margin={{ top: 10, right: 16, bottom: 28, left: 36 }}
               grid={{ horizontal: true }}
@@ -408,7 +409,7 @@ export default function AppInsights({ project, appId }: Props) {
           ) : (
             <LineChart
               xAxis={[{ scaleType: "point", data: labels }]}
-              series={[{ data: cumulative.map((p) => p.count), color: palette.info, area: true, showMark: false, label: "Users" }]}
+              series={[{ data: cumulative.map((p) => p.count), color: palette.info, area: true, showMark: false, label: t("appInsights.series.users", { defaultValue: "Users" }) }]}
               height={360}
               margin={{ top: 10, right: 16, bottom: 28, left: 36 }}
               grid={{ horizontal: true }}
@@ -425,7 +426,7 @@ export default function AppInsights({ project, appId }: Props) {
           ) : (
             <BarChart
               xAxis={[{ scaleType: "band", data: labels }]}
-              series={[{ data: failures.map((p) => p.count), color: palette.error, label: "Failures" }]}
+              series={[{ data: failures.map((p) => p.count), color: palette.error, label: t("appInsights.series.failures", { defaultValue: "Failures" }) }]}
               height={360}
               margin={{ top: 10, right: 16, bottom: 28, left: 36 }}
               grid={{ horizontal: true }}

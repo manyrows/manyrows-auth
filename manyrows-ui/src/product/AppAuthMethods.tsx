@@ -3,7 +3,7 @@ import axios from "axios";
 import type { Product, Workspace, Role } from "../core.ts";
 import { extractApiError } from "../lib/apiError.ts";
 import { useSnackbar } from "notistack";
-import { useTranslation } from "react-i18next";
+import { useTranslation, Trans } from "react-i18next";
 import {
   Accordion,
   AccordionDetails,
@@ -388,17 +388,21 @@ function GeneralCard(props: CardProps & { roles: Role[] }) {
 
       <Section
         overline={t("apps.sectionOverline.endUserControls", { defaultValue: "End-user controls" })}
-        title="Account deletion"
-        desc="Controls whether end users can delete their own account from the AppKit profile dialog. Disable when you want to keep audit trails intact and route deletions through support."
+        title={t("apps.accountDeletion.title", { defaultValue: "Account deletion" })}
+        desc={t("apps.accountDeletion.desc", { defaultValue: "Controls whether end users can delete their own account from the AppKit profile dialog. Disable when you want to keep audit trails intact and route deletions through support." })}
       >
         <FormControlLabel
           control={<Switch checked={allowAccountDeletion} onChange={(e) => setAllowAccountDeletion(e.target.checked)} disabled={saving} />}
           label={
             <Stack spacing={0}>
-              <Typography variant="body2" sx={{ fontWeight: 500 }}>Allow users to delete their own account</Typography>
+              <Typography variant="body2" sx={{ fontWeight: 500 }}>{t("apps.accountDeletion.switchLabel", { defaultValue: "Allow users to delete their own account" })}</Typography>
               <Typography variant="caption" color="text.secondary">
-                When off, the "Delete account" button is hidden and the server rejects deletion requests with{" "}
-                <Box component="code" sx={{ fontFamily: "var(--font-mono)", fontSize: 11.5, px: 0.5, py: "1px", bgcolor: "action.hover", border: "1px solid", borderColor: "divider", borderRadius: 0.5 }}>403</Box>.
+                <Trans
+                  i18nKey="apps.accountDeletion.switchCaption"
+                  components={{ code: <Box component="code" sx={{ fontFamily: "var(--font-mono)", fontSize: 11.5, px: 0.5, py: "1px", bgcolor: "action.hover", border: "1px solid", borderColor: "divider", borderRadius: 0.5 }} /> }}
+                >
+                  When off, the "Delete account" button is hidden and the server rejects deletion requests with <code>403</code>.
+                </Trans>
               </Typography>
             </Stack>
           }
@@ -411,10 +415,10 @@ function GeneralCard(props: CardProps & { roles: Role[] }) {
         title={
           <Stack direction="row" alignItems="center" spacing={1}>
             <Typography sx={{ fontSize: 15, fontWeight: 600, letterSpacing: "-0.005em" }}>
-              Email change
+              {t("apps.emailChange.title", { defaultValue: "Email change" })}
             </Typography>
             <Chip
-              label="Advanced"
+              label={t("apps.emailChange.advanced", { defaultValue: "Advanced" })}
               size="small"
               sx={{
                 height: 18,
@@ -431,10 +435,12 @@ function GeneralCard(props: CardProps & { roles: Role[] }) {
           </Stack>
         }
         desc={
-          <>
-            When on, AppKit's profile dialog shows a "Change Email Address" block; the user enters their current password + new address, receives a verification code at the new address, and the change applies on confirm. When off, the block is hidden and the server rejects email-change requests with{" "}
-            <Box component="code" sx={{ fontFamily: "var(--font-mono)", fontSize: 11.5, px: 0.5, py: "1px", bgcolor: "action.hover", border: "1px solid", borderColor: "divider", borderRadius: 0.5 }}>403</Box>.
-          </>
+          <Trans
+            i18nKey="apps.emailChange.desc"
+            components={{ code: <Box component="code" sx={{ fontFamily: "var(--font-mono)", fontSize: 11.5, px: 0.5, py: "1px", bgcolor: "action.hover", border: "1px solid", borderColor: "divider", borderRadius: 0.5 }} /> }}
+          >
+            When on, AppKit's profile dialog shows a "Change Email Address" block; the user enters their current password + new address, receives a verification code at the new address, and the change applies on confirm. When off, the block is hidden and the server rejects email-change requests with <code>403</code>.
+          </Trans>
         }
       >
         <Alert
@@ -463,17 +469,17 @@ function GeneralCard(props: CardProps & { roles: Role[] }) {
               mr: 1,
             }}
           >
-            Recommended: leave off
+            {t("apps.emailChange.recommendedOff", { defaultValue: "Recommended: leave off" })}
           </Typography>
-          Email is usually the canonical identity tying your audit logs and support tickets to a user - letting end users rewrite it from the profile dialog breaks that link and creates support headaches. Only enable when you have a specific reason (e.g. internal tool where users routinely change addresses).
-          {" "}
-          <strong>Only applies when email/password sign-in is on</strong> - the change-email flow needs a current password to confirm, so it's hidden automatically in <em>code</em> or <em>OAuth-only</em> mode regardless of this toggle.
+          <Trans i18nKey="apps.emailChange.warningBody" components={{ strong: <strong />, em: <em /> }}>
+            Email is usually the canonical identity tying your audit logs and support tickets to a user - letting end users rewrite it from the profile dialog breaks that link and creates support headaches. Only enable when you have a specific reason (e.g. internal tool where users routinely change addresses). <strong>Only applies when email/password sign-in is on</strong> - the change-email flow needs a current password to confirm, so it's hidden automatically in <em>code</em> or <em>OAuth-only</em> mode regardless of this toggle.
+          </Trans>
         </Alert>
         <FormControlLabel
           control={<Switch checked={allowEmailChange} onChange={(e) => setAllowEmailChange(e.target.checked)} disabled={saving} />}
           label={
             <Typography variant="body2" sx={{ fontWeight: 500 }}>
-              Allow users to update their email address
+              {t("apps.emailChange.switchLabel", { defaultValue: "Allow users to update their email address" })}
             </Typography>
           }
           sx={{ ml: 0 }}
@@ -949,22 +955,22 @@ function GoogleCard({ app, cardURL, onSaved, onSuccess, onError }: CardProps) {
                 <StatusChip size="xs" label={t("apps.dialog.secretSet", { defaultValue: "Configured" })} severity="success" />
               )}
               {clearSecret && (
-                <StatusChip size="xs" label="Will be cleared on save" severity="warning" />
+                <StatusChip size="xs" label={t("apps.dialog.willBeCleared", { defaultValue: "Will be cleared on save" })} severity="warning" />
               )}
             </Box>
           }
           value={clientSecret}
           onChange={(e) => { setClientSecret(e.target.value); setClearSecret(false); }}
           disabled={saving || clearSecret}
-          placeholder={app.hasGoogleClientSecret && !clearSecret ? "Leave blank to keep current" : "Required - paste from Google Cloud Console"}
+          placeholder={app.hasGoogleClientSecret && !clearSecret ? t("apps.dialog.leaveBlankKeep", { defaultValue: "Leave blank to keep current" }) : t("apps.dialog.googleSecretPlaceholder", { defaultValue: "Required - paste from Google Cloud Console" })}
           helperText={
             <Box component="span" sx={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
               <span>{t("apps.dialog.googleClientSecretHelp", { defaultValue: "Required. ManyRows exchanges the OAuth code server-to-server with this secret." })}</span>
               {app.hasGoogleClientSecret && !clearSecret && (
-                <Button size="small" color="error" onClick={() => { setClearSecret(true); setClientSecret(""); }} sx={{ textTransform: "none", fontSize: 11, minWidth: 0, p: 0, ml: 1, whiteSpace: "nowrap" }}>Clear secret</Button>
+                <Button size="small" color="error" onClick={() => { setClearSecret(true); setClientSecret(""); }} sx={{ textTransform: "none", fontSize: 11, minWidth: 0, p: 0, ml: 1, whiteSpace: "nowrap" }}>{t("apps.dialog.clearSecret", { defaultValue: "Clear secret" })}</Button>
               )}
               {clearSecret && (
-                <Button size="small" onClick={() => setClearSecret(false)} sx={{ textTransform: "none", fontSize: 11, minWidth: 0, p: 0, ml: 1, whiteSpace: "nowrap" }}>Undo</Button>
+                <Button size="small" onClick={() => setClearSecret(false)} sx={{ textTransform: "none", fontSize: 11, minWidth: 0, p: 0, ml: 1, whiteSpace: "nowrap" }}>{t("apps.dialog.undo", { defaultValue: "Undo" })}</Button>
               )}
             </Box>
           }
@@ -1126,22 +1132,22 @@ function AppleCard({ app, cardURL, onSaved, onSuccess, onError }: CardProps) {
                 <StatusChip size="xs" label={t("apps.dialog.secretSet", { defaultValue: "Configured" })} severity="success" />
               )}
               {clearKey && (
-                <StatusChip size="xs" label="Will be cleared on save" severity="warning" />
+                <StatusChip size="xs" label={t("apps.dialog.willBeCleared", { defaultValue: "Will be cleared on save" })} severity="warning" />
               )}
             </Box>
           }
           value={privateKey}
           onChange={(e) => { setPrivateKey(e.target.value); setClearKey(false); }}
           disabled={saving || clearKey}
-          placeholder={app.hasApplePrivateKey && !clearKey ? "Leave blank to keep current" : "-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----"}
+          placeholder={app.hasApplePrivateKey && !clearKey ? t("apps.dialog.leaveBlankKeep", { defaultValue: "Leave blank to keep current" }) : "-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----"}
           helperText={
             <Box component="span" sx={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
               <span>{t("apps.dialog.applePrivateKeyHelp", { defaultValue: "Paste the contents of the .p8 file from Apple Developer. Encrypted at rest." })}</span>
               {app.hasApplePrivateKey && !clearKey && (
-                <Button size="small" color="error" onClick={() => { setClearKey(true); setPrivateKey(""); }} sx={{ textTransform: "none", fontSize: 11, minWidth: 0, p: 0, ml: 1, whiteSpace: "nowrap" }}>Clear key</Button>
+                <Button size="small" color="error" onClick={() => { setClearKey(true); setPrivateKey(""); }} sx={{ textTransform: "none", fontSize: 11, minWidth: 0, p: 0, ml: 1, whiteSpace: "nowrap" }}>{t("apps.dialog.clearKey", { defaultValue: "Clear key" })}</Button>
               )}
               {clearKey && (
-                <Button size="small" onClick={() => setClearKey(false)} sx={{ textTransform: "none", fontSize: 11, minWidth: 0, p: 0, ml: 1, whiteSpace: "nowrap" }}>Undo</Button>
+                <Button size="small" onClick={() => setClearKey(false)} sx={{ textTransform: "none", fontSize: 11, minWidth: 0, p: 0, ml: 1, whiteSpace: "nowrap" }}>{t("apps.dialog.undo", { defaultValue: "Undo" })}</Button>
               )}
             </Box>
           }
@@ -1326,22 +1332,22 @@ function MicrosoftCard({ app, cardURL, onSaved, onSuccess, onError }: CardProps)
                 <StatusChip size="xs" label={t("apps.dialog.secretSet", { defaultValue: "Configured" })} severity="success" />
               )}
               {clearSecret && (
-                <StatusChip size="xs" label="Will be cleared on save" severity="warning" />
+                <StatusChip size="xs" label={t("apps.dialog.willBeCleared", { defaultValue: "Will be cleared on save" })} severity="warning" />
               )}
             </Box>
           }
           value={clientSecret}
           onChange={(e) => { setClientSecret(e.target.value); setClearSecret(false); }}
           disabled={saving || clearSecret}
-          placeholder={app.hasMicrosoftClientSecret && !clearSecret ? "Leave blank to keep current" : "From Entra → Certificates & secrets → New client secret → Value"}
+          placeholder={app.hasMicrosoftClientSecret && !clearSecret ? t("apps.dialog.leaveBlankKeep", { defaultValue: "Leave blank to keep current" }) : t("apps.dialog.microsoftSecretPlaceholder", { defaultValue: "From Entra → Certificates & secrets → New client secret → Value" })}
           helperText={
             <Box component="span" sx={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
               <span>{t("apps.dialog.microsoftClientSecretHelp", { defaultValue: "Use the Value column from the secret you created in Entra (not the Secret ID). Encrypted at rest." })}</span>
               {app.hasMicrosoftClientSecret && !clearSecret && (
-                <Button size="small" color="error" onClick={() => { setClearSecret(true); setClientSecret(""); }} sx={{ textTransform: "none", fontSize: 11, minWidth: 0, p: 0, ml: 1, whiteSpace: "nowrap" }}>Clear secret</Button>
+                <Button size="small" color="error" onClick={() => { setClearSecret(true); setClientSecret(""); }} sx={{ textTransform: "none", fontSize: 11, minWidth: 0, p: 0, ml: 1, whiteSpace: "nowrap" }}>{t("apps.dialog.clearSecret", { defaultValue: "Clear secret" })}</Button>
               )}
               {clearSecret && (
-                <Button size="small" onClick={() => setClearSecret(false)} sx={{ textTransform: "none", fontSize: 11, minWidth: 0, p: 0, ml: 1, whiteSpace: "nowrap" }}>Undo</Button>
+                <Button size="small" onClick={() => setClearSecret(false)} sx={{ textTransform: "none", fontSize: 11, minWidth: 0, p: 0, ml: 1, whiteSpace: "nowrap" }}>{t("apps.dialog.undo", { defaultValue: "Undo" })}</Button>
               )}
             </Box>
           }
@@ -1518,22 +1524,22 @@ function GithubCard({ app, cardURL, onSaved, onSuccess, onError }: CardProps) {
                 <StatusChip size="xs" label={t("apps.dialog.secretSet", { defaultValue: "Configured" })} severity="success" />
               )}
               {clearSecret && (
-                <StatusChip size="xs" label="Will be cleared on save" severity="warning" />
+                <StatusChip size="xs" label={t("apps.dialog.willBeCleared", { defaultValue: "Will be cleared on save" })} severity="warning" />
               )}
             </Box>
           }
           value={clientSecret}
           onChange={(e) => { setClientSecret(e.target.value); setClearSecret(false); }}
           disabled={saving || clearSecret}
-          placeholder={app.hasGithubClientSecret && !clearSecret ? "Leave blank to keep current" : "Generate a new secret in your OAuth App settings"}
+          placeholder={app.hasGithubClientSecret && !clearSecret ? t("apps.dialog.leaveBlankKeep", { defaultValue: "Leave blank to keep current" }) : t("apps.dialog.githubSecretPlaceholder", { defaultValue: "Generate a new secret in your OAuth App settings" })}
           helperText={
             <Box component="span" sx={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
               <span>{t("apps.dialog.githubClientSecretHelp", { defaultValue: "Encrypted at rest. GitHub only shows the secret once at generation time - copy it from the OAuth App settings page right after creating it." })}</span>
               {app.hasGithubClientSecret && !clearSecret && (
-                <Button size="small" color="error" onClick={() => { setClearSecret(true); setClientSecret(""); }} sx={{ textTransform: "none", fontSize: 11, minWidth: 0, p: 0, ml: 1, whiteSpace: "nowrap" }}>Clear secret</Button>
+                <Button size="small" color="error" onClick={() => { setClearSecret(true); setClientSecret(""); }} sx={{ textTransform: "none", fontSize: 11, minWidth: 0, p: 0, ml: 1, whiteSpace: "nowrap" }}>{t("apps.dialog.clearSecret", { defaultValue: "Clear secret" })}</Button>
               )}
               {clearSecret && (
-                <Button size="small" onClick={() => setClearSecret(false)} sx={{ textTransform: "none", fontSize: 11, minWidth: 0, p: 0, ml: 1, whiteSpace: "nowrap" }}>Undo</Button>
+                <Button size="small" onClick={() => setClearSecret(false)} sx={{ textTransform: "none", fontSize: 11, minWidth: 0, p: 0, ml: 1, whiteSpace: "nowrap" }}>{t("apps.dialog.undo", { defaultValue: "Undo" })}</Button>
               )}
             </Box>
           }
@@ -1692,22 +1698,22 @@ function KakaoCard({ app, cardURL, onSaved, onSuccess, onError }: CardProps) {
                 <StatusChip size="xs" label={t("apps.dialog.secretSet", { defaultValue: "Configured" })} severity="success" />
               )}
               {clearSecret && (
-                <StatusChip size="xs" label="Will be cleared on save" severity="warning" />
+                <StatusChip size="xs" label={t("apps.dialog.willBeCleared", { defaultValue: "Will be cleared on save" })} severity="warning" />
               )}
             </Box>
           }
           value={clientSecret}
           onChange={(e) => { setClientSecret(e.target.value); setClearSecret(false); }}
           disabled={saving || clearSecret}
-          placeholder={app.hasKakaoClientSecret && !clearSecret ? "Leave blank to keep current" : "Kakao Login → Security → Client Secret"}
+          placeholder={app.hasKakaoClientSecret && !clearSecret ? t("apps.dialog.leaveBlankKeep", { defaultValue: "Leave blank to keep current" }) : t("apps.dialog.kakaoSecretPlaceholder", { defaultValue: "Kakao Login → Security → Client Secret" })}
           helperText={
             <Box component="span" sx={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
               <span>{t("apps.dialog.kakaoClientSecretHelp", { defaultValue: "Encrypted at rest. Generate and activate it under Kakao Login → Security → Client Secret on your Kakao app." })}</span>
               {app.hasKakaoClientSecret && !clearSecret && (
-                <Button size="small" color="error" onClick={() => { setClearSecret(true); setClientSecret(""); }} sx={{ textTransform: "none", fontSize: 11, minWidth: 0, p: 0, ml: 1, whiteSpace: "nowrap" }}>Clear secret</Button>
+                <Button size="small" color="error" onClick={() => { setClearSecret(true); setClientSecret(""); }} sx={{ textTransform: "none", fontSize: 11, minWidth: 0, p: 0, ml: 1, whiteSpace: "nowrap" }}>{t("apps.dialog.clearSecret", { defaultValue: "Clear secret" })}</Button>
               )}
               {clearSecret && (
-                <Button size="small" onClick={() => setClearSecret(false)} sx={{ textTransform: "none", fontSize: 11, minWidth: 0, p: 0, ml: 1, whiteSpace: "nowrap" }}>Undo</Button>
+                <Button size="small" onClick={() => setClearSecret(false)} sx={{ textTransform: "none", fontSize: 11, minWidth: 0, p: 0, ml: 1, whiteSpace: "nowrap" }}>{t("apps.dialog.undo", { defaultValue: "Undo" })}</Button>
               )}
             </Box>
           }
@@ -1864,22 +1870,22 @@ function NaverCard({ app, cardURL, onSaved, onSuccess, onError }: CardProps) {
                 <StatusChip size="xs" label={t("apps.dialog.secretSet", { defaultValue: "Configured" })} severity="success" />
               )}
               {clearSecret && (
-                <StatusChip size="xs" label="Will be cleared on save" severity="warning" />
+                <StatusChip size="xs" label={t("apps.dialog.willBeCleared", { defaultValue: "Will be cleared on save" })} severity="warning" />
               )}
             </Box>
           }
           value={clientSecret}
           onChange={(e) => { setClientSecret(e.target.value); setClearSecret(false); }}
           disabled={saving || clearSecret}
-          placeholder={app.hasNaverClientSecret && !clearSecret ? "Leave blank to keep current" : "From your Naver application overview"}
+          placeholder={app.hasNaverClientSecret && !clearSecret ? t("apps.dialog.leaveBlankKeep", { defaultValue: "Leave blank to keep current" }) : t("apps.dialog.naverSecretPlaceholder", { defaultValue: "From your Naver application overview" })}
           helperText={
             <Box component="span" sx={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
               <span>{t("apps.dialog.naverClientSecretHelp", { defaultValue: "Encrypted at rest. Shown next to the Client ID in your Naver application overview." })}</span>
               {app.hasNaverClientSecret && !clearSecret && (
-                <Button size="small" color="error" onClick={() => { setClearSecret(true); setClientSecret(""); }} sx={{ textTransform: "none", fontSize: 11, minWidth: 0, p: 0, ml: 1, whiteSpace: "nowrap" }}>Clear secret</Button>
+                <Button size="small" color="error" onClick={() => { setClearSecret(true); setClientSecret(""); }} sx={{ textTransform: "none", fontSize: 11, minWidth: 0, p: 0, ml: 1, whiteSpace: "nowrap" }}>{t("apps.dialog.clearSecret", { defaultValue: "Clear secret" })}</Button>
               )}
               {clearSecret && (
-                <Button size="small" onClick={() => setClearSecret(false)} sx={{ textTransform: "none", fontSize: 11, minWidth: 0, p: 0, ml: 1, whiteSpace: "nowrap" }}>Undo</Button>
+                <Button size="small" onClick={() => setClearSecret(false)} sx={{ textTransform: "none", fontSize: 11, minWidth: 0, p: 0, ml: 1, whiteSpace: "nowrap" }}>{t("apps.dialog.undo", { defaultValue: "Undo" })}</Button>
               )}
             </Box>
           }
@@ -2475,6 +2481,7 @@ function UriListEditor({
   placeholder: string;
   disabled?: boolean;
 }) {
+  const { t } = useTranslation();
   return (
     <Stack spacing={1}>
       <Stack direction="row" spacing={1}>
@@ -2493,12 +2500,12 @@ function UriListEditor({
           disabled={disabled}
         />
         <Button onClick={onAdd} disabled={disabled || newUri.trim() === ""} startIcon={<Plus size={14} strokeWidth={1.75} />} sx={{ textTransform: "none", whiteSpace: "nowrap" }}>
-          Add
+          {t("apps.oidc.addUri", { defaultValue: "Add" })}
         </Button>
       </Stack>
       {uris.length === 0 ? (
         <Typography variant="caption" color="text.disabled">
-          None configured.
+          {t("apps.oidc.noneConfigured", { defaultValue: "None configured." })}
         </Typography>
       ) : (
         <Stack spacing={0.75}>
@@ -2511,7 +2518,7 @@ function UriListEditor({
               <Typography sx={{ fontFamily: "var(--font-mono)", fontSize: 12.5, flexGrow: 1, wordBreak: "break-all" }}>
                 {u}
               </Typography>
-              <Tooltip title="Remove">
+              <Tooltip title={t("common.remove", { defaultValue: "Remove" })}>
                 <IconButton size="small" onClick={() => onRemove(u)} disabled={disabled}>
                   <Trash2 size={14} strokeWidth={1.75} />
                 </IconButton>
@@ -2675,6 +2682,7 @@ type ExternalIDP = {
 };
 
 function ExternalIDPsCard({ cardURL, onSuccess, onError }: CardProps) {
+  const { t } = useTranslation();
   const baseURL = `${cardURL}/external-idps`;
   const [list, setList] = React.useState<ExternalIDP[]>([]);
   const [loading, setLoading] = React.useState(true);
@@ -2695,7 +2703,7 @@ function ExternalIDPsCard({ cardURL, onSuccess, onError }: CardProps) {
   React.useEffect(() => { void reload(); }, [reload]);
 
   async function remove(idp: ExternalIDP) {
-    if (!window.confirm(`Delete "${idp.displayName}"? Users who signed in through it will need to re-link.`)) return;
+    if (!window.confirm(t("externalIdp.deleteConfirm", { name: idp.displayName, defaultValue: "Delete \"{{name}}\"? Users who signed in through it will need to re-link." }))) return;
     try {
       await axios.delete(`${baseURL}/${idp.id}`);
       onSuccess();
@@ -2711,11 +2719,11 @@ function ExternalIDPsCard({ cardURL, onSuccess, onError }: CardProps) {
     <Stack spacing={3} sx={{ maxWidth: 680 }}>
       <Section
         overline="SSO"
-        title="External identity providers"
-        desc="Let users sign in through any OIDC or OAuth2 provider — Okta, Auth0, Keycloak, Entra, GitLab, Discord, and more. Each appears as its own button on the sign-in screen."
+        title={t("externalIdp.title", { defaultValue: "External identity providers" })}
+        desc={t("externalIdp.desc", { defaultValue: "Let users sign in through any OIDC or OAuth2 provider — Okta, Auth0, Keycloak, Entra, GitLab, Discord, and more. Each appears as its own button on the sign-in screen." })}
       >
         {list.length === 0 && (
-          <Typography variant="body2" color="text.secondary">No external providers configured yet.</Typography>
+          <Typography variant="body2" color="text.secondary">{t("externalIdp.none", { defaultValue: "No external providers configured yet." })}</Typography>
         )}
         <Stack spacing={1}>
           {list.map((idp) => (
@@ -2724,16 +2732,16 @@ function ExternalIDPsCard({ cardURL, onSuccess, onError }: CardProps) {
                 <Typography variant="body2" sx={{ fontWeight: 500 }}>{idp.displayName}</Typography>
                 <Typography variant="caption" color="text.secondary">/{idp.slug} · {idp.mode.toUpperCase()}</Typography>
               </Box>
-              <Chip size="small" variant="outlined" color={idp.enabled ? "success" : "default"} label={idp.enabled ? "Enabled" : "Disabled"} />
-              <Button size="small" sx={{ textTransform: "none" }} onClick={() => setEditing(idp)}>Edit</Button>
-              <Tooltip title="Delete">
+              <Chip size="small" variant="outlined" color={idp.enabled ? "success" : "default"} label={idp.enabled ? t("common.enabled", { defaultValue: "Enabled" }) : t("common.disabled", { defaultValue: "Disabled" })} />
+              <Button size="small" sx={{ textTransform: "none" }} onClick={() => setEditing(idp)}>{t("common.edit", { defaultValue: "Edit" })}</Button>
+              <Tooltip title={t("common.delete", { defaultValue: "Delete" })}>
                 <IconButton size="small" color="error" onClick={() => void remove(idp)}><Trash2 size={16} /></IconButton>
               </Tooltip>
             </Box>
           ))}
         </Stack>
         <Box>
-          <Button startIcon={<Plus size={16} />} sx={{ mt: 1, textTransform: "none" }} onClick={() => setEditing("new")}>Add provider</Button>
+          <Button startIcon={<Plus size={16} />} sx={{ mt: 1, textTransform: "none" }} onClick={() => setEditing("new")}>{t("externalIdp.addProvider", { defaultValue: "Add provider" })}</Button>
         </Box>
       </Section>
 
@@ -2763,6 +2771,7 @@ function ExternalIDPForm({
   onSaved: () => void;
   onError: (e: unknown) => void;
 }) {
+  const { t } = useTranslation();
   const isEdit = existing != null;
   const [slug, setSlug] = React.useState(existing?.slug ?? "");
   const [displayName, setDisplayName] = React.useState(existing?.displayName ?? "");
@@ -2789,7 +2798,7 @@ function ExternalIDPForm({
     setDiscovery(null);
     try {
       const res = await axios.post<{ tokenUrl: string }>(`${baseURL}/validate-discovery`, { issuerUrl });
-      setDiscovery(`Discovery OK — token endpoint: ${res.data.tokenUrl}`);
+      setDiscovery(t("externalIdp.discoveryOk", { tokenUrl: res.data.tokenUrl, defaultValue: "Discovery OK — token endpoint: {{tokenUrl}}" }));
     } catch (e) {
       onError(e);
     }
@@ -2817,73 +2826,75 @@ function ExternalIDPForm({
 
   return (
     <Dialog open onClose={onClose} maxWidth="sm" fullWidth>
-      <DialogTitle>{isEdit ? "Edit external provider" : "Add external provider"}</DialogTitle>
+      <DialogTitle>{isEdit ? t("externalIdp.editTitle", { defaultValue: "Edit external provider" }) : t("externalIdp.addTitle", { defaultValue: "Add external provider" })}</DialogTitle>
       <DialogContent dividers>
         <Stack spacing={2} sx={{ mt: 0.5 }}>
-          <TextField size="small" fullWidth label="Display name" value={displayName} onChange={(e) => setDisplayName(e.target.value)} placeholder="Acme Okta" />
-          <TextField size="small" fullWidth label="Slug" value={slug} onChange={(e) => setSlug(e.target.value)} disabled={isEdit} placeholder="acme-okta" helperText="Lowercase letters, numbers, hyphens. Used in the URL and as the button id; can't change later." />
+          <TextField size="small" fullWidth label={t("externalIdp.displayName", { defaultValue: "Display name" })} value={displayName} onChange={(e) => setDisplayName(e.target.value)} placeholder="Acme Okta" />
+          <TextField size="small" fullWidth label={t("externalIdp.slug", { defaultValue: "Slug" })} value={slug} onChange={(e) => setSlug(e.target.value)} disabled={isEdit} placeholder="acme-okta" helperText={t("externalIdp.slugHelp", { defaultValue: "Lowercase letters, numbers, hyphens. Used in the URL and as the button id; can't change later." })} />
 
           <FormControl>
             <RadioGroup row value={mode} onChange={(e) => setMode(e.target.value as "oidc" | "oauth2")}>
-              <FormControlLabel value="oidc" control={<Radio size="small" />} label="OIDC (discovery + id_token)" />
-              <FormControlLabel value="oauth2" control={<Radio size="small" />} label="OAuth2 (userinfo)" />
+              <FormControlLabel value="oidc" control={<Radio size="small" />} label={t("externalIdp.modeOidc", { defaultValue: "OIDC (discovery + id_token)" })} />
+              <FormControlLabel value="oauth2" control={<Radio size="small" />} label={t("externalIdp.modeOauth2", { defaultValue: "OAuth2 (userinfo)" })} />
             </RadioGroup>
           </FormControl>
 
           {mode === "oidc" ? (
             <>
-              <TextField size="small" fullWidth label="Issuer URL" value={issuerUrl} onChange={(e) => { setIssuerUrl(e.target.value); setDiscovery(null); }} placeholder="https://acme.okta.com" helperText="We fetch /.well-known/openid-configuration from here. Must be https." />
+              <TextField size="small" fullWidth label={t("externalIdp.issuerUrl", { defaultValue: "Issuer URL" })} value={issuerUrl} onChange={(e) => { setIssuerUrl(e.target.value); setDiscovery(null); }} placeholder="https://acme.okta.com" helperText={t("externalIdp.issuerUrlHelp", { defaultValue: "We fetch /.well-known/openid-configuration from here. Must be https." })} />
               <Box>
-                <Button size="small" sx={{ textTransform: "none" }} disabled={!issuerUrl.trim()} onClick={() => void fetchDiscovery()}>Fetch discovery</Button>
+                <Button size="small" sx={{ textTransform: "none" }} disabled={!issuerUrl.trim()} onClick={() => void fetchDiscovery()}>{t("externalIdp.fetchDiscovery", { defaultValue: "Fetch discovery" })}</Button>
               </Box>
               {discovery && <Alert severity="success">{discovery}</Alert>}
             </>
           ) : (
             <>
-              <TextField size="small" fullWidth label="Authorize URL" value={authorizeUrl} onChange={(e) => setAuthorizeUrl(e.target.value)} placeholder="https://provider/oauth2/authorize" />
-              <TextField size="small" fullWidth label="Token URL" value={tokenUrl} onChange={(e) => setTokenUrl(e.target.value)} placeholder="https://provider/oauth2/token" />
-              <TextField size="small" fullWidth label="Userinfo URL" value={userinfoUrl} onChange={(e) => setUserinfoUrl(e.target.value)} placeholder="https://provider/userinfo" />
+              <TextField size="small" fullWidth label={t("externalIdp.authorizeUrl", { defaultValue: "Authorize URL" })} value={authorizeUrl} onChange={(e) => setAuthorizeUrl(e.target.value)} placeholder="https://provider/oauth2/authorize" />
+              <TextField size="small" fullWidth label={t("externalIdp.tokenUrl", { defaultValue: "Token URL" })} value={tokenUrl} onChange={(e) => setTokenUrl(e.target.value)} placeholder="https://provider/oauth2/token" />
+              <TextField size="small" fullWidth label={t("externalIdp.userinfoUrl", { defaultValue: "Userinfo URL" })} value={userinfoUrl} onChange={(e) => setUserinfoUrl(e.target.value)} placeholder="https://provider/userinfo" />
             </>
           )}
 
-          <TextField size="small" fullWidth label="Client ID" value={clientId} onChange={(e) => setClientId(e.target.value)} />
-          <TextField size="small" fullWidth type="password" label="Client secret" value={clientSecret} onChange={(e) => setClientSecret(e.target.value)} placeholder={isEdit && existing.hasClientSecret ? "Leave blank to keep current" : "Required"} />
-          <TextField size="small" fullWidth label="Scopes" value={scopes} onChange={(e) => setScopes(e.target.value)} placeholder="openid email profile" helperText="Space-separated. Defaults to 'openid email profile' if blank." />
+          <TextField size="small" fullWidth label={t("externalIdp.clientId", { defaultValue: "Client ID" })} value={clientId} onChange={(e) => setClientId(e.target.value)} />
+          <TextField size="small" fullWidth type="password" label={t("externalIdp.clientSecret", { defaultValue: "Client secret" })} value={clientSecret} onChange={(e) => setClientSecret(e.target.value)} placeholder={isEdit && existing.hasClientSecret ? t("apps.dialog.leaveBlankKeep", { defaultValue: "Leave blank to keep current" }) : t("externalIdp.required", { defaultValue: "Required" })} />
+          <TextField size="small" fullWidth label={t("externalIdp.scopes", { defaultValue: "Scopes" })} value={scopes} onChange={(e) => setScopes(e.target.value)} placeholder="openid email profile" helperText={t("externalIdp.scopesHelp", { defaultValue: "Space-separated. Defaults to 'openid email profile' if blank." })} />
 
           <Accordion disableGutters elevation={0} sx={{ "&:before": { display: "none" }, border: 1, borderColor: "divider", borderRadius: 1 }}>
             <AccordionSummary expandIcon={<ChevronDown size={16} />}>
-              <Typography variant="body2">Claim mapping & button (advanced)</Typography>
+              <Typography variant="body2">{t("externalIdp.claimMapping", { defaultValue: "Claim mapping & button (advanced)" })}</Typography>
             </AccordionSummary>
             <AccordionDetails>
               <Stack spacing={2}>
-                <TextField size="small" fullWidth label="Subject field" value={subjectField} onChange={(e) => setSubjectField(e.target.value)} placeholder="sub" />
-                <TextField size="small" fullWidth label="Email field" value={emailField} onChange={(e) => setEmailField(e.target.value)} placeholder="email" />
-                <TextField size="small" fullWidth label="Email-verified field" value={emailVerifiedField} onChange={(e) => setEmailVerifiedField(e.target.value)} placeholder="email_verified" />
-                <TextField size="small" fullWidth label="Name field" value={nameField} onChange={(e) => setNameField(e.target.value)} placeholder="name" />
-                <TextField size="small" fullWidth label="Button icon" value={buttonIcon} onChange={(e) => setButtonIcon(e.target.value)} placeholder="key" helperText="Optional icon name (key, shield, lock, fingerprint, ...)." />
+                <TextField size="small" fullWidth label={t("externalIdp.subjectField", { defaultValue: "Subject field" })} value={subjectField} onChange={(e) => setSubjectField(e.target.value)} placeholder="sub" />
+                <TextField size="small" fullWidth label={t("externalIdp.emailField", { defaultValue: "Email field" })} value={emailField} onChange={(e) => setEmailField(e.target.value)} placeholder="email" />
+                <TextField size="small" fullWidth label={t("externalIdp.emailVerifiedField", { defaultValue: "Email-verified field" })} value={emailVerifiedField} onChange={(e) => setEmailVerifiedField(e.target.value)} placeholder="email_verified" />
+                <TextField size="small" fullWidth label={t("externalIdp.nameField", { defaultValue: "Name field" })} value={nameField} onChange={(e) => setNameField(e.target.value)} placeholder="name" />
+                <TextField size="small" fullWidth label={t("externalIdp.buttonIcon", { defaultValue: "Button icon" })} value={buttonIcon} onChange={(e) => setButtonIcon(e.target.value)} placeholder="key" helperText={t("externalIdp.buttonIconHelp", { defaultValue: "Optional icon name (key, shield, lock, fingerprint, ...)." })} />
               </Stack>
             </AccordionDetails>
           </Accordion>
 
           <FormControlLabel
             control={<Switch checked={trustUnverified} onChange={(e) => setTrustUnverified(e.target.checked)} />}
-            label="Trust unverified email"
+            label={t("externalIdp.trustUnverified", { defaultValue: "Trust unverified email" })}
           />
           {trustUnverified && (
             <Alert severity="warning">
-              Only enable this for an IdP that verifies emails but doesn't send the <code>email_verified</code> claim. Enabling it for a provider where users can set arbitrary emails risks account takeover.
+              <Trans i18nKey="externalIdp.trustUnverifiedWarning" components={{ code: <code /> }}>
+                Only enable this for an IdP that verifies emails but doesn't send the <code>email_verified</code> claim. Enabling it for a provider where users can set arbitrary emails risks account takeover.
+              </Trans>
             </Alert>
           )}
 
           <FormControlLabel
             control={<Switch checked={enabled} onChange={(e) => setEnabled(e.target.checked)} />}
-            label="Enabled (show the sign-in button)"
+            label={t("externalIdp.enabledLabel", { defaultValue: "Enabled (show the sign-in button)" })}
           />
         </Stack>
       </DialogContent>
       <DialogActions>
-        <Button onClick={onClose} sx={{ textTransform: "none" }}>Cancel</Button>
-        <Button variant="contained" onClick={() => void save()} disabled={saving} sx={{ textTransform: "none" }}>{saving ? "Saving…" : "Save"}</Button>
+        <Button onClick={onClose} sx={{ textTransform: "none" }}>{t("common.cancel", { defaultValue: "Cancel" })}</Button>
+        <Button variant="contained" onClick={() => void save()} disabled={saving} sx={{ textTransform: "none" }}>{saving ? t("externalIdp.saving", { defaultValue: "Saving…" }) : t("common.save", { defaultValue: "Save" })}</Button>
       </DialogActions>
     </Dialog>
   );

@@ -192,13 +192,13 @@ function GeneralTabContent({
               mb: 0.75,
             }}
           >
-            Identity
+            {t("settings.identityEyebrow")}
           </Typography>
           <Typography sx={{ fontSize: 15, fontWeight: 600, letterSpacing: "-0.005em" }}>
-            Workspace name &amp; slug
+            {t("settings.nameAndSlug")}
           </Typography>
           <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5, maxWidth: 620 }}>
-            The slug appears in URLs and in the AppKit boot response, so changes propagate to every running session.
+            {t("settings.slugPropagates")}
           </Typography>
         </Box>
 

@@ -3,6 +3,7 @@ import axios from "axios";
 import type { Workspace } from "../core.ts";
 
 import { useNavigate } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 import {
   Alert,
   Box,
@@ -72,6 +73,7 @@ const monoLabelSx = {
 
 export default function WorkspaceUsers({ workspace }: Props) {
   const navigate = useNavigate();
+  const { t } = useTranslation();
   const [users, setUsers] = React.useState<UserRow[] | null>(null);
   const [total, setTotal] = React.useState(0);
   const [loading, setLoading] = React.useState(true);
@@ -122,7 +124,7 @@ export default function WorkspaceUsers({ workspace }: Props) {
         setTotal(typeof res.data?.total === "number" ? res.data.total : rows.length);
       })
       .catch((e) => {
-        if (alive) setErr(extractApiError(e, "Could not load users."));
+        if (alive) setErr(extractApiError(e, t("workspaceUsers.loadFailed")));
       })
       .finally(() => {
         if (alive) setLoading(false);
@@ -138,8 +140,8 @@ export default function WorkspaceUsers({ workspace }: Props) {
   return (
     <Stack spacing={2.5}>
       <PageHeader
-        title="All users"
-        subtitle="Every account across this workspace's pools. The same email can appear more than once when it exists in more than one pool. Click an app chip to jump to that app's user list."
+        title={t("workspaceUsers.title")}
+        subtitle={t("workspaceUsers.subtitle")}
       />
 
       {err && <Alert severity="error">{err}</Alert>}
@@ -147,14 +149,14 @@ export default function WorkspaceUsers({ workspace }: Props) {
       {pristineEmpty ? (
         <EmptyState
           icon={<Users size={18} strokeWidth={1.75} />}
-          title="No users in this workspace yet."
-          description="Users appear here once apps in this workspace start signing people in."
+          title={t("workspaceUsers.empty.title")}
+          description={t("workspaceUsers.empty.description")}
         />
       ) : (
         <>
           <TextField
             size="small"
-            placeholder="Search by email..."
+            placeholder={t("workspaceUsers.searchPlaceholder")}
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             InputProps={{
@@ -171,10 +173,10 @@ export default function WorkspaceUsers({ workspace }: Props) {
             <Table size="small">
               <TableHead>
                 <TableRow>
-                  <TableCell sx={{ fontWeight: 600, fontSize: 12 }}>Email</TableCell>
-                  <TableCell sx={{ fontWeight: 600, fontSize: 12 }}>Pool</TableCell>
-                  <TableCell sx={{ fontWeight: 600, fontSize: 12 }}>Apps</TableCell>
-                  <TableCell sx={{ fontWeight: 600, fontSize: 12 }}>Status</TableCell>
+                  <TableCell sx={{ fontWeight: 600, fontSize: 12 }}>{t("workspaceUsers.col.email")}</TableCell>
+                  <TableCell sx={{ fontWeight: 600, fontSize: 12 }}>{t("workspaceUsers.col.pool")}</TableCell>
+                  <TableCell sx={{ fontWeight: 600, fontSize: 12 }}>{t("workspaceUsers.col.apps")}</TableCell>
+                  <TableCell sx={{ fontWeight: 600, fontSize: 12 }}>{t("workspaceUsers.col.status")}</TableCell>
                 </TableRow>
               </TableHead>
               <TableBody>
@@ -214,14 +216,14 @@ export default function WorkspaceUsers({ workspace }: Props) {
                             />
                           ))
                         ) : (
-                          <Typography variant="caption" color="text.secondary">no app memberships</Typography>
+                          <Typography variant="caption" color="text.secondary">{t("workspaceUsers.noAppMemberships")}</Typography>
                         )}
                       </Box>
                     </TableCell>
                     <TableCell>
                       <Chip
                         size="small"
-                        label={u.enabled ? "Enabled" : "Disabled"}
+                        label={u.enabled ? t("workspaceUsers.statusEnabled") : t("workspaceUsers.statusDisabled")}
                         variant={u.enabled ? "filled" : "outlined"}
                         sx={{
                           height: 20,
@@ -238,7 +240,7 @@ export default function WorkspaceUsers({ workspace }: Props) {
                   <TableRow>
                     <TableCell colSpan={4} sx={{ textAlign: "center", py: 3 }}>
                       <Typography variant="body2" color="text.secondary">
-                        No users match your search.
+                        {t("workspaceUsers.noSearchResults")}
                       </Typography>
                     </TableCell>
                   </TableRow>
@@ -264,12 +266,12 @@ export default function WorkspaceUsers({ workspace }: Props) {
 
       {/* User Detail Dialog */}
       <Dialog open={!!selectedUser} onClose={() => setSelectedUser(null)} fullWidth maxWidth="sm">
-        <DialogTitle>User Details</DialogTitle>
+        <DialogTitle>{t("workspaceUsers.detailTitle")}</DialogTitle>
         <DialogContent>
           {selectedUser && (
             <Stack spacing={2} sx={{ pt: 1 }}>
               <Stack spacing={0.5}>
-                <Typography sx={monoLabelSx}>Email</Typography>
+                <Typography sx={monoLabelSx}>{t("workspaceUsers.col.email")}</Typography>
                 <Typography variant="body2">{selectedUser.email}</Typography>
               </Stack>
 
@@ -277,16 +279,16 @@ export default function WorkspaceUsers({ workspace }: Props) {
 
               <Stack direction="row" spacing={3}>
                 <Stack spacing={0.25}>
-                  <Typography sx={monoLabelSx}>ID</Typography>
+                  <Typography sx={monoLabelSx}>{t("workspaceUsers.idLabel")}</Typography>
                   <Typography variant="body2" sx={{ fontFamily: "var(--font-mono)", fontSize: "0.75rem" }}>
                     {selectedUser.id}
                   </Typography>
                 </Stack>
                 <Stack spacing={0.25}>
-                  <Typography sx={monoLabelSx}>Status</Typography>
+                  <Typography sx={monoLabelSx}>{t("workspaceUsers.col.status")}</Typography>
                   <Chip
                     size="small"
-                    label={selectedUser.enabled ? "Enabled" : "Disabled"}
+                    label={selectedUser.enabled ? t("workspaceUsers.statusEnabled") : t("workspaceUsers.statusDisabled")}
                     color={selectedUser.enabled ? "success" : "default"}
                     variant={selectedUser.enabled ? "filled" : "outlined"}
                     sx={{ height: 20, fontSize: 11, width: "fit-content" }}
@@ -294,7 +296,7 @@ export default function WorkspaceUsers({ workspace }: Props) {
                 </Stack>
                 {selectedUser.source && (
                   <Stack spacing={0.25}>
-                    <Typography sx={monoLabelSx}>Source</Typography>
+                    <Typography sx={monoLabelSx}>{t("workspaceUsers.sourceLabel")}</Typography>
                     <Typography variant="body2">{selectedUser.source}</Typography>
                   </Stack>
                 )}
@@ -302,7 +304,7 @@ export default function WorkspaceUsers({ workspace }: Props) {
 
               <Stack direction="row" spacing={3}>
                 <Stack spacing={0.25}>
-                  <Typography sx={monoLabelSx}>Pool</Typography>
+                  <Typography sx={monoLabelSx}>{t("workspaceUsers.col.pool")}</Typography>
                   {selectedUser.poolId ? (
                     <Chip
                       label={selectedUser.poolName ?? selectedUser.poolId}
@@ -320,7 +322,7 @@ export default function WorkspaceUsers({ workspace }: Props) {
                   )}
                 </Stack>
                 <Stack spacing={0.25}>
-                  <Typography sx={monoLabelSx}>Apps</Typography>
+                  <Typography sx={monoLabelSx}>{t("workspaceUsers.col.apps")}</Typography>
                   <Box sx={{ display: "flex", gap: 0.5, flexWrap: "wrap" }}>
                     {selectedUser.apps.length > 0 ? (
                       selectedUser.apps.map((a) => (
@@ -347,7 +349,7 @@ export default function WorkspaceUsers({ workspace }: Props) {
           )}
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setSelectedUser(null)}>Close</Button>
+          <Button onClick={() => setSelectedUser(null)}>{t("common.close")}</Button>
         </DialogActions>
       </Dialog>
     </Stack>

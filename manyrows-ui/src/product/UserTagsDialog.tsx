@@ -88,7 +88,7 @@ export default function UserTagsDialog({
       onSaved(cleaned);
       onClose();
     } catch (e) {
-      setErr(extractApiError(e, "Failed to save tags"));
+      setErr(extractApiError(e, t("userTags.saveFailed", { defaultValue: "Failed to save tags" })));
     } finally {
       setSaving(false);
     }

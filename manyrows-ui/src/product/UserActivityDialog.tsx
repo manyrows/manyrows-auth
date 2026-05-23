@@ -142,7 +142,7 @@ export default function UserActivityDialog({
       })
       .catch((e) => {
         if (cancelled) return;
-        setErr(e?.response?.data?.error || e?.message || "Failed to load activity");
+        setErr(e?.response?.data?.error || e?.message || t("userActivity.failedToLoad", { defaultValue: "Failed to load activity" }));
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -470,8 +470,8 @@ export default function UserActivityDialog({
                     {passkeys.map((p) => (
                       <TableRow key={p.id} hover>
                         <TableCell>
-                          {p.name || p.authenticatorName || <Typography variant="caption" color="text.disabled">Unnamed</Typography>}
-                          {p.backupEligible && <Chip label="synced" size="small" sx={{ ml: 1, height: 18, fontSize: 10 }} />}
+                          {p.name || p.authenticatorName || <Typography variant="caption" color="text.disabled">{t("userActivity.unnamed", { defaultValue: "Unnamed" })}</Typography>}
+                          {p.backupEligible && <Chip label={t("userActivity.synced", { defaultValue: "synced" })} size="small" sx={{ ml: 1, height: 18, fontSize: 10 }} />}
                         </TableCell>
                         <TableCell>
                           <Typography variant="caption">{formatRelative(p.createdAt)}</Typography>

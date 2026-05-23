@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"manyrows-core/core/validation"
 	"manyrows-core/utils"
@@ -244,9 +245,30 @@ func Tf(lang, key string, args ...any) string {
 	return fmt.Sprintf(template, args...)
 }
 
-// GetLanguageFromRequest returns the user's language. Currently English-only;
-// kept as a function so future locales slot in here without rewiring callers.
-func GetLanguageFromRequest(_ *http.Request) string {
+// GetLanguageFromRequest resolves the request's UI language from the
+// Accept-Language header, restricted to the locales we actually ship. The
+// admin UI sets this header from the active i18next locale, so error
+// messages come back in the same language as the rest of the screen
+// (works pre-auth on the login page too, where there's no account yet).
+// Unknown or absent values fall back to English.
+func GetLanguageFromRequest(r *http.Request) string {
+	if r == nil {
+		return "en"
+	}
+	// Browsers send tags in descending priority order; we ignore q-weights
+	// since our supported set is tiny (en, ko) and take the first match.
+	for _, part := range strings.Split(r.Header.Get("Accept-Language"), ",") {
+		tag := strings.ToLower(strings.TrimSpace(part))
+		if i := strings.IndexByte(tag, ';'); i >= 0 {
+			tag = tag[:i]
+		}
+		switch {
+		case tag == "ko" || strings.HasPrefix(tag, "ko-"):
+			return "ko"
+		case tag == "en" || strings.HasPrefix(tag, "en-"):
+			return "en"
+		}
+	}
 	return "en"
 }
 

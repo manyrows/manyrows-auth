@@ -3,7 +3,7 @@ import type { UserField, UserFieldValueType, UserFieldVisibility } from "../core
 import axios from "axios";
 import { extractApiError } from "../lib/apiError.ts";
 import { useSnackbar } from "notistack";
-import { useTranslation } from "react-i18next";
+import { useTranslation, Trans } from "react-i18next";
 
 import {
   Alert,
@@ -102,7 +102,7 @@ export default function UserFields({ workspaceId, poolId, embedded }: Props) {
       enqueueSnackbar(t("userFields.created", { defaultValue: "User field created" }), { variant: "success" });
       void load();
     } catch (e) {
-      enqueueSnackbar(extractApiError(e, "Failed to create"), { variant: "error" });
+      enqueueSnackbar(extractApiError(e, t("common.failedToCreate", { defaultValue: "Failed to create" })), { variant: "error" });
     } finally {
       setSaving(false);
     }
@@ -139,7 +139,7 @@ export default function UserFields({ workspaceId, poolId, embedded }: Props) {
       enqueueSnackbar(t("userFields.updated", { defaultValue: "User field updated" }), { variant: "success" });
       void load();
     } catch (e) {
-      enqueueSnackbar(extractApiError(e, "Failed to update"), { variant: "error" });
+      enqueueSnackbar(extractApiError(e, t("common.failedToUpdate", { defaultValue: "Failed to update" })), { variant: "error" });
     } finally {
       setSaving(false);
     }
@@ -154,7 +154,7 @@ export default function UserFields({ workspaceId, poolId, embedded }: Props) {
       enqueueSnackbar(t("userFields.deleted", { defaultValue: "User field deleted" }), { variant: "success" });
       void load();
     } catch (e) {
-      enqueueSnackbar(extractApiError(e, "Failed to delete"), { variant: "error" });
+      enqueueSnackbar(extractApiError(e, t("common.failedToDelete", { defaultValue: "Failed to delete" })), { variant: "error" });
     } finally {
       setSaving(false);
     }
@@ -228,12 +228,12 @@ export default function UserFields({ workspaceId, poolId, embedded }: Props) {
             <Table size="small">
               <TableHead>
                 <TableRow>
-                  <TableCell sx={{ fontWeight: 600, fontSize: 12 }}>Key</TableCell>
-                  <TableCell sx={{ fontWeight: 600, fontSize: 12 }}>Type</TableCell>
-                  <TableCell sx={{ fontWeight: 600, fontSize: 12 }}>Visibility</TableCell>
-                  <TableCell sx={{ fontWeight: 600, fontSize: 12 }}>User Editable</TableCell>
-                  <TableCell sx={{ fontWeight: 600, fontSize: 12 }}>Label</TableCell>
-                  <TableCell sx={{ fontWeight: 600, fontSize: 12 }} align="right">Actions</TableCell>
+                  <TableCell sx={{ fontWeight: 600, fontSize: 12 }}>{t("userFields.col.key", { defaultValue: "Key" })}</TableCell>
+                  <TableCell sx={{ fontWeight: 600, fontSize: 12 }}>{t("userFields.col.type", { defaultValue: "Type" })}</TableCell>
+                  <TableCell sx={{ fontWeight: 600, fontSize: 12 }}>{t("userFields.col.visibility", { defaultValue: "Visibility" })}</TableCell>
+                  <TableCell sx={{ fontWeight: 600, fontSize: 12 }}>{t("userFields.col.userEditable", { defaultValue: "User Editable" })}</TableCell>
+                  <TableCell sx={{ fontWeight: 600, fontSize: 12 }}>{t("userFields.col.label", { defaultValue: "Label" })}</TableCell>
+                  <TableCell sx={{ fontWeight: 600, fontSize: 12 }} align="right">{t("userFields.col.actions", { defaultValue: "Actions" })}</TableCell>
                 </TableRow>
               </TableHead>
               <TableBody>
@@ -248,14 +248,14 @@ export default function UserFields({ workspaceId, poolId, embedded }: Props) {
                     <TableCell>
                       <Chip
                         size="small"
-                        label={f.visibility === "client" ? "Client" : "Server"}
+                        label={f.visibility === "client" ? t("userFields.visibility.client", { defaultValue: "Client" }) : t("userFields.visibility.server", { defaultValue: "Server" })}
                         color={f.visibility === "client" ? "primary" : "default"}
                         sx={{ height: 20, fontSize: 10 }}
                       />
                     </TableCell>
                     <TableCell>
                       <Typography sx={{ fontSize: 13, color: f.userEditable ? "success.main" : "text.disabled" }}>
-                        {f.userEditable ? "Yes" : "No"}
+                        {f.userEditable ? t("common.yes", { defaultValue: "Yes" }) : t("common.no", { defaultValue: "No" })}
                       </Typography>
                     </TableCell>
                     <TableCell>
@@ -265,14 +265,14 @@ export default function UserFields({ workspaceId, poolId, embedded }: Props) {
                     </TableCell>
                     <TableCell align="right">
                       <Stack direction="row" spacing={0.5} justifyContent="flex-end">
-                        <Tooltip title="Edit">
+                        <Tooltip title={t("common.edit", { defaultValue: "Edit" })}>
                           <span>
                             <IconButton size="small" onClick={() => openEdit(f)} disabled={saving}>
                               <SquarePen size={14} strokeWidth={1.75} />
                             </IconButton>
                           </span>
                         </Tooltip>
-                        <Tooltip title="Delete">
+                        <Tooltip title={t("common.delete", { defaultValue: "Delete" })}>
                           <span>
                             <IconButton size="small" onClick={() => void doDelete(f)} disabled={saving}>
                               <Trash2 size={14} strokeWidth={1.75} />
@@ -324,10 +324,10 @@ export default function UserFields({ workspaceId, poolId, embedded }: Props) {
                         <Chip size="small" label={f.valueType} sx={{ height: 20, fontSize: 10 }} />
                       </TableCell>
                       <TableCell>
-                        <Chip size="small" label="Archived" sx={{ height: 20, fontSize: 10 }} />
+                        <Chip size="small" label={t("userFields.archived", { defaultValue: "Archived" })} sx={{ height: 20, fontSize: 10 }} />
                       </TableCell>
                       <TableCell align="right">
-                        <Tooltip title="Edit">
+                        <Tooltip title={t("common.edit", { defaultValue: "Edit" })}>
                           <span>
                             <IconButton size="small" onClick={() => openEdit(f)} disabled={saving}>
                               <SquarePen size={14} strokeWidth={1.75} />
@@ -355,37 +355,37 @@ export default function UserFields({ workspaceId, poolId, embedded }: Props) {
             <Stack spacing={2} sx={{ mt: 1 }}>
               <TextField
                 size="small"
-                label="Key"
+                label={t("userFields.field.key", { defaultValue: "Key" })}
                 value={createKey}
                 onChange={(e) => setCreateKey(e.target.value)}
-                helperText="Unique identifier (e.g. first_name, plan_tier)"
+                helperText={t("userFields.field.keyHelper", { defaultValue: "Unique identifier (e.g. first_name, plan_tier)" })}
                 inputProps={{ spellCheck: false }}
                 autoFocus
                 disabled={saving}
               />
 
               <FormControl size="small" fullWidth>
-                <InputLabel>Type</InputLabel>
-                <Select label="Type" value={createType} onChange={(e) => setCreateType(e.target.value as UserFieldValueType)} disabled={saving}>
-                  <MenuItem value="string">String</MenuItem>
-                  <MenuItem value="bool">Boolean</MenuItem>
-                  <MenuItem value="date">Date</MenuItem>
+                <InputLabel>{t("userFields.field.type", { defaultValue: "Type" })}</InputLabel>
+                <Select label={t("userFields.field.type", { defaultValue: "Type" })} value={createType} onChange={(e) => setCreateType(e.target.value as UserFieldValueType)} disabled={saving}>
+                  <MenuItem value="string">{t("userFields.type.string", { defaultValue: "String" })}</MenuItem>
+                  <MenuItem value="bool">{t("userFields.type.bool", { defaultValue: "Boolean" })}</MenuItem>
+                  <MenuItem value="date">{t("userFields.type.date", { defaultValue: "Date" })}</MenuItem>
                 </Select>
               </FormControl>
 
               <FormControl size="small" fullWidth>
-                <InputLabel>Visibility</InputLabel>
-                <Select label="Visibility" value={createVisibility} onChange={(e) => setCreateVisibility(e.target.value as UserFieldVisibility)} disabled={saving}>
+                <InputLabel>{t("userFields.field.visibility", { defaultValue: "Visibility" })}</InputLabel>
+                <Select label={t("userFields.field.visibility", { defaultValue: "Visibility" })} value={createVisibility} onChange={(e) => setCreateVisibility(e.target.value as UserFieldVisibility)} disabled={saving}>
                   <MenuItem value="client">
                     <Stack>
-                      <Typography variant="body2" sx={{ fontWeight: 500 }}>Client</Typography>
-                      <Typography variant="caption" color="text.secondary">Visible via AppKit SDK</Typography>
+                      <Typography variant="body2" sx={{ fontWeight: 500 }}>{t("userFields.visibility.client", { defaultValue: "Client" })}</Typography>
+                      <Typography variant="caption" color="text.secondary">{t("userFields.visibility.clientDesc", { defaultValue: "Visible via AppKit SDK" })}</Typography>
                     </Stack>
                   </MenuItem>
                   <MenuItem value="server">
                     <Stack>
-                      <Typography variant="body2" sx={{ fontWeight: 500 }}>Server</Typography>
-                      <Typography variant="caption" color="text.secondary">Admin and server SDK only</Typography>
+                      <Typography variant="body2" sx={{ fontWeight: 500 }}>{t("userFields.visibility.server", { defaultValue: "Server" })}</Typography>
+                      <Typography variant="caption" color="text.secondary">{t("userFields.visibility.serverDesc", { defaultValue: "Admin and server SDK only" })}</Typography>
                     </Stack>
                   </MenuItem>
                 </Select>
@@ -395,9 +395,9 @@ export default function UserFields({ workspaceId, poolId, embedded }: Props) {
                 control={<Switch checked={createVisibility === "server" ? false : createUserEditable} onChange={(e) => setCreateUserEditable(e.target.checked)} disabled={saving || createVisibility === "server"} />}
                 label={
                   <Stack>
-                    <Typography variant="body2" sx={{ fontWeight: 500 }}>User Editable</Typography>
+                    <Typography variant="body2" sx={{ fontWeight: 500 }}>{t("userFields.field.userEditable", { defaultValue: "User Editable" })}</Typography>
                     <Typography variant="caption" color="text.secondary">
-                      {createVisibility === "server" ? "Server-only fields cannot be user-editable" : "Allow users to update this field via the client SDK"}
+                      {createVisibility === "server" ? t("userFields.userEditable.serverOnly", { defaultValue: "Server-only fields cannot be user-editable" }) : t("userFields.userEditable.allow", { defaultValue: "Allow users to update this field via the client SDK" })}
                     </Typography>
                   </Stack>
                 }
@@ -406,7 +406,7 @@ export default function UserFields({ workspaceId, poolId, embedded }: Props) {
 
               <TextField
                 size="small"
-                label="Label"
+                label={t("userFields.field.label", { defaultValue: "Label" })}
                 value={createLabel}
                 onChange={(e) => setCreateLabel(e.target.value)}
                 disabled={saving}
@@ -414,9 +414,9 @@ export default function UserFields({ workspaceId, poolId, embedded }: Props) {
             </Stack>
           </DialogContent>
           <DialogActions sx={{ px: 3, pb: 2 }}>
-            <Button onClick={() => setCreateOpen(false)} disabled={saving}>Cancel</Button>
+            <Button onClick={() => setCreateOpen(false)} disabled={saving}>{t("common.cancel", { defaultValue: "Cancel" })}</Button>
             <Button type="submit" variant="contained" disableElevation disabled={!createKey.trim() || !createLabel.trim() || saving}>
-              Create
+              {t("common.create", { defaultValue: "Create" })}
             </Button>
           </DialogActions>
         </Box>
@@ -433,43 +433,48 @@ export default function UserFields({ workspaceId, poolId, embedded }: Props) {
             <Stack spacing={2} sx={{ mt: 1 }}>
               {editField && (
                 <Alert severity="info" sx={{ fontSize: 13 }}>
-                  Key: <strong>{editField.key}</strong> - Type: <strong>{editField.valueType}</strong> (cannot be changed)
+                  <Trans
+                    i18nKey="userFields.editInfo"
+                    values={{ key: editField.key, type: editField.valueType }}
+                    components={{ strong: <strong /> }}
+                    defaults="Key: <strong>{{key}}</strong> - Type: <strong>{{type}}</strong> (cannot be changed)"
+                  />
                 </Alert>
               )}
 
               <FormControl size="small" fullWidth>
-                <InputLabel>Visibility</InputLabel>
-                <Select label="Visibility" value={editVisibility} onChange={(e) => setEditVisibility(e.target.value as UserFieldVisibility)} disabled={saving}>
-                  <MenuItem value="client">Client</MenuItem>
-                  <MenuItem value="server">Server</MenuItem>
+                <InputLabel>{t("userFields.field.visibility", { defaultValue: "Visibility" })}</InputLabel>
+                <Select label={t("userFields.field.visibility", { defaultValue: "Visibility" })} value={editVisibility} onChange={(e) => setEditVisibility(e.target.value as UserFieldVisibility)} disabled={saving}>
+                  <MenuItem value="client">{t("userFields.visibility.client", { defaultValue: "Client" })}</MenuItem>
+                  <MenuItem value="server">{t("userFields.visibility.server", { defaultValue: "Server" })}</MenuItem>
                 </Select>
               </FormControl>
 
               <FormControlLabel
                 control={<Switch checked={editVisibility === "server" ? false : editUserEditable} onChange={(e) => setEditUserEditable(e.target.checked)} disabled={saving || editVisibility === "server"} />}
-                label={editVisibility === "server" ? "User Editable (disabled for server-only fields)" : "User Editable"}
+                label={editVisibility === "server" ? t("userFields.userEditable.serverDisabled", { defaultValue: "User Editable (disabled for server-only fields)" }) : t("userFields.field.userEditable", { defaultValue: "User Editable" })}
               />
 
               <TextField
                 size="small"
-                label="Label"
+                label={t("userFields.field.label", { defaultValue: "Label" })}
                 value={editLabel}
                 onChange={(e) => setEditLabel(e.target.value)}
                 disabled={saving}
               />
 
               <FormControl size="small" fullWidth>
-                <InputLabel>Status</InputLabel>
-                <Select label="Status" value={editStatus} onChange={(e) => setEditStatus(e.target.value)} disabled={saving}>
-                  <MenuItem value="active">Active</MenuItem>
-                  <MenuItem value="archived">Archived</MenuItem>
+                <InputLabel>{t("userFields.field.status", { defaultValue: "Status" })}</InputLabel>
+                <Select label={t("userFields.field.status", { defaultValue: "Status" })} value={editStatus} onChange={(e) => setEditStatus(e.target.value)} disabled={saving}>
+                  <MenuItem value="active">{t("userFields.status.active", { defaultValue: "Active" })}</MenuItem>
+                  <MenuItem value="archived">{t("userFields.status.archived", { defaultValue: "Archived" })}</MenuItem>
                 </Select>
               </FormControl>
             </Stack>
           </DialogContent>
           <DialogActions sx={{ px: 3, pb: 2 }}>
-            <Button onClick={() => setEditOpen(false)} disabled={saving}>Cancel</Button>
-            <Button type="submit" variant="contained" disableElevation disabled={saving}>Save</Button>
+            <Button onClick={() => setEditOpen(false)} disabled={saving}>{t("common.cancel", { defaultValue: "Cancel" })}</Button>
+            <Button type="submit" variant="contained" disableElevation disabled={saving}>{t("common.save", { defaultValue: "Save" })}</Button>
           </DialogActions>
         </Box>
       </Dialog>

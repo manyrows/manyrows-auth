@@ -1,4 +1,5 @@
 import { Box, Stack, Typography } from "@mui/material";
+import { useTranslation } from "react-i18next";
 import { useApp } from "../App.tsx";
 import PageHeader from "../components/PageHeader.tsx";
 import SigningKeysCard from "../profile/SigningKeysCard.tsx";
@@ -8,6 +9,7 @@ import SigningKeysCard from "../profile/SigningKeysCard.tsx";
 // "not authorised" state from SigningKeysCard itself, which keeps
 // the auth check in one place.
 export default function SigningKeysPage() {
+  const { t } = useTranslation();
   const app = useApp();
   const isSuper = !!app.appData.account?.isSuper;
 
@@ -15,15 +17,15 @@ export default function SigningKeysPage() {
     <Box>
       <Stack spacing={3} sx={{ maxWidth: 720 }}>
         <PageHeader
-          title="JWT signing keys"
-          subtitle="Rotate the ES256 keypair that signs end-user JWTs. New tokens sign with the new key; the previous key is kept in JWKS until you retire it, so tokens already in flight keep verifying."
+          title={t("signingKeys.title")}
+          subtitle={t("signingKeys.subtitle")}
           size={28}
           mb={0}
         />
 
         {!isSuper ? (
           <Typography variant="body2" color="text.secondary">
-            Only super-admin accounts can rotate signing keys.
+            {t("signingKeys.superOnly")}
           </Typography>
         ) : (
           <SigningKeysCard isSuper={isSuper} />

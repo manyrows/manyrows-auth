@@ -19,6 +19,7 @@ import {
   Typography,
 } from "@mui/material";
 import { Copy, KeyRound, RefreshCw, Trash2 } from "lucide-react";
+import { useTranslation } from "react-i18next";
 // JWT signing-key rotation panel. Super-admin only. Lives in the
 // profile screen because there's no separate "install settings"
 // surface today - keeps the route count low.
@@ -41,6 +42,7 @@ interface SigningKeyStatus {
 }
 
 export default function SigningKeysCard({ isSuper }: { isSuper: boolean }) {
+  const { t } = useTranslation();
   const [status, setStatus] = React.useState<SigningKeyStatus | null>(null);
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
@@ -55,7 +57,7 @@ export default function SigningKeysCard({ isSuper }: { isSuper: boolean }) {
       const res = await axios.get<SigningKeyStatus>("/admin/security/signing-keys");
       setStatus(res.data);
     } catch (e) {
-      setError(extractApiError(e, "Failed to load signing keys"));
+      setError(extractApiError(e, t("signingKeys.failedToLoad")));
     } finally {
       setLoading(false);
     }
@@ -79,7 +81,7 @@ export default function SigningKeysCard({ isSuper }: { isSuper: boolean }) {
       setStatus(res.data);
       setRotateOpen(false);
     } catch (e) {
-      setError(extractApiError(e, "Rotation failed"));
+      setError(extractApiError(e, t("signingKeys.rotationFailed")));
     } finally {
       setBusy(false);
     }
@@ -93,7 +95,7 @@ export default function SigningKeysCard({ isSuper }: { isSuper: boolean }) {
       setStatus(res.data);
       setRetireOpen(false);
     } catch (e) {
-      setError(extractApiError(e, "Retirement failed"));
+      setError(extractApiError(e, t("signingKeys.retirementFailed")));
     } finally {
       setBusy(false);
     }
@@ -126,14 +128,14 @@ export default function SigningKeysCard({ isSuper }: { isSuper: boolean }) {
                 }}
               >
                 <KeyRound size={9} strokeWidth={1.75} />
-                Cryptographic keys
+                {t("signingKeys.eyebrow")}
               </Typography>
               <Typography sx={{ fontSize: 16, fontWeight: 600, letterSpacing: "-0.005em" }}>
-                JWT signing keys
+                {t("signingKeys.title")}
               </Typography>
             </Box>
             <Chip
-              label="Super-admin"
+              label={t("signingKeys.superAdmin")}
               size="small"
               color="warning"
               variant="outlined"
@@ -149,11 +151,7 @@ export default function SigningKeysCard({ isSuper }: { isSuper: boolean }) {
           </Stack>
 
           <Typography variant="body2" color="text.secondary">
-            Rotate the ES256 keypair that signs end-user JWTs. New tokens sign with the
-            new key; the previous key is kept in JWKS until you retire it, so tokens
-            already in flight keep verifying. Wait at least the longest live
-            refresh-token TTL (7 days by default, up to 30 days with remember-me, or
-            whatever per-app override is set) before retiring the previous key.
+            {t("signingKeys.description")}
           </Typography>
 
           {error && (
@@ -168,10 +166,10 @@ export default function SigningKeysCard({ isSuper }: { isSuper: boolean }) {
             </Box>
           ) : status ? (
             <Stack spacing={1.5}>
-              <KeyRow label="Current" kid={status.current.kid} onCopy={() => copy(status.current.kid)} />
+              <KeyRow label={t("signingKeys.current")} kid={status.current.kid} onCopy={() => copy(status.current.kid)} />
               {status.previous && (
                 <KeyRow
-                  label="Previous"
+                  label={t("signingKeys.previous")}
                   kid={status.previous.kid}
                   onCopy={() => copy(status.previous!.kid)}
                   faded
@@ -187,7 +185,7 @@ export default function SigningKeysCard({ isSuper }: { isSuper: boolean }) {
               onClick={() => setRotateOpen(true)}
               disabled={busy || loading}
             >
-              Rotate
+              {t("signingKeys.rotate")}
             </Button>
             <Button
               variant="outlined"
@@ -196,7 +194,7 @@ export default function SigningKeysCard({ isSuper }: { isSuper: boolean }) {
               onClick={() => setRetireOpen(true)}
               disabled={busy || loading || !status?.previous}
             >
-              Retire previous
+              {t("signingKeys.retirePrevious")}
             </Button>
           </Stack>
         </Stack>
@@ -209,24 +207,18 @@ export default function SigningKeysCard({ isSuper }: { isSuper: boolean }) {
         maxWidth="sm"
        
       >
-        <DialogTitle>Rotate signing key?</DialogTitle>
+        <DialogTitle>{t("signingKeys.rotateDialog.title")}</DialogTitle>
         <DialogContent>
           <DialogContentText>
-            A new ES256 keypair will be generated and start signing new JWTs immediately.
-            The current key moves into the "previous" slot and stays in JWKS so in-flight
-            tokens keep verifying. After you've waited long enough for those tokens to
-            expire (≥ longest refresh-token TTL), retire the previous key to complete
-            the rotation.
+            {t("signingKeys.rotateDialog.body1")}
           </DialogContentText>
           <DialogContentText sx={{ mt: 2 }}>
-            If you have multiple replicas behind a load balancer, only this replica
-            reloads its in-memory keyset - redeploy after rotating so every replica
-            picks up the new kid on the issuance path.
+            {t("signingKeys.rotateDialog.body2")}
           </DialogContentText>
         </DialogContent>
         <DialogActions sx={{ px: 3, pb: 2, gap: 1 }}>
           <Button onClick={() => setRotateOpen(false)} disabled={busy}>
-            Cancel
+            {t("common.cancel")}
           </Button>
           <Button
             variant="contained"
@@ -234,9 +226,9 @@ export default function SigningKeysCard({ isSuper }: { isSuper: boolean }) {
             onClick={doRotate}
             disabled={busy}
             startIcon={busy ? <CircularProgress size={16} /> : <RefreshCw size={14} strokeWidth={1.75} />}
-           
+
           >
-            Rotate now
+            {t("signingKeys.rotateNow")}
           </Button>
         </DialogActions>
       </Dialog>
@@ -248,18 +240,15 @@ export default function SigningKeysCard({ isSuper }: { isSuper: boolean }) {
         maxWidth="sm"
        
       >
-        <DialogTitle>Retire previous key?</DialogTitle>
+        <DialogTitle>{t("signingKeys.retireDialog.title")}</DialogTitle>
         <DialogContent>
           <DialogContentText>
-            The previous key will be deleted from the database and dropped from JWKS.
-            Any JWT still signed with it will fail verification with "unknown kid",
-            forcing the user to re-authenticate. Only do this once you're confident
-            every refresh-token issued before the rotation has expired.
+            {t("signingKeys.retireDialog.body")}
           </DialogContentText>
         </DialogContent>
         <DialogActions sx={{ px: 3, pb: 2, gap: 1 }}>
           <Button onClick={() => setRetireOpen(false)} disabled={busy}>
-            Cancel
+            {t("common.cancel")}
           </Button>
           <Button
             variant="contained"
@@ -267,9 +256,9 @@ export default function SigningKeysCard({ isSuper }: { isSuper: boolean }) {
             onClick={doRetire}
             disabled={busy}
             startIcon={busy ? <CircularProgress size={16} /> : <Trash2 size={14} strokeWidth={1.75} />}
-           
+
           >
-            Retire
+            {t("signingKeys.retire")}
           </Button>
         </DialogActions>
       </Dialog>
@@ -288,6 +277,7 @@ function KeyRow({
   onCopy: () => void;
   faded?: boolean;
 }) {
+  const { t } = useTranslation();
   return (
     <Stack
       direction="row"
@@ -310,12 +300,12 @@ function KeyRow({
       <Typography variant="body2" sx={{ fontFamily: "var(--font-mono)", flex: 1, overflow: "hidden", textOverflow: "ellipsis" }}>
         {kid}
       </Typography>
-      <Tooltip title="Copy kid">
+      <Tooltip title={t("signingKeys.copyKid")}>
         <Button
           size="small"
           onClick={onCopy}
           sx={{ minWidth: 0, p: 0.5 }}
-          aria-label="Copy kid to clipboard"
+          aria-label={t("signingKeys.copyKidAria")}
         >
           <Copy size={14} strokeWidth={1.75} />
         </Button>

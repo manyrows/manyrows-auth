@@ -656,7 +656,7 @@ export default function Roles({ project }: Props) {
       }
       setSelectedByRole(next);
     } catch (e) {
-      setErr(extractApiError(e, "Failed to load roles/permissions"));
+      setErr(extractApiError(e, t("roles.failedToLoad")));
     } finally {
       setLoading(false);
     }

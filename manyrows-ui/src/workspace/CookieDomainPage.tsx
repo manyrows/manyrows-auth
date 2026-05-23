@@ -9,6 +9,7 @@ import {
 import type { Workspace } from "../core.ts";
 import { extractApiError } from "../lib/apiError.ts";
 import { useSnackbar } from "notistack";
+import { useTranslation, Trans } from "react-i18next";
 import PageHeader from "../components/PageHeader.tsx";
 
 interface Props {
@@ -22,6 +23,7 @@ interface Props {
 // lives under App → Security → Sessions.
 export default function CookieDomainPage({ workspace, onUpdated }: Props) {
   const { enqueueSnackbar } = useSnackbar();
+  const { t } = useTranslation();
   const [value, setValue] = React.useState<string>(workspace.cookieDomain ?? "");
   const [saving, setSaving] = React.useState(false);
 
@@ -43,9 +45,9 @@ export default function CookieDomainPage({ workspace, onUpdated }: Props) {
         { cookieDomain: trimmed },
       );
       onUpdated?.(res.data);
-      enqueueSnackbar("Cookie domain saved", { variant: "success" });
+      enqueueSnackbar(t("cookieDomain.saved"), { variant: "success" });
     } catch (e) {
-      enqueueSnackbar(extractApiError(e, "Failed to save"), { variant: "error" });
+      enqueueSnackbar(extractApiError(e, t("common.failedToSave")), { variant: "error" });
     } finally {
       setSaving(false);
     }
@@ -55,27 +57,24 @@ export default function CookieDomainPage({ workspace, onUpdated }: Props) {
     <Box>
       <Stack spacing={2} sx={{ maxWidth: 680 }}>
         <PageHeader
-          title="Cookie domain"
+          title={t("cookieDomain.title")}
           subtitle={
-            <>
-              Sets the <code>Domain</code> attribute on session cookies for every app
-              in this workspace. Use the parent-domain form (e.g.{" "}
-              <Box component="code" sx={{ fontFamily: "var(--font-mono)", bgcolor: "action.hover", px: 0.5, py: 0.1, borderRadius: 0.5 }}>
-                .acme.com
-              </Box>
-              ) when ManyRows and your app share a registrable domain - the
-              session cookie then survives a top-level redirect between
-              subdomains. Leave blank to scope cookies to the exact host
-              that issued them. Cookies are same-site only; cross-origin
-              apps fall back to Bearer-token (local) transport.
-            </>
+            <Trans
+              i18nKey="cookieDomain.subtitle"
+              components={{
+                code: <code />,
+                sample: (
+                  <Box component="code" sx={{ fontFamily: "var(--font-mono)", bgcolor: "action.hover", px: 0.5, py: 0.1, borderRadius: 0.5 }} />
+                ),
+              }}
+            />
           }
           size={28}
           mb={0}
         />
 
         <TextField
-          label="Cookie domain"
+          label={t("cookieDomain.label")}
           placeholder=".yourdomain.com"
           value={value}
           onChange={(e) => setValue(e.target.value)}
@@ -84,8 +83,8 @@ export default function CookieDomainPage({ workspace, onUpdated }: Props) {
           error={looksWrong}
           helperText={
             looksWrong
-              ? "Must be a hostname (no spaces or slashes) and typically contain a dot."
-              : "Empty = scope cookies to the exact host that set them."
+              ? t("cookieDomain.invalid")
+              : t("cookieDomain.emptyHint")
           }
           disabled={saving}
         />
@@ -98,7 +97,7 @@ export default function CookieDomainPage({ workspace, onUpdated }: Props) {
             disabled={!dirty || saving || looksWrong}
             sx={{ textTransform: "none" }}
           >
-            {saving ? "Saving…" : "Save"}
+            {saving ? t("common.saving") : t("common.save")}
           </Button>
         </Stack>
       </Stack>

@@ -1,5 +1,6 @@
 import type React from "react";
 import { useNavigate } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 import Box from "@mui/material/Box";
 import Typography from "@mui/material/Typography";
 
@@ -27,6 +28,7 @@ export const LogoMark: React.FC = () => {
 
 export const Logo: React.FC = () => {
   const nav = useNavigate();
+  const { t } = useTranslation();
 
   const clickLogo = (ev?: React.MouseEvent<unknown>) => {
     if (ev) {
@@ -45,7 +47,7 @@ export const Logo: React.FC = () => {
       component="button"
       type="button"
       onClick={clickLogo}
-      aria-label="Home"
+      aria-label={t("nav.home")}
       sx={{
         cursor: "pointer",
         background: "none",

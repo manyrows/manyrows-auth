@@ -6,7 +6,8 @@ import (
 )
 
 // SupportedLanguages is the list of supported language codes for i18n.
-var SupportedLanguages = []string{"en"}
+// Kept in sync with api.SupportedLanguages and the UI i18n locales.
+var SupportedLanguages = []string{"en", "ko"}
 
 // brandName is the operator-facing product name that gets substituted for
 // the `{brand}` placeholder in translations. Defaults to "ManyRows" until

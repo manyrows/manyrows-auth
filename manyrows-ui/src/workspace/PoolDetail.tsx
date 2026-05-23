@@ -382,17 +382,17 @@ export default function PoolDetail({ workspace, poolId, tab }: Props) {
             {/* Meta row */}
             <Stack direction="row" spacing={4}>
               <Stack spacing={0.25}>
-                <Typography sx={labelSx}>ID</Typography>
+                <Typography sx={labelSx}>{t("userPools.detail.metaId", { defaultValue: "ID" })}</Typography>
                 <Typography variant="body2" sx={{ fontFamily: "var(--font-mono)", fontSize: 12 }}>
                   {pool.id}
                 </Typography>
               </Stack>
               <Stack spacing={0.25}>
-                <Typography sx={labelSx}>Users</Typography>
+                <Typography sx={labelSx}>{t("userPools.detail.metaUsers", { defaultValue: "Users" })}</Typography>
                 <Typography variant="body2">{pool.userCount}</Typography>
               </Stack>
               <Stack spacing={0.25}>
-                <Typography sx={labelSx}>Apps</Typography>
+                <Typography sx={labelSx}>{t("userPools.detail.metaApps", { defaultValue: "Apps" })}</Typography>
                 <Typography variant="body2">{pool.appCount}</Typography>
               </Stack>
             </Stack>
@@ -435,11 +435,11 @@ export default function PoolDetail({ workspace, poolId, tab }: Props) {
                           {a.displayName}
                         </Typography>
                         <Typography variant="caption" color="text.secondary" sx={{ fontFamily: "var(--font-mono)" }}>
-                          {a.memberCount} {a.memberCount === 1 ? "member" : "members"}
+                          {t("userPools.detail.memberCount", { count: a.memberCount, defaultValue: "{{count}} members" })}
                         </Typography>
                         {!a.enabled && (
                           <Chip
-                            label="disabled"
+                            label={t("userPools.detail.appDisabled", { defaultValue: "disabled" })}
                             size="small"
                             variant="outlined"
                             sx={{ height: 18, fontSize: 10, borderColor: "error.main", color: "error.main" }}
@@ -504,7 +504,7 @@ export default function PoolDetail({ workspace, poolId, tab }: Props) {
                       <TableCell sx={{ fontWeight: 600, fontSize: 12 }}>
                         {t("userPools.detail.colStatus", { defaultValue: "Status" })}
                       </TableCell>
-                      <TableCell sx={{ width: 48 }} aria-label="actions" />
+                      <TableCell sx={{ width: 48 }} aria-label={t("common.actions")} />
                     </TableRow>
                   </TableHead>
                   <TableBody>

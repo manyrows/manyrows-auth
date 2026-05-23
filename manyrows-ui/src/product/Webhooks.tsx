@@ -258,7 +258,7 @@ export default function Webhooks({ project, appId }: Props) {
       return;
     }
     if (createEvents.length === 0) {
-      enqueueSnackbar("Select at least one event", { variant: "error" });
+      enqueueSnackbar(t("webhooks.selectEvent"), { variant: "error" });
       return;
     }
     setCreateSaving(true);
@@ -306,7 +306,7 @@ export default function Webhooks({ project, appId }: Props) {
       return;
     }
     if (editEvents.length === 0) {
-      enqueueSnackbar("Select at least one event", { variant: "error" });
+      enqueueSnackbar(t("webhooks.selectEvent"), { variant: "error" });
       return;
     }
     setEditSaving(true);
@@ -832,7 +832,7 @@ export default function Webhooks({ project, appId }: Props) {
             <Eyebrow sx={{ mt: 1 }}>{t("webhooks.events")}</Eyebrow>
             {renderEventCheckboxes(createEvents, setCreateEvents)}
             {createEvents.length === 0 && (
-              <Alert severity="warning">Select at least one event</Alert>
+              <Alert severity="warning">{t("webhooks.selectEvent")}</Alert>
             )}
           </Stack>
         </DialogContent>
@@ -911,7 +911,7 @@ export default function Webhooks({ project, appId }: Props) {
             <Eyebrow sx={{ mt: 1 }}>{t("webhooks.events")}</Eyebrow>
             {renderEventCheckboxes(editEvents, setEditEvents)}
             {editEvents.length === 0 && (
-              <Alert severity="warning">Select at least one event</Alert>
+              <Alert severity="warning">{t("webhooks.selectEvent")}</Alert>
             )}
           </Stack>
         </DialogContent>

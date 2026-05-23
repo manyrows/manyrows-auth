@@ -130,52 +130,56 @@ type AuthLogsResponse = {
 // surfaces them as filter dropdowns and chips. If a server-side row
 // arrives with a value not in this list, the renderer just shows the
 // raw string (forward-compatible for added events).
-const EVENT_VOCAB: { value: string; label: string }[] = [
-  { value: "register.success", label: "Register success" },
-  { value: "register.failed", label: "Register failed" },
-  { value: "login.success", label: "Login success" },
-  { value: "login.failed", label: "Login failed" },
-  { value: "logout", label: "Logout" },
-  { value: "session.revoked", label: "Session revoked" },
-  { value: "sessions.pruned", label: "Sessions pruned" },
-  { value: "password.set", label: "Password set" },
-  { value: "password.changed", label: "Password changed" },
-  { value: "password.cleared", label: "Password cleared" },
-  { value: "password.reset_requested", label: "Password reset requested" },
-  { value: "password.reset_completed", label: "Password reset completed" },
-  { value: "email.change_requested", label: "Email change requested" },
-  { value: "email.changed", label: "Email changed" },
-  { value: "totp.enabled", label: "TOTP enabled" },
-  { value: "totp.disabled", label: "TOTP disabled" },
-  { value: "totp.failed", label: "TOTP failed" },
-  { value: "passkey.registered", label: "Passkey registered" },
-  { value: "passkey.used", label: "Passkey used" },
-  { value: "passkey.deleted", label: "Passkey deleted" },
-  { value: "passkey.admin_revoked", label: "Passkey admin-revoked" },
-  { value: "oauth.linked", label: "OAuth linked" },
-  { value: "account.locked", label: "Account locked" },
-  { value: "account.status_changed", label: "Account status changed" },
+// Each vocab entry carries a labelKey (i18n) alongside the default
+// English label. Render sites call t(labelKey, { defaultValue: label }).
+// The `value` is the wire/enum value and is NEVER translated. Proper-noun
+// methods (Google, Microsoft, etc.) keep their name as the locale value.
+const EVENT_VOCAB: { value: string; label: string; labelKey: string }[] = [
+  { value: "register.success", label: "Register success", labelKey: "authLogs.event.register.success" },
+  { value: "register.failed", label: "Register failed", labelKey: "authLogs.event.register.failed" },
+  { value: "login.success", label: "Login success", labelKey: "authLogs.event.login.success" },
+  { value: "login.failed", label: "Login failed", labelKey: "authLogs.event.login.failed" },
+  { value: "logout", label: "Logout", labelKey: "authLogs.event.logout" },
+  { value: "session.revoked", label: "Session revoked", labelKey: "authLogs.event.session.revoked" },
+  { value: "sessions.pruned", label: "Sessions pruned", labelKey: "authLogs.event.sessions.pruned" },
+  { value: "password.set", label: "Password set", labelKey: "authLogs.event.password.set" },
+  { value: "password.changed", label: "Password changed", labelKey: "authLogs.event.password.changed" },
+  { value: "password.cleared", label: "Password cleared", labelKey: "authLogs.event.password.cleared" },
+  { value: "password.reset_requested", label: "Password reset requested", labelKey: "authLogs.event.password.resetRequested" },
+  { value: "password.reset_completed", label: "Password reset completed", labelKey: "authLogs.event.password.resetCompleted" },
+  { value: "email.change_requested", label: "Email change requested", labelKey: "authLogs.event.email.changeRequested" },
+  { value: "email.changed", label: "Email changed", labelKey: "authLogs.event.email.changed" },
+  { value: "totp.enabled", label: "TOTP enabled", labelKey: "authLogs.event.totp.enabled" },
+  { value: "totp.disabled", label: "TOTP disabled", labelKey: "authLogs.event.totp.disabled" },
+  { value: "totp.failed", label: "TOTP failed", labelKey: "authLogs.event.totp.failed" },
+  { value: "passkey.registered", label: "Passkey registered", labelKey: "authLogs.event.passkey.registered" },
+  { value: "passkey.used", label: "Passkey used", labelKey: "authLogs.event.passkey.used" },
+  { value: "passkey.deleted", label: "Passkey deleted", labelKey: "authLogs.event.passkey.deleted" },
+  { value: "passkey.admin_revoked", label: "Passkey admin-revoked", labelKey: "authLogs.event.passkey.adminRevoked" },
+  { value: "oauth.linked", label: "OAuth linked", labelKey: "authLogs.event.oauth.linked" },
+  { value: "account.locked", label: "Account locked", labelKey: "authLogs.event.account.locked" },
+  { value: "account.status_changed", label: "Account status changed", labelKey: "authLogs.event.account.statusChanged" },
 ];
 
-const METHOD_VOCAB: { value: string; label: string }[] = [
-  { value: "password", label: "Password" },
-  { value: "google", label: "Google" },
-  { value: "microsoft", label: "Microsoft" },
-  { value: "apple", label: "Apple" },
-  { value: "github", label: "GitHub" },
-  { value: "kakao", label: "Kakao" },
-  { value: "naver", label: "Naver" },
-  { value: "passkey", label: "Passkey" },
-  { value: "totp", label: "TOTP" },
-  { value: "email_otp", label: "Email OTP" },
-  { value: "magic_link", label: "Magic Link" },
+const METHOD_VOCAB: { value: string; label: string; labelKey: string }[] = [
+  { value: "password", label: "Password", labelKey: "authLogs.method.password" },
+  { value: "google", label: "Google", labelKey: "authLogs.method.google" },
+  { value: "microsoft", label: "Microsoft", labelKey: "authLogs.method.microsoft" },
+  { value: "apple", label: "Apple", labelKey: "authLogs.method.apple" },
+  { value: "github", label: "GitHub", labelKey: "authLogs.method.github" },
+  { value: "kakao", label: "Kakao", labelKey: "authLogs.method.kakao" },
+  { value: "naver", label: "Naver", labelKey: "authLogs.method.naver" },
+  { value: "passkey", label: "Passkey", labelKey: "authLogs.method.passkey" },
+  { value: "totp", label: "TOTP", labelKey: "authLogs.method.totp" },
+  { value: "email_otp", label: "Email OTP", labelKey: "authLogs.method.emailOtp" },
+  { value: "magic_link", label: "Magic Link", labelKey: "authLogs.method.magicLink" },
 ];
 
-const ACTOR_TYPE_VOCAB: { value: AuthLog["actorType"]; label: string; icon: LucideIcon }[] = [
-  { value: "self", label: "User self-service", icon: User },
-  { value: "admin", label: "Admin", icon: ShieldCheck },
-  { value: "system", label: "System", icon: Bot },
-  { value: "api_key", label: "API key", icon: KeyRound },
+const ACTOR_TYPE_VOCAB: { value: AuthLog["actorType"]; label: string; labelKey: string; icon: LucideIcon }[] = [
+  { value: "self", label: "User self-service", labelKey: "authLogs.actor.self", icon: User },
+  { value: "admin", label: "Admin", labelKey: "authLogs.actor.admin", icon: ShieldCheck },
+  { value: "system", label: "System", labelKey: "authLogs.actor.system", icon: Bot },
+  { value: "api_key", label: "API key", labelKey: "authLogs.actor.apiKey", icon: KeyRound },
 ];
 
 // PRESETS encode the "what should I look at right now" first-line filters
@@ -184,13 +188,14 @@ const ACTOR_TYPE_VOCAB: { value: AuthLog["actorType"]; label: string; icon: Luci
 type Preset = {
   id: "all" | "suspicious" | "admin" | "oauth" | "failed";
   label: string;
+  labelKey: string;
 };
 const PRESETS: Preset[] = [
-  { id: "all", label: "All events" },
-  { id: "suspicious", label: "Suspicious" },
-  { id: "admin", label: "Admin actions" },
-  { id: "oauth", label: "OAuth only" },
-  { id: "failed", label: "Failed only" },
+  { id: "all", label: "All events", labelKey: "authLogs.preset.all" },
+  { id: "suspicious", label: "Suspicious", labelKey: "authLogs.preset.suspicious" },
+  { id: "admin", label: "Admin actions", labelKey: "authLogs.preset.admin" },
+  { id: "oauth", label: "OAuth only", labelKey: "authLogs.preset.oauth" },
+  { id: "failed", label: "Failed only", labelKey: "authLogs.preset.failed" },
 ];
 
 function fmtDateTime(d: string | number | Date | null | undefined): string {
@@ -207,15 +212,15 @@ function fmtDateTime(d: string | number | Date | null | undefined): string {
   });
 }
 
-function fmtRelative(d: string | number | Date | null | undefined): string {
+function fmtRelative(d: string | number | Date | null | undefined, t: (key: string, opts?: Record<string, unknown>) => string): string {
   if (!d) return "";
   const date = d instanceof Date ? d : new Date(d);
   if (Number.isNaN(date.getTime())) return "";
   const diff = Date.now() - date.getTime();
-  if (diff < 60_000) return "just now";
-  if (diff < 3_600_000) return `${Math.floor(diff / 60_000)}m ago`;
-  if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)}h ago`;
-  return `${Math.floor(diff / 86_400_000)}d ago`;
+  if (diff < 60_000) return t("sessions.justNow");
+  if (diff < 3_600_000) return t("sessions.minutesAgo", { count: Math.floor(diff / 60_000) });
+  if (diff < 86_400_000) return t("sessions.hoursAgo", { count: Math.floor(diff / 3_600_000) });
+  return t("sessions.daysAgo", { count: Math.floor(diff / 86_400_000) });
 }
 
 // useDebouncedValue keeps the email/IP search inputs from firing a
@@ -410,11 +415,11 @@ export default function AuthLogs({ workspaceId, appId }: Props) {
       setLogs(res.data?.logs ?? []);
       setTotal(res.data?.total ?? 0);
     } catch (e) {
-      setErr(extractApiError(e, "Failed to load auth logs"));
+      setErr(extractApiError(e, t("authLogs.loadFailed", { defaultValue: "Failed to load auth logs" })));
     } finally {
       setLoading(false);
     }
-  }, [workspaceId, baseURL, appId, page, pageSize, preset, eventsSel, methodsSel, outcome, actorType, emailDebounced, subjectUserId, sessionId, requestId]);
+  }, [workspaceId, baseURL, appId, page, pageSize, preset, eventsSel, methodsSel, outcome, actorType, emailDebounced, subjectUserId, sessionId, requestId, t]);
 
   React.useEffect(() => {
     void load();
@@ -451,7 +456,7 @@ export default function AuthLogs({ workspaceId, appId }: Props) {
 
   const exportCSV = () => {
     if (logs.length === 0) {
-      enqueueSnackbar("No rows to export", { variant: "info" });
+      enqueueSnackbar(t("authLogs.noRowsToExport", { defaultValue: "No rows to export" }), { variant: "info" });
       return;
     }
     const cols = ["createdAt", "event", "method", "outcome", "failureReason", "emailAttempted", "actorType", "ip", "userAgent", "sessionId", "requestId"] as const;
@@ -478,7 +483,7 @@ export default function AuthLogs({ workspaceId, appId }: Props) {
           <Stack direction="row" spacing={1} alignItems="center">
             <Stack direction="row" spacing={0.5} alignItems="center">
               <Switch size="small" checked={autoRefresh} onChange={(_, v) => setAutoRefresh(v)} />
-              <Typography variant="caption" color="text.secondary">Auto-refresh</Typography>
+              <Typography variant="caption" color="text.secondary">{t("authLogs.autoRefresh", { defaultValue: "Auto-refresh" })}</Typography>
             </Stack>
             <Button size="small" variant="outlined" startIcon={<FileSpreadsheet size={14} strokeWidth={1.75} />} onClick={exportCSV}>
               CSV
@@ -493,10 +498,10 @@ export default function AuthLogs({ workspaceId, appId }: Props) {
       {/* Anomaly strip - totals + failed % + unique IPs + top IP. Surfaces
           the spikes you'd otherwise miss while scrolling rows. */}
       <Stack direction="row" spacing={2} sx={{ mb: 2, flexWrap: "wrap" }}>
-        <StatCard label="Total in view" value={String(logs.length)} sub={`of ${total}`} />
-        <StatCard label="Failed" value={`${stats.failedRate}%`} sub={`${stats.failed} rows`} severity={stats.failedRate >= 30 ? "error" : stats.failedRate >= 10 ? "warning" : "neutral"} />
-        <StatCard label="Unique IPs" value={String(stats.ips)} />
-        <StatCard label="Top IP" value={stats.topIP || "-"} sub={stats.topIPCount > 0 ? `${stats.topIPCount} rows` : ""} />
+        <StatCard label={t("authLogs.stat.totalInView", { defaultValue: "Total in view" })} value={String(logs.length)} sub={t("authLogs.stat.ofTotal", { count: total, defaultValue: "of {{count}}" })} />
+        <StatCard label={t("authLogs.stat.failed", { defaultValue: "Failed" })} value={`${stats.failedRate}%`} sub={t("authLogs.stat.rows", { count: stats.failed, defaultValue: "{{count}} rows" })} severity={stats.failedRate >= 30 ? "error" : stats.failedRate >= 10 ? "warning" : "neutral"} />
+        <StatCard label={t("authLogs.stat.uniqueIps", { defaultValue: "Unique IPs" })} value={String(stats.ips)} />
+        <StatCard label={t("authLogs.stat.topIp", { defaultValue: "Top IP" })} value={stats.topIP || "-"} sub={stats.topIPCount > 0 ? t("authLogs.stat.rows", { count: stats.topIPCount, defaultValue: "{{count}} rows" }) : ""} />
       </Stack>
 
       {/* Preset chips */}
@@ -506,7 +511,7 @@ export default function AuthLogs({ workspaceId, appId }: Props) {
           return (
             <Chip
               key={p.id}
-              label={p.label}
+              label={t(p.labelKey, { defaultValue: p.label })}
               variant="outlined"
               onClick={() => {
                 setPreset(p.id);
@@ -547,13 +552,13 @@ export default function AuthLogs({ workspaceId, appId }: Props) {
               setEventsSel(typeof e.target.value === "string" ? [e.target.value] : e.target.value);
               setPage(0);
             }}
-            renderValue={(s) => (s.length === 0 ? <em>Event (any)</em> : `${s.length} event${s.length === 1 ? "" : "s"}`)}
+            renderValue={(s) => (s.length === 0 ? <em>{t("authLogs.filter.eventAny", { defaultValue: "Event (any)" })}</em> : t("authLogs.filter.eventCount", { count: s.length, defaultValue: "{{count}} events" }))}
             sx={{ minWidth: 160 }}
           >
             {EVENT_VOCAB.map((e) => (
               <MenuItem key={e.value} value={e.value}>
                 <Checkbox size="small" checked={eventsSel.includes(e.value)} sx={{ py: 0, mr: 1 }} />
-                <ListItemText primary={e.label} />
+                <ListItemText primary={t(e.labelKey, { defaultValue: e.label })} />
               </MenuItem>
             ))}
           </Select>
@@ -567,13 +572,13 @@ export default function AuthLogs({ workspaceId, appId }: Props) {
               setMethodsSel(typeof e.target.value === "string" ? [e.target.value] : e.target.value);
               setPage(0);
             }}
-            renderValue={(s) => (s.length === 0 ? <em>Method (any)</em> : `${s.length} method${s.length === 1 ? "" : "s"}`)}
+            renderValue={(s) => (s.length === 0 ? <em>{t("authLogs.filter.methodAny", { defaultValue: "Method (any)" })}</em> : t("authLogs.filter.methodCount", { count: s.length, defaultValue: "{{count}} methods" }))}
             sx={{ minWidth: 160 }}
           >
             {METHOD_VOCAB.map((m) => (
               <MenuItem key={m.value} value={m.value}>
                 <Checkbox size="small" checked={methodsSel.includes(m.value)} sx={{ py: 0, mr: 1 }} />
-                <ListItemText primary={m.label} />
+                <ListItemText primary={t(m.labelKey, { defaultValue: m.label })} />
               </MenuItem>
             ))}
           </Select>
@@ -589,10 +594,10 @@ export default function AuthLogs({ workspaceId, appId }: Props) {
             sx={{ minWidth: 130 }}
           >
             <MenuItem value="">
-              <em>Outcome</em>
+              <em>{t("authLogs.filter.outcome", { defaultValue: "Outcome" })}</em>
             </MenuItem>
-            <MenuItem value="success">Success</MenuItem>
-            <MenuItem value="failed">Failed</MenuItem>
+            <MenuItem value="success">{t("authLogs.outcome.success", { defaultValue: "Success" })}</MenuItem>
+            <MenuItem value="failed">{t("authLogs.outcome.failed", { defaultValue: "Failed" })}</MenuItem>
           </Select>
 
           <Select
@@ -606,18 +611,18 @@ export default function AuthLogs({ workspaceId, appId }: Props) {
             sx={{ minWidth: 150 }}
           >
             <MenuItem value="">
-              <em>Actor</em>
+              <em>{t("authLogs.filter.actor", { defaultValue: "Actor" })}</em>
             </MenuItem>
             {ACTOR_TYPE_VOCAB.map((a) => (
               <MenuItem key={a.value} value={a.value}>
-                {a.label}
+                {t(a.labelKey, { defaultValue: a.label })}
               </MenuItem>
             ))}
           </Select>
 
           <TextField
             size="small"
-            placeholder="Email contains…"
+            placeholder={t("authLogs.filter.emailContains", { defaultValue: "Email contains…" })}
             value={emailLike}
             onChange={(e) => {
               setEmailLike(e.target.value);
@@ -642,7 +647,7 @@ export default function AuthLogs({ workspaceId, appId }: Props) {
 
           <Box sx={{ flexGrow: 1 }} />
           <Typography variant="caption" color="text.secondary" alignSelf="center">
-            {loading ? "Loading…" : `${total} total`}
+            {loading ? t("common.loadingShort", { defaultValue: "Loading…" }) : t("authLogs.totalCount", { count: total, defaultValue: "{{count}} total" })}
           </Typography>
         </Stack>
       </Paper>
@@ -654,15 +659,15 @@ export default function AuthLogs({ workspaceId, appId }: Props) {
         <Table size="small">
           <TableHead>
             <TableRow>
-              <TableCell>When</TableCell>
-              <TableCell>Event</TableCell>
-              <TableCell>Method</TableCell>
-              <TableCell>Outcome</TableCell>
-              <TableCell>Subject</TableCell>
-              <TableCell>Actor</TableCell>
-              <TableCell>IP</TableCell>
-              <TableCell>Device</TableCell>
-              <TableCell>Reason</TableCell>
+              <TableCell>{t("authLogs.col.when", { defaultValue: "When" })}</TableCell>
+              <TableCell>{t("authLogs.col.event", { defaultValue: "Event" })}</TableCell>
+              <TableCell>{t("authLogs.col.method", { defaultValue: "Method" })}</TableCell>
+              <TableCell>{t("authLogs.col.outcome", { defaultValue: "Outcome" })}</TableCell>
+              <TableCell>{t("authLogs.col.subject", { defaultValue: "Subject" })}</TableCell>
+              <TableCell>{t("authLogs.col.actor", { defaultValue: "Actor" })}</TableCell>
+              <TableCell>{t("authLogs.col.ip", { defaultValue: "IP" })}</TableCell>
+              <TableCell>{t("authLogs.col.device", { defaultValue: "Device" })}</TableCell>
+              <TableCell>{t("authLogs.col.reason", { defaultValue: "Reason" })}</TableCell>
             </TableRow>
           </TableHead>
           <TableBody>
@@ -676,7 +681,7 @@ export default function AuthLogs({ workspaceId, appId }: Props) {
               <TableRow>
                 <TableCell colSpan={9} align="center" sx={{ py: 4 }}>
                   <Typography variant="body2" color="text.secondary">
-                    No auth events match these filters.
+                    {t("authLogs.noResults", { defaultValue: "No auth events match these filters." })}
                   </Typography>
                 </TableCell>
               </TableRow>
@@ -685,7 +690,7 @@ export default function AuthLogs({ workspaceId, appId }: Props) {
                 <TableRow key={l.id} hover sx={{ cursor: "pointer" }} onClick={() => setSelected(l)}>
                   <TableCell>
                     <Tooltip title={fmtDateTime(l.createdAt)}>
-                      <span>{fmtRelative(l.createdAt)}</span>
+                      <span>{fmtRelative(l.createdAt, t)}</span>
                     </Tooltip>
                   </TableCell>
                   <TableCell>
@@ -729,7 +734,7 @@ export default function AuthLogs({ workspaceId, appId }: Props) {
                         fontWeight: 600,
                       }}>
                         <CircleCheck size={14} strokeWidth={1.75} />
-                        success
+                        {t("authLogs.outcomeChip.success", { defaultValue: "success" })}
                       </Box>
                     ) : (
                       <Box sx={{
@@ -745,7 +750,7 @@ export default function AuthLogs({ workspaceId, appId }: Props) {
                         fontWeight: 600,
                       }}>
                         <CircleAlert size={14} strokeWidth={1.75} />
-                        failed
+                        {t("authLogs.outcomeChip.failed", { defaultValue: "failed" })}
                       </Box>
                     )}
                   </TableCell>
@@ -756,7 +761,7 @@ export default function AuthLogs({ workspaceId, appId }: Props) {
                   </TableCell>
                   <TableCell>
                     {l.actorType === "self" ? (
-                      <Typography variant="caption" color="text.secondary">self</Typography>
+                      <Typography variant="caption" color="text.secondary">{t("authLogs.actorSelf", { defaultValue: "self" })}</Typography>
                     ) : (
                       (() => {
                         const ActorIcon = ACTOR_TYPE_VOCAB.find((a) => a.value === l.actorType)?.icon ?? User;
@@ -813,18 +818,18 @@ export default function AuthLogs({ workspaceId, appId }: Props) {
       {/* Pagination */}
       <Stack direction="row" spacing={1} sx={{ mt: 2 }} alignItems="center" justifyContent="flex-end">
         <Typography variant="caption" color="text.secondary">
-          Page {page + 1} of {Math.max(1, Math.ceil(total / pageSize))}
+          {t("authLogs.pageOf", { page: page + 1, total: Math.max(1, Math.ceil(total / pageSize)), defaultValue: "Page {{page}} of {{total}}" })}
         </Typography>
         <Select size="small" value={pageSize} onChange={(e) => { setPageSize(Number(e.target.value)); setPage(0); }}>
           {[25, 50, 100, 200].map((n) => (
-            <MenuItem key={n} value={n}>{n} / page</MenuItem>
+            <MenuItem key={n} value={n}>{t("authLogs.perPage", { count: n, defaultValue: "{{count}} / page" })}</MenuItem>
           ))}
         </Select>
         <Button size="small" disabled={page === 0 || loading} onClick={() => setPage((p) => Math.max(0, p - 1))}>
-          Previous
+          {t("authLogs.previous", { defaultValue: "Previous" })}
         </Button>
         <Button size="small" disabled={(page + 1) * pageSize >= total || loading} onClick={() => setPage((p) => p + 1)}>
-          Next
+          {t("authLogs.next", { defaultValue: "Next" })}
         </Button>
       </Stack>
 
@@ -876,7 +881,7 @@ export default function AuthLogs({ workspaceId, appId }: Props) {
                       fontSize: 11,
                       mt: 0.25,
                     }}>
-                      {fmtRelative(selected.createdAt)} · {fmtDateTime(selected.createdAt)}
+                      {fmtRelative(selected.createdAt, t)} · {fmtDateTime(selected.createdAt)}
                     </Typography>
                   </Box>
                 </Stack>
@@ -903,13 +908,13 @@ export default function AuthLogs({ workspaceId, appId }: Props) {
 
               {/* BODY */}
               <Stack spacing={0} sx={{ p: 0 }}>
-                <DrawerSection icon={User} title="Who" accent="#6366F1">
-                  <DrawerKV label="Subject" value={selected.actorLabel || selected.emailAttempted || "-"} mono={false} />
+                <DrawerSection icon={User} title={t("authLogs.drawer.who", { defaultValue: "Who" })} accent="#6366F1">
+                  <DrawerKV label={t("authLogs.drawer.subject", { defaultValue: "Subject" })} value={selected.actorLabel || selected.emailAttempted || "-"} mono={false} />
                   {selected.subjectUserId && (
-                    <DrawerKV label="User ID" value={selected.subjectUserId} mono />
+                    <DrawerKV label={t("authLogs.drawer.userId", { defaultValue: "User ID" })} value={selected.subjectUserId} mono />
                   )}
                   <DrawerKV
-                    label="Actor"
+                    label={t("authLogs.drawer.actor", { defaultValue: "Actor" })}
                     value={
                       (() => {
                         const ActorIcon = ACTOR_TYPE_VOCAB.find((a) => a.value === selected.actorType)?.icon ?? User;
@@ -927,9 +932,9 @@ export default function AuthLogs({ workspaceId, appId }: Props) {
                   />
                 </DrawerSection>
 
-                <DrawerSection icon={Globe} title="Where" accent="#0EA5E9">
+                <DrawerSection icon={Globe} title={t("authLogs.drawer.where", { defaultValue: "Where" })} accent="#0EA5E9">
                   <DrawerKV
-                    label="IP"
+                    label={t("authLogs.col.ip", { defaultValue: "IP" })}
                     value={
                       <Stack direction="row" spacing={1} alignItems="center">
                         <Typography variant="body2" sx={{
@@ -948,8 +953,8 @@ export default function AuthLogs({ workspaceId, appId }: Props) {
                   />
                 </DrawerSection>
 
-                <DrawerSection icon={Monitor} title="Device" accent="#10B981">
-                  <DrawerKV label="Browser" value={uaSummary(selected.userAgent) || "-"} />
+                <DrawerSection icon={Monitor} title={t("authLogs.col.device", { defaultValue: "Device" })} accent="#10B981">
+                  <DrawerKV label={t("authLogs.drawer.browser", { defaultValue: "Browser" })} value={uaSummary(selected.userAgent) || "-"} />
                   {selected.userAgent && (
                     <Box sx={{ mt: 0.5 }}>
                       <Typography variant="caption" color="text.secondary" sx={{ wordBreak: "break-all", fontFamily: "var(--font-mono)", fontSize: 11 }}>
@@ -960,10 +965,10 @@ export default function AuthLogs({ workspaceId, appId }: Props) {
                 </DrawerSection>
 
                 {(selected.sessionId || selected.requestId) && (
-                  <DrawerSection icon={Link2} title="Correlation" accent="#A855F7">
+                  <DrawerSection icon={Link2} title={t("authLogs.drawer.correlation", { defaultValue: "Correlation" })} accent="#A855F7">
                     {selected.sessionId && (
                       <DrawerKV
-                        label="Session"
+                        label={t("authLogs.drawer.session", { defaultValue: "Session" })}
                         value={
                           <Box>
                             <Typography variant="body2" sx={{ fontFamily: "var(--font-mono)", fontSize: 12, wordBreak: "break-all" }}>
@@ -976,7 +981,7 @@ export default function AuthLogs({ workspaceId, appId }: Props) {
                               sp.delete("requestId");
                               window.location.search = sp.toString();
                             }}>
-                              Show all events for this session →
+                              {t("authLogs.drawer.showSessionEvents", { defaultValue: "Show all events for this session →" })}
                             </Button>
                           </Box>
                         }
@@ -984,7 +989,7 @@ export default function AuthLogs({ workspaceId, appId }: Props) {
                     )}
                     {selected.requestId && (
                       <DrawerKV
-                        label="Request"
+                        label={t("authLogs.drawer.request", { defaultValue: "Request" })}
                         value={
                           <Box>
                             <Typography variant="body2" sx={{ fontFamily: "var(--font-mono)", fontSize: 12, wordBreak: "break-all" }}>
@@ -997,7 +1002,7 @@ export default function AuthLogs({ workspaceId, appId }: Props) {
                               sp.delete("subjectUserId");
                               window.location.search = sp.toString();
                             }}>
-                              Show all events for this request →
+                              {t("authLogs.drawer.showRequestEvents", { defaultValue: "Show all events for this request →" })}
                             </Button>
                           </Box>
                         }
@@ -1007,7 +1012,7 @@ export default function AuthLogs({ workspaceId, appId }: Props) {
                 )}
 
                 {selected.metadata && (
-                  <DrawerSection icon={Filter} title="Metadata" accent="#F59E0B">
+                  <DrawerSection icon={Filter} title={t("authLogs.drawer.metadata", { defaultValue: "Metadata" })} accent="#F59E0B">
                     <Box component="pre" sx={{
                       bgcolor: "#0F172A",
                       color: "#E2E8F0",

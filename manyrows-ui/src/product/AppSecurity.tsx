@@ -70,11 +70,11 @@ export default function AppSecurity({ project, workspace, appId }: Props) {
 
       <Box sx={{ borderBottom: 1, borderColor: "divider", mb: 2 }}>
         <Tabs value={tab} onChange={(_, v) => setTab(v)} variant="scrollable" scrollButtons="auto">
-          <Tab label="Session transport" />
-          <Tab label="Session lifetime" />
-          <Tab label="CORS" />
-          <Tab label="IP allowlist" />
-          <Tab label="Passwords" />
+          <Tab label={t("appSecurity.tab.sessionTransport", { defaultValue: "Session transport" })} />
+          <Tab label={t("appSecurity.tab.sessionLifetime", { defaultValue: "Session lifetime" })} />
+          <Tab label={t("appSecurity.tab.cors", { defaultValue: "CORS" })} />
+          <Tab label={t("appSecurity.tab.ipAllowlist", { defaultValue: "IP allowlist" })} />
+          <Tab label={t("appSecurity.tab.passwords", { defaultValue: "Passwords" })} />
         </Tabs>
       </Box>
 

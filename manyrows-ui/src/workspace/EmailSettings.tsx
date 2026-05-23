@@ -263,15 +263,13 @@ export default function EmailSettings({ workspaceId }: Props) {
                 mb: 0.75,
               }}
             >
-              Custom SMTP
+              {t("smtp.customEyebrow")}
             </Typography>
             <Typography sx={{ fontSize: 15, fontWeight: 600, letterSpacing: "-0.005em" }}>
-              Outbound transport
+              {t("smtp.outboundTransport")}
             </Typography>
             <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5, maxWidth: 620 }}>
-              Configure a workspace-level relay to send password resets,
-              magic links, and verification codes from your own domain.
-              When off, the install's system transport is used.
+              {t("smtp.relayDescription")}
             </Typography>
           </Box>
 

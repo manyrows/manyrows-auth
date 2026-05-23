@@ -299,7 +299,7 @@ export default function ProductHome(props: Props) {
           <IconButton
             size="small"
             onClick={() => setMobileNavOpen(true)}
-            aria-label="Open navigation"
+            aria-label={t("projectHome.openNavigation")}
           >
             <MenuIcon size={16} strokeWidth={1.75} />
           </IconButton>
@@ -313,7 +313,7 @@ export default function ProductHome(props: Props) {
               color: "text.disabled",
             }}
           >
-            Menu
+            {t("projectHome.menu")}
           </Typography>
         </Box>
 
@@ -340,7 +340,7 @@ export default function ProductHome(props: Props) {
                   }}
                 >
                   <Box component="span" sx={{ width: 4, height: 4, borderRadius: "50%", bgcolor: "primary.main" }} />
-                  App
+                  {t("projectHome.appEyebrow")}
                 </Typography>
                 <Stack direction="row" spacing={1.5} alignItems="center" sx={{ minWidth: 0 }}>
                   <Typography
@@ -401,7 +401,7 @@ export default function ProductHome(props: Props) {
                       "&:hover": { bgcolor: "action.hover", color: "text.primary" },
                     }}
                   >
-                    switch
+                    {t("projectHome.switch")}
                     <ChevronDown size={10} strokeWidth={1.75} />
                   </Box>
                 </Stack>
@@ -417,14 +417,14 @@ export default function ProductHome(props: Props) {
                   }}
                 >
                   <Box component="span">
-                    <Box component="span" sx={{ color: "text.disabled" }}>app id</Box>
+                    <Box component="span" sx={{ color: "text.disabled" }}>{t("projectHome.appId")}</Box>
                     <Box component="span" sx={{ color: "text.secondary", ml: 1 }}>{appId}</Box>
                   </Box>
                   {appAuthDomain && (
                     <>
                       <Box component="span" sx={{ opacity: 0.4 }}>·</Box>
                       <Box component="span">
-                        <Box component="span" sx={{ color: "text.disabled" }}>auth domain</Box>
+                        <Box component="span" sx={{ color: "text.disabled" }}>{t("projectHome.authDomain")}</Box>
                         <Box component="span" sx={{ color: "text.secondary", ml: 1 }}>{appAuthDomain}</Box>
                       </Box>
                     </>

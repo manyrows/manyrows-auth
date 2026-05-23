@@ -20,6 +20,7 @@ import { useTranslation } from "react-i18next";
 import AuthShell from "./components/AuthShell";
 import Turnstile, { useTurnstileSiteKey, type TurnstileHandle } from "./components/Turnstile";
 import { useAdminAuthConfig } from "./hooks/useAdminAuthConfig";
+import LanguagePicker from "./components/LanguagePicker";
 
 const LAST_EMAIL_KEY = "manyrows:lastEmail";
 
@@ -191,6 +192,9 @@ export default function Login(props: Props) {
 
   return (
     <AuthShell>
+      <Box sx={{ display: "flex", justifyContent: "flex-end", mb: 1.5 }}>
+        <LanguagePicker />
+      </Box>
       <Card
         elevation={0}
         sx={{
@@ -297,7 +301,7 @@ export default function Login(props: Props) {
                   {turnstileSiteKey && (
                     <Box sx={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 1 }}>
                       <Typography variant="caption" color="text.secondary">
-                        Let us know you are human
+                        {t("auth.turnstilePrompt")}
                       </Typography>
                       <Turnstile
                         key="login"

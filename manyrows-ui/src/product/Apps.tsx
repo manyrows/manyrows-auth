@@ -54,8 +54,10 @@ type App = {
   enabled: boolean;
 };
 
-function appDisplayName(a: App): string {
-  if (!a.productName) return "(unnamed app)";
+type TFunc = (key: string, opts?: Record<string, unknown>) => string;
+
+function appDisplayName(a: App, t: TFunc): string {
+  if (!a.productName) return t("apps.unnamedApp");
   switch (a.type) {
     case "prod":
       return a.productName;
@@ -282,7 +284,7 @@ export default function Apps({ project, workspace }: Props) {
                     >
                       <TableCell>
                         <Typography sx={{ fontSize: 13, fontWeight: 600 }}>
-                          {appDisplayName(app)}
+                          {appDisplayName(app, t)}
                         </Typography>
                       </TableCell>
                       <TableCell>
@@ -388,7 +390,7 @@ export default function Apps({ project, workspace }: Props) {
                     {t("apps.type.development", { defaultValue: "Development" })}
                     {takenTypes.has("dev") && (
                       <Typography component="span" sx={{ ml: 1, color: "text.disabled", fontSize: 12 }}>
-                        (already exists)
+                        {t("apps.alreadyExists")}
                       </Typography>
                     )}
                   </MenuItem>
@@ -396,7 +398,7 @@ export default function Apps({ project, workspace }: Props) {
                     {t("apps.type.staging", { defaultValue: "Staging" })}
                     {takenTypes.has("staging") && (
                       <Typography component="span" sx={{ ml: 1, color: "text.disabled", fontSize: 12 }}>
-                        (already exists)
+                        {t("apps.alreadyExists")}
                       </Typography>
                     )}
                   </MenuItem>
@@ -404,7 +406,7 @@ export default function Apps({ project, workspace }: Props) {
                     {t("apps.type.production", { defaultValue: "Production" })}
                     {takenTypes.has("prod") && (
                       <Typography component="span" sx={{ ml: 1, color: "text.disabled", fontSize: 12 }}>
-                        (already exists)
+                        {t("apps.alreadyExists")}
                       </Typography>
                     )}
                   </MenuItem>
@@ -446,10 +448,10 @@ export default function Apps({ project, workspace }: Props) {
                   onChange={(e) => setCreatePrimaryAuth(e.target.value as AuthMethod)}
                   disabled={saving}
                 >
-                  <MenuItem value="password">Email + password</MenuItem>
-                  <MenuItem value="code">Email code (OTP)</MenuItem>
-                  <MenuItem value="magicLink">Magic link</MenuItem>
-                  <MenuItem value="none">No email form (OAuth only)</MenuItem>
+                  <MenuItem value="password">{t("apps.authMethod.password")}</MenuItem>
+                  <MenuItem value="code">{t("apps.authMethod.code")}</MenuItem>
+                  <MenuItem value="magicLink">{t("apps.authMethod.magicLink")}</MenuItem>
+                  <MenuItem value="none">{t("apps.authMethod.none")}</MenuItem>
                 </Select>
                 <FormHelperText>
                   {t("wizard.primaryAuth.help", {
@@ -508,7 +510,7 @@ export default function Apps({ project, workspace }: Props) {
                       <MenuItem key={p.id} value={p.id}>
                         {p.name}
                         <Typography component="span" sx={{ ml: 1, color: "text.secondary", fontSize: 12 }}>
-                          ({p.appCount} {p.appCount === 1 ? "app" : "apps"}, {p.userCount} {p.userCount === 1 ? "user" : "users"})
+                          {t("apps.poolCounts", { apps: p.appCount, users: p.userCount })}
                         </Typography>
                       </MenuItem>
                     ))}

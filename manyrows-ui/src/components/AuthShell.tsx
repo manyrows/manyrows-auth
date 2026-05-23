@@ -1,5 +1,6 @@
 import * as React from "react";
 import { Box, Typography } from "@mui/material";
+import { useTranslation } from "react-i18next";
 import { useAdminAuthConfig } from "../hooks/useAdminAuthConfig";
 
 interface Props {
@@ -16,6 +17,7 @@ interface Props {
 // of /health because the vite dev proxy only forwards /admin and
 // /api - /health would 200 with the SPA HTML and parse as "unknown".
 export default function AuthShell({ children }: Props) {
+  const { t } = useTranslation();
   const authCfg = useAdminAuthConfig();
   const version = authCfg?.version ?? "";
 
@@ -45,7 +47,7 @@ export default function AuthShell({ children }: Props) {
               fontSize: 12,
               letterSpacing: "0.04em",
             }}
-            title="Server build"
+            title={t("common.serverBuild")}
           >
             ManyRows {version}
           </Typography>

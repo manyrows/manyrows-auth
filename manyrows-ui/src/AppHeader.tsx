@@ -22,6 +22,7 @@ import { type AppData } from "./App.tsx";
 import { useNavigate, useLocation } from "react-router-dom";
 import { Logo } from "./Logo.tsx";
 import { useTranslation } from "react-i18next";
+import LanguagePicker from "./components/LanguagePicker";
 
 interface AppHeaderProps {
   appData: AppData;
@@ -179,7 +180,7 @@ export default function AppHeader(props: AppHeaderProps) {
                   }}
                 >
                   <span>
-                    {currentProduct ? currentProduct.name : "Select product"}
+                    {currentProduct ? currentProduct.name : t("header.selectProduct")}
                   </span>
                 </Button>
 
@@ -212,7 +213,7 @@ export default function AppHeader(props: AppHeaderProps) {
                       textTransform: "uppercase",
                     }}
                   >
-                    Products · {currentWorkspace.name}
+                    {t("header.productsLabel", { name: currentWorkspace.name })}
                   </Typography>
                   {products.map((p) => (
                     <MenuItem
@@ -249,7 +250,7 @@ export default function AppHeader(props: AppHeaderProps) {
                       <Plus size={13} strokeWidth={2} />
                     </ListItemIcon>
                     <Typography sx={{ fontSize: 13, color: "text.secondary" }}>
-                      Manage products
+                      {t("header.manageProducts")}
                     </Typography>
                   </MenuItem>
                 </Menu>
@@ -272,11 +273,14 @@ export default function AppHeader(props: AppHeaderProps) {
                 whiteSpace: "nowrap",
                 display: { xs: "none", sm: "inline" },
               }}
-              title={`Server build: ${serverVersion}`}
+              title={t("header.serverBuildVersion", { version: serverVersion })}
             >
               {serverVersion}
             </Typography>
           )}
+
+          {/* Language picker - persists to the signed-in admin's account */}
+          <LanguagePicker persist />
 
           {/* API docs */}
           <Button
@@ -304,7 +308,7 @@ export default function AppHeader(props: AppHeaderProps) {
           <IconButton
             onClick={openAcct}
             size="small"
-            aria-label="Account menu"
+            aria-label={t("header.accountMenu")}
             aria-controls={acctOpen ? "account-menu" : undefined}
             aria-haspopup="true"
             aria-expanded={acctOpen ? "true" : undefined}

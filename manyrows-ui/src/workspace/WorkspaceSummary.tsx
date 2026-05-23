@@ -360,7 +360,7 @@ export default function WorkspaceSummary(props: Props) {
                       {p.name}
                     </Typography>
                     <Typography sx={{ fontSize: 12, color: "text.disabled" }}>
-                      {apps.length} app{apps.length === 1 ? "" : "s"}
+                      {t("workspace.summary.appCount", { count: apps.length, defaultValue: "{{count}} apps" })}
                     </Typography>
                   </Box>
                   {apps.length > 0 && (
@@ -406,7 +406,7 @@ export default function WorkspaceSummary(props: Props) {
                               flexShrink: 0,
                             }}
                           >
-                            App
+                            {t("workspace.summary.app", { defaultValue: "App" })}
                           </Typography>
                           <Typography sx={{ fontSize: 13, minWidth: 0 }} noWrap>
                             {appDisplayName(a)}

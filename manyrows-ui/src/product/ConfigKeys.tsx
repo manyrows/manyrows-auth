@@ -171,65 +171,65 @@ function formatJsonForTextarea(value: unknown): string {
   }
 }
 
-function parseAndValidate(rawText: string, t: ConfigValueType): { ok: boolean; value?: any; error?: string } {
-  if (t === "string") {
+function parseAndValidate(rawText: string, vt: ConfigValueType, t: TFunc): { ok: boolean; value?: any; error?: string } {
+  if (vt === "string") {
     return { ok: true, value: rawText };
   }
 
-  if (t === "bool") {
-    return { ok: false, error: "bool should not be parsed from text" };
+  if (vt === "bool") {
+    return { ok: false, error: t("configKeys.validation.boolNotText") };
   }
 
-  if (t === "int") {
+  if (vt === "int") {
     const s = (rawText ?? "").trim();
-    if (s === "") return { ok: false, error: "Enter an integer" };
+    if (s === "") return { ok: false, error: t("configKeys.validation.enterInteger") };
     const n = Number(s);
-    if (!Number.isFinite(n)) return { ok: false, error: "Invalid number" };
-    if (!Number.isInteger(n)) return { ok: false, error: "Must be an integer" };
+    if (!Number.isFinite(n)) return { ok: false, error: t("configKeys.validation.invalidNumber") };
+    if (!Number.isInteger(n)) return { ok: false, error: t("configKeys.validation.mustBeInteger") };
     return { ok: true, value: n };
   }
 
-  if (t === "decimal") {
+  if (vt === "decimal") {
     const s = (rawText ?? "").trim();
-    if (s === "") return { ok: false, error: "Enter a number" };
+    if (s === "") return { ok: false, error: t("configKeys.validation.enterNumber") };
     const n = Number(s);
-    if (!Number.isFinite(n)) return { ok: false, error: "Invalid number" };
+    if (!Number.isFinite(n)) return { ok: false, error: t("configKeys.validation.invalidNumber") };
     return { ok: true, value: n };
   }
 
   const txt = (rawText ?? "").trim();
-  if (!txt) return { ok: false, error: "Enter JSON" };
+  if (!txt) return { ok: false, error: t("configKeys.validation.enterJson") };
 
   let parsed: any;
   try {
     parsed = JSON.parse(txt);
   } catch {
-    return { ok: false, error: "Invalid JSON" };
+    return { ok: false, error: t("configKeys.validation.invalidJson") };
   }
-  if (parsed === null) return { ok: false, error: "null is not allowed" };
+  if (parsed === null) return { ok: false, error: t("configKeys.validation.nullNotAllowed") };
 
-  switch (t) {
+  switch (vt) {
     case "string[]":
-      if (!Array.isArray(parsed)) return { ok: false, error: "Must be a JSON array" };
-      if (!parsed.every((x) => typeof x === "string")) return { ok: false, error: "All items must be strings" };
+      if (!Array.isArray(parsed)) return { ok: false, error: t("configKeys.validation.mustBeArray") };
+      if (!parsed.every((x) => typeof x === "string")) return { ok: false, error: t("configKeys.validation.allStrings") };
       return { ok: true, value: parsed };
 
     case "bool[]":
-      if (!Array.isArray(parsed)) return { ok: false, error: "Must be a JSON array" };
-      if (!parsed.every((x) => typeof x === "boolean")) return { ok: false, error: "All items must be booleans" };
+      if (!Array.isArray(parsed)) return { ok: false, error: t("configKeys.validation.mustBeArray") };
+      if (!parsed.every((x) => typeof x === "boolean")) return { ok: false, error: t("configKeys.validation.allBooleans") };
       return { ok: true, value: parsed };
 
     case "int[]":
-      if (!Array.isArray(parsed)) return { ok: false, error: "Must be a JSON array" };
+      if (!Array.isArray(parsed)) return { ok: false, error: t("configKeys.validation.mustBeArray") };
       if (!parsed.every((x) => typeof x === "number" && Number.isFinite(x) && Number.isInteger(x))) {
-        return { ok: false, error: "All items must be integers" };
+        return { ok: false, error: t("configKeys.validation.allIntegers") };
       }
       return { ok: true, value: parsed };
 
     case "decimal[]":
-      if (!Array.isArray(parsed)) return { ok: false, error: "Must be a JSON array" };
+      if (!Array.isArray(parsed)) return { ok: false, error: t("configKeys.validation.mustBeArray") };
       if (!parsed.every((x) => typeof x === "number" && Number.isFinite(x))) {
-        return { ok: false, error: "All items must be numbers" };
+        return { ok: false, error: t("configKeys.validation.allNumbers") };
       }
       return { ok: true, value: parsed };
 
@@ -237,7 +237,7 @@ function parseAndValidate(rawText: string, t: ConfigValueType): { ok: boolean; v
       return { ok: true, value: parsed };
 
     default:
-      return { ok: false, error: "Unsupported type" };
+      return { ok: false, error: t("configKeys.validation.unsupportedType") };
   }
 }
 
@@ -928,13 +928,13 @@ export default function ConfigKeys({ project, appId: fixedAppId }: Props) {
     }
 
     if (isJsonTextType(vt)) {
-      const res = parseAndValidate(d.jsonText ?? "", vt);
-      if (!res.ok) return { ok: false, error: res.error || "Invalid value" };
+      const res = parseAndValidate(d.jsonText ?? "", vt, t);
+      if (!res.ok) return { ok: false, error: res.error || t("configKeys.validation.invalidValue") };
       return { ok: true, value: res.value };
     }
 
-    const res = parseAndValidate(d.scalarText ?? "", vt);
-    if (!res.ok) return { ok: false, error: res.error || "Invalid value" };
+    const res = parseAndValidate(d.scalarText ?? "", vt, t);
+    if (!res.ok) return { ok: false, error: res.error || t("configKeys.validation.invalidValue") };
     return { ok: true, value: res.value };
   }
 
@@ -966,8 +966,8 @@ export default function ConfigKeys({ project, appId: fixedAppId }: Props) {
       const exposure = (k.exposure as ConfigExposure) || "private";
       const validated = validateDraftForKey(k, d);
       if (!validated.ok) {
-        setDraftForSelectedApp(k.id, { error: validated.error || "Invalid value" });
-        throw new Error(validated.error || "Invalid value");
+        setDraftForSelectedApp(k.id, { error: validated.error || t("configKeys.validation.invalidValue") });
+        throw new Error(validated.error || t("configKeys.validation.invalidValue"));
       }
 
       if (exposure === "secret") {
@@ -1040,8 +1040,8 @@ export default function ConfigKeys({ project, appId: fixedAppId }: Props) {
         const exposure = (k.exposure as ConfigExposure) || "private";
         const validated = validateDraftForKey(k, d);
         if (!validated.ok) {
-          setDraftForSelectedApp(k.id, { error: validated.error || "Invalid value" });
-          throw new Error(`${k.key}: ${validated.error || "Invalid value"}`);
+          setDraftForSelectedApp(k.id, { error: validated.error || t("configKeys.validation.invalidValue") });
+          throw new Error(`${k.key}: ${validated.error || t("configKeys.validation.invalidValue")}`);
         }
 
         if (exposure === "secret") {
@@ -1220,7 +1220,7 @@ export default function ConfigKeys({ project, appId: fixedAppId }: Props) {
           onChange={(ev) => setDraftForSelectedApp(k.id, { scalarText: ev.target.value, error: null })}
           type={inputType}
           inputProps={{ step, style: { fontFamily: vt === "string" ? undefined : "monospace" } }}
-          placeholder={vt === "string" ? "Enter value..." : vt === "int" ? "123" : "12.34"}
+          placeholder={vt === "string" ? t("configKeys.enterValuePlaceholder") : vt === "int" ? "123" : "12.34"}
           error={!!d.error}
           helperText={d.error || helper || undefined}
           sx={{ flex: 1, minWidth: 200 }}
@@ -1256,7 +1256,7 @@ export default function ConfigKeys({ project, appId: fixedAppId }: Props) {
       <PageHeader title={t("configKeys.title")} mb={2} />
 
       <Box sx={{ borderBottom: 1, borderColor: "divider", mb: 2.5 }}>
-        <Tabs value={tabIndex} onChange={(_, v) => setTabIndex(v)} aria-label="config keys tabs">
+        <Tabs value={tabIndex} onChange={(_, v) => setTabIndex(v)} aria-label={t("configKeys.tabsAriaLabel")}>
           <Tab label={t("configKeys.tabs.config")} id="configkeys-tab-0" />
           <Tab label={t("configKeys.tabs.encryption")} id="configkeys-tab-1" />
         </Tabs>
@@ -1495,9 +1495,9 @@ export default function ConfigKeys({ project, appId: fixedAppId }: Props) {
                         ? (() => {
                             try {
                               const validated = validateDraftForKey(k, d);
-                              return validated.ok ? null : validated.error || "Invalid value";
+                              return validated.ok ? null : validated.error || t("configKeys.validation.invalidValue");
                             } catch {
-                              return "Invalid value";
+                              return t("configKeys.validation.invalidValue");
                             }
                           })()
                         : null;

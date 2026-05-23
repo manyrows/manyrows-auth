@@ -71,7 +71,7 @@ export default function Home() {
             }}
           >
             <Box component="span" sx={{ width: 4, height: 4, borderRadius: "50%", bgcolor: "primary.main" }} />
-            {workspaces.length > 0 ? "Workspaces" : "Get started"}
+            {workspaces.length > 0 ? t("home.workspaces") : t("wizard.getStarted.title")}
           </Typography>
           <Typography
             sx={{

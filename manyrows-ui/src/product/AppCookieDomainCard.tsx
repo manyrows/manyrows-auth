@@ -8,6 +8,7 @@ import {
   TextField,
   Typography,
 } from "@mui/material";
+import { useTranslation, Trans } from "react-i18next";
 import type { App } from "./AppAuthMethods.tsx";
 import SaveBar from "../components/SaveBar.tsx";
 
@@ -32,6 +33,7 @@ export default function AppCookieDomainCard({
   onSuccess,
   onError,
 }: Props) {
+  const { t } = useTranslation();
   const [value, setValue] = React.useState<string>(app.cookieDomain ?? "");
   const [saving, setSaving] = React.useState(false);
 
@@ -100,30 +102,28 @@ export default function AppCookieDomainCard({
             mb: 0.75,
           }}
         >
-          Sessions
+          {t("cookieDomain.overline", { defaultValue: "Sessions" })}
         </Typography>
         <Typography sx={{ fontSize: 15, fontWeight: 600, letterSpacing: "-0.005em" }}>
-          Cookie domain
+          {t("cookieDomain.title", { defaultValue: "Cookie domain" })}
         </Typography>
         <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5, maxWidth: 620 }}>
-          Per-app override for the session-cookie <code>Domain</code>{" "}
-          attribute. When set, this takes precedence over the workspace
-          value - useful if you have apps on different parent domains in
-          the same install.
+          <Trans i18nKey="cookieDomain.description" components={{ code: <code /> }}>
+            Per-app override for the session-cookie <code>Domain</code> attribute. When set, this takes precedence over the workspace value - useful if you have apps on different parent domains in the same install.
+          </Trans>
         </Typography>
       </Box>
 
         <Alert severity="info" sx={{ fontSize: 13 }}>
-          <strong>Workspace value:</strong>{" "}
+          <strong>{t("cookieDomain.workspaceValueLabel", { defaultValue: "Workspace value:" })}</strong>{" "}
           {wsValue ? (
             <Box component="code" sx={{ fontFamily: "var(--font-mono)", bgcolor: "action.hover", px: 0.5, py: 0.1, borderRadius: 0.5 }}>
               {wsValue}
             </Box>
           ) : (
-            <em>not set (browser scopes cookies to the exact host)</em>
+            <em>{t("cookieDomain.workspaceValueNotSet", { defaultValue: "not set (browser scopes cookies to the exact host)" })}</em>
           )}
-          . Anything you enter below overrides this for this app only.
-          Leave blank to inherit the workspace value.
+          {t("cookieDomain.workspaceValueSuffix", { defaultValue: ". Anything you enter below overrides this for this app only. Leave blank to inherit the workspace value." })}
         </Alert>
 
         {showSuggestion && (
@@ -132,23 +132,25 @@ export default function AppCookieDomainCard({
             sx={{ fontSize: 13 }}
             action={
               <Button color="inherit" size="small" onClick={() => setValue(suggestedDomain)}>
-                Use {suggestedDomain}
+                {t("cookieDomain.useSuggestion", { domain: suggestedDomain, defaultValue: "Use {{domain}}" })}
               </Button>
             }
           >
-            <strong>Auth domain is set to{" "}
-            <Box component="code" sx={{ fontFamily: "var(--font-mono)", bgcolor: "action.hover", px: 0.5, py: 0.1, borderRadius: 0.5 }}>{app.authDomain}</Box>.</strong>{" "}
-            Without a Cookie domain, session cookies are scoped host-only to that subdomain - your API endpoints on{" "}
-            <Box component="code" sx={{ fontFamily: "var(--font-mono)", bgcolor: "action.hover", px: 0.5, py: 0.1, borderRadius: 0.5 }}>{suggestedDomain}</Box>{" "}
-            won't see them. Set Cookie domain to{" "}
-            <Box component="code" sx={{ fontFamily: "var(--font-mono)", bgcolor: "action.hover", px: 0.5, py: 0.1, borderRadius: 0.5 }}>{suggestedDomain}</Box>{" "}
-            so the cookies ride to both. Note: any sibling subdomain (e.g.{" "}
-            <Box component="code" sx={{ fontFamily: "var(--font-mono)", bgcolor: "action.hover", px: 0.5, py: 0.1, borderRadius: 0.5 }}>staging.{suggestedDomain}</Box>) will also receive the cookie.
+            <Trans
+              i18nKey="cookieDomain.suggestionBody"
+              values={{ authDomain: app.authDomain, suggested: suggestedDomain, sibling: `staging.${suggestedDomain}` }}
+              components={{
+                strong: <strong />,
+                code: <Box component="code" sx={{ fontFamily: "var(--font-mono)", bgcolor: "action.hover", px: 0.5, py: 0.1, borderRadius: 0.5 }} />,
+              }}
+            >
+              {"<strong>Auth domain is set to <code>{{authDomain}}</code>.</strong> Without a Cookie domain, session cookies are scoped host-only to that subdomain - your API endpoints on <code>{{suggested}}</code> won't see them. Set Cookie domain to <code>{{suggested}}</code> so the cookies ride to both. Note: any sibling subdomain (e.g. <code>{{sibling}}</code>) will also receive the cookie."}
+            </Trans>
           </Alert>
         )}
 
         <TextField
-          label="Cookie domain (override)"
+          label={t("cookieDomain.fieldLabel", { defaultValue: "Cookie domain (override)" })}
           placeholder=".thisapp.com"
           value={value}
           onChange={(e) => setValue(e.target.value)}
@@ -157,8 +159,8 @@ export default function AppCookieDomainCard({
           error={looksWrong}
           helperText={
             looksWrong
-              ? "Must be a hostname (no spaces or slashes) and typically contain a dot."
-              : "Empty = inherit from workspace."
+              ? t("cookieDomain.fieldInvalid", { defaultValue: "Must be a hostname (no spaces or slashes) and typically contain a dot." })
+              : t("cookieDomain.fieldHelp", { defaultValue: "Empty = inherit from workspace." })
           }
 
           disabled={saving}
