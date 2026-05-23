@@ -31,6 +31,9 @@ func (handler *RequestHandler) HandleUpdateAppGoogleConfig(w http.ResponseWriter
 	if !ok {
 		return
 	}
+	if !handler.requireOwner(w, r) {
+		return
+	}
 	productID, appID, ok := handler.resolvePathIDs(w, r)
 	if !ok {
 		return

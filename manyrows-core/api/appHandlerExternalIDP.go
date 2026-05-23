@@ -226,6 +226,9 @@ func (handler *RequestHandler) HandleCreateExternalIDP(w http.ResponseWriter, r 
 	if !ok {
 		return
 	}
+	if !handler.requireOwner(w, r) {
+		return
+	}
 	var req externalIDPRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		WriteError(w, r, "error.invalidJson", http.StatusBadRequest)
@@ -276,6 +279,9 @@ func (handler *RequestHandler) HandleCreateExternalIDP(w http.ResponseWriter, r 
 func (handler *RequestHandler) HandleUpdateExternalIDP(w http.ResponseWriter, r *http.Request) {
 	_, appID, ok := handler.adminAppForExternalIDP(w, r)
 	if !ok {
+		return
+	}
+	if !handler.requireOwner(w, r) {
 		return
 	}
 	idpID, err := utils.GetPathUUID("idpId", r)
@@ -344,6 +350,9 @@ func (handler *RequestHandler) HandleUpdateExternalIDP(w http.ResponseWriter, r 
 func (handler *RequestHandler) HandleDeleteExternalIDP(w http.ResponseWriter, r *http.Request) {
 	_, appID, ok := handler.adminAppForExternalIDP(w, r)
 	if !ok {
+		return
+	}
+	if !handler.requireOwner(w, r) {
 		return
 	}
 	idpID, err := utils.GetPathUUID("idpId", r)

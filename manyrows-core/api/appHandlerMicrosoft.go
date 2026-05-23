@@ -34,6 +34,9 @@ func (handler *RequestHandler) HandleUpdateAppMicrosoftConfig(w http.ResponseWri
 	if !ok {
 		return
 	}
+	if !handler.requireOwner(w, r) {
+		return
+	}
 	productID, appID, ok := handler.resolvePathIDs(w, r)
 	if !ok {
 		return
