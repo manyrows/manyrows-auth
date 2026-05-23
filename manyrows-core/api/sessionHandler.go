@@ -265,15 +265,9 @@ func (handler *RequestHandler) HandleDeleteWorkspaceSessionsByAccount(w http.Res
 		return
 	}
 
-	// Verify the user exists (users are global, not workspace-scoped)
-	_, err = handler.repo.GetUserByID(r.Context(), userID)
-	if err != nil {
-		if errors.Is(err, repo.ErrNotFound) {
-			WriteError(w, r, "error.accountNotFound", http.StatusNotFound)
-			return
-		}
-		log.Err(err).Msg("Could not load user for bulk session delete")
-		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
+	// Scope the target user to this workspace. Users carry no workspace_id, so
+	// without this an admin could revoke any user's sessions across tenants.
+	if _, ok := handler.requireUserInWorkspace(w, r, ws.ID, userID); !ok {
 		return
 	}
 

@@ -515,6 +515,26 @@ func (handler *RequestHandler) HandleBulkImportWorkspaceAccounts(w http.Response
 	utils.WriteJsonWithStatusCode(w, summary, http.StatusCreated)
 }
 
+// requireUserInWorkspace loads an end-user by ID and confirms they belong to a
+// user pool owned by wsID. Users carry no workspace_id of their own (tenant is
+// transitive via user_pool_id -> user_pools.workspace_id), so the flat
+// /accounts/{accountId} routes MUST gate on this — otherwise an admin of one
+// workspace could read/mutate any user on the install by id. A foreign-tenant
+// or unknown id yields 404.
+func (handler *RequestHandler) requireUserInWorkspace(w http.ResponseWriter, r *http.Request, wsID, userID uuid.UUID) (*core.User, bool) {
+	user, err := handler.repo.GetUserByID(r.Context(), userID)
+	if err != nil || user == nil {
+		WriteError(w, r, "error.notFound", http.StatusNotFound)
+		return nil, false
+	}
+	pool, err := handler.repo.GetUserPoolByID(r.Context(), user.UserPoolID)
+	if err != nil || pool == nil || pool.WorkspaceID != wsID {
+		WriteError(w, r, "error.notFound", http.StatusNotFound)
+		return nil, false
+	}
+	return user, true
+}
+
 // HandleDeleteWorkspaceAccount deletes a user by ID.
 // DELETE /admin/workspace/{workspaceId}/accounts/{accountId}
 func (handler *RequestHandler) HandleDeleteWorkspaceAccount(w http.ResponseWriter, r *http.Request) {
@@ -532,11 +552,13 @@ func (handler *RequestHandler) HandleDeleteWorkspaceAccount(w http.ResponseWrite
 		return
 	}
 
-	// Capture email before delete so the auth-log row carries it.
-	var subjectEmail string
-	if u, _ := handler.repo.GetUserByID(ctx, accountID); u != nil {
-		subjectEmail = u.Email
+	// Scope the target to this workspace (users carry no workspace_id), then
+	// capture email before delete so the auth-log row carries it.
+	user, ok := handler.requireUserInWorkspace(w, r, ws.ID, accountID)
+	if !ok {
+		return
 	}
+	subjectEmail := user.Email
 
 	// Delete the user (cascades to profiles and sessions)
 	if err := handler.repo.DeleteUser(ctx, accountID); err != nil {
@@ -570,8 +592,8 @@ func (handler *RequestHandler) HandleDeleteWorkspaceAccount(w http.ResponseWrite
 // GET /admin/workspace/{workspaceId}/accounts/{accountId}
 func (handler *RequestHandler) HandleGetWorkspaceAccount(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	_, ok := core.WorkspaceFromContext(ctx)
-	if !ok {
+	ws, ok := core.WorkspaceFromContext(ctx)
+	if !ok || ws == nil {
 		WriteError(w, r, "error.unauthorized", http.StatusUnauthorized)
 		return
 	}
@@ -583,14 +605,8 @@ func (handler *RequestHandler) HandleGetWorkspaceAccount(w http.ResponseWriter, 
 		return
 	}
 
-	user, err := handler.repo.GetUserByID(ctx, accountID)
-	if err != nil {
-		if errors.Is(err, repo.ErrNotFound) {
-			WriteError(w, r, "error.notFound", http.StatusNotFound)
-			return
-		}
-		log.Error().Err(err).Msg("failed to get user")
-		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
+	user, ok := handler.requireUserInWorkspace(w, r, ws.ID, accountID)
+	if !ok {
 		return
 	}
 
@@ -626,15 +642,9 @@ func (handler *RequestHandler) HandleUpdateWorkspaceAccount(w http.ResponseWrite
 		return
 	}
 
-	// Get existing user
-	user, err := handler.repo.GetUserByID(ctx, accountID)
-	if err != nil {
-		if errors.Is(err, repo.ErrNotFound) {
-			WriteError(w, r, "error.notFound", http.StatusNotFound)
-			return
-		}
-		log.Error().Err(err).Msg("failed to get user")
-		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
+	// Scope the target to this workspace.
+	user, ok := handler.requireUserInWorkspace(w, r, ws.ID, accountID)
+	if !ok {
 		return
 	}
 
@@ -678,14 +688,8 @@ func (handler *RequestHandler) HandleSetWorkspaceAccountStatus(w http.ResponseWr
 		return
 	}
 
-	user, err := handler.repo.GetUserByID(ctx, accountID)
-	if err != nil {
-		if errors.Is(err, repo.ErrNotFound) {
-			WriteError(w, r, "error.notFound", http.StatusNotFound)
-			return
-		}
-		log.Error().Err(err).Msg("failed to get user")
-		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
+	user, ok := handler.requireUserInWorkspace(w, r, ws.ID, accountID)
+	if !ok {
 		return
 	}
 
@@ -760,6 +764,10 @@ func (handler *RequestHandler) HandleClearUserPassword(w http.ResponseWriter, r 
 	accountID, err := uuid.FromString(accountIDStr)
 	if err != nil {
 		WriteError(w, r, "error.invalidAccountId", http.StatusBadRequest)
+		return
+	}
+
+	if _, ok := handler.requireUserInWorkspace(w, r, ws.ID, accountID); !ok {
 		return
 	}
 
