@@ -151,10 +151,9 @@ func (handler *RequestHandler) HandleDeleteApiKey(w http.ResponseWriter, r *http
 		return
 	}
 
-	_, err = handler.repo.GetAPIKey(r.Context(), ws.ID, keyID)
-	if err != nil {
-		log.Err(err).Msg("failed to get API key before deletion")
-		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
+	if _, err = handler.repo.GetAPIKey(r.Context(), ws.ID, keyID); err != nil {
+		// Match HandleGetApiKey: a missing key (or one in another workspace) is 404.
+		WriteError(w, r, "error.notFound", http.StatusNotFound)
 		return
 	}
 

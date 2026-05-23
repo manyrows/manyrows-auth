@@ -87,8 +87,8 @@ func TestCreateProduct_HardCap(t *testing.T) {
 	rr := httptest.NewRecorder()
 	router.ServeHTTP(rr, req)
 
-	if rr.Code != http.StatusForbidden {
-		t.Fatalf("expected 403 limitReached, got %d: %s", rr.Code, rr.Body.String())
+	if rr.Code != http.StatusConflict {
+		t.Fatalf("expected 409 limitReached, got %d: %s", rr.Code, rr.Body.String())
 	}
 }
 
@@ -139,8 +139,8 @@ func TestCreateApp_HardCap(t *testing.T) {
 	rr := httptest.NewRecorder()
 	router.ServeHTTP(rr, req)
 
-	if rr.Code != http.StatusForbidden {
-		t.Fatalf("expected 403 limitReached, got %d: %s", rr.Code, rr.Body.String())
+	if rr.Code != http.StatusConflict {
+		t.Fatalf("expected 409 limitReached, got %d: %s", rr.Code, rr.Body.String())
 	}
 }
 
@@ -167,8 +167,8 @@ func TestCreateApp_HardCap_SumsAcrossProducts(t *testing.T) {
 	rr := httptest.NewRecorder()
 	router.ServeHTTP(rr, req)
 
-	if rr.Code != http.StatusForbidden {
-		t.Errorf("expected 403 across-products, got %d: %s", rr.Code, rr.Body.String())
+	if rr.Code != http.StatusConflict {
+		t.Errorf("expected 409 across-products, got %d: %s", rr.Code, rr.Body.String())
 	}
 }
 

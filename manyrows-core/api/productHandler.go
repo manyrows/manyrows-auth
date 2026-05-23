@@ -131,7 +131,7 @@ func (handler *RequestHandler) CreateProduct(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	if count >= maxProductsPerWorkspace {
-		WriteErrorf(w, r, "error.limitReached", http.StatusForbidden, "Products", maxProductsPerWorkspace)
+		WriteErrorf(w, r, "error.limitReached", http.StatusConflict, "Products", maxProductsPerWorkspace)
 		return
 	}
 

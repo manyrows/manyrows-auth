@@ -128,7 +128,7 @@ func (handler *RequestHandler) HandleCreateUserField(w http.ResponseWriter, r *h
 		return
 	}
 	if count >= maxUserFieldsPerPool {
-		WriteErrorf(w, r, "error.limitReached", http.StatusForbidden, "User Fields", maxUserFieldsPerPool)
+		WriteErrorf(w, r, "error.limitReached", http.StatusConflict, "User Fields", maxUserFieldsPerPool)
 		return
 	}
 

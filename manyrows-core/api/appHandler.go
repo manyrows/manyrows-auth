@@ -201,7 +201,7 @@ func (handler *RequestHandler) HandleCreateApp(w http.ResponseWriter, r *http.Re
 		return
 	}
 	if count >= maxAppsPerWorkspace {
-		WriteErrorf(w, r, "error.limitReached", http.StatusForbidden, "Apps", maxAppsPerWorkspace)
+		WriteErrorf(w, r, "error.limitReached", http.StatusConflict, "Apps", maxAppsPerWorkspace)
 		return
 	}
 
