@@ -37,6 +37,8 @@ type adminAppResponse struct {
 	HasGithubClientSecret     bool   `json:"hasGithubClientSecret"`
 	KakaoOAuthRedirectURI     string `json:"kakaoOAuthRedirectUri,omitempty"`
 	HasKakaoClientSecret      bool   `json:"hasKakaoClientSecret"`
+	NaverOAuthRedirectURI     string `json:"naverOAuthRedirectUri,omitempty"`
+	HasNaverClientSecret      bool   `json:"hasNaverClientSecret"`
 	// QRSignInURL is the customer-facing /qr-sign-in entry-point.
 	// Server-computed (AppBaseURL + workspace.Slug + app.ID) so the
 	// admin UI doesn't have to build it client-side. Empty when the
@@ -71,6 +73,7 @@ func (handler *RequestHandler) toAdminAppResponse(a core.App, ws *core.Workspace
 		HasMicrosoftClientSecret: len(a.MicrosoftClientSecretEncrypted) > 0,
 		HasGithubClientSecret:    len(a.GithubClientSecretEncrypted) > 0,
 		HasKakaoClientSecret:     len(a.KakaoClientSecretEncrypted) > 0,
+		HasNaverClientSecret:     len(a.NaverClientSecretEncrypted) > 0,
 	}
 	baseURL := handler.AppBaseURL(&a)
 	if baseURL != "" && ws != nil {
@@ -79,6 +82,7 @@ func (handler *RequestHandler) toAdminAppResponse(a core.App, ws *core.Workspace
 		resp.MicrosoftOAuthRedirectURI = baseURL + "/x/" + ws.Slug + "/apps/" + a.ID.String() + "/auth/microsoft/callback"
 		resp.GithubOAuthRedirectURI = baseURL + "/x/" + ws.Slug + "/apps/" + a.ID.String() + "/auth/github/callback"
 		resp.KakaoOAuthRedirectURI = baseURL + "/x/" + ws.Slug + "/apps/" + a.ID.String() + "/auth/kakao/callback"
+		resp.NaverOAuthRedirectURI = baseURL + "/x/" + ws.Slug + "/apps/" + a.ID.String() + "/auth/naver/callback"
 		resp.QRSignInURL = baseURL + "/x/" + ws.Slug + "/apps/" + a.ID.String() + "/qr-sign-in"
 	}
 	return resp
@@ -391,6 +395,7 @@ type AppResource struct {
 	MicrosoftEnabled          bool      `json:"microsoftEnabled,omitempty"`
 	GithubEnabled             bool      `json:"githubEnabled,omitempty"`
 	KakaoEnabled              bool      `json:"kakaoEnabled,omitempty"`
+	NaverEnabled              bool      `json:"naverEnabled,omitempty"`
 	Require2FA                bool      `json:"require2fa"`
 	HideBranding              bool      `json:"hideBranding,omitempty"`
 	PasskeyEnabled            bool      `json:"passkeyEnabled,omitempty"`
@@ -453,6 +458,11 @@ func (handler *RequestHandler) HandleGetAppForAppKit(w http.ResponseWriter, r *h
 		a.KakaoClientID != nil && *a.KakaoClientID != "" &&
 		len(a.KakaoClientSecretEncrypted) > 0
 
+	// Naver is "enabled" when the toggle is on and both creds set.
+	naverEnabled := a.AuthMethodNaver &&
+		a.NaverClientID != nil && *a.NaverClientID != "" &&
+		len(a.NaverClientSecretEncrypted) > 0
+
 	// Self-hosted: branding-removal toggle no longer gated by a plan tier.
 	// All apps treated as if branding is removable; fold this into a UI
 	// preference if the operator wants to keep the badge.
@@ -499,6 +509,7 @@ func (handler *RequestHandler) HandleGetAppForAppKit(w http.ResponseWriter, r *h
 		MicrosoftEnabled:          microsoftEnabled,
 		GithubEnabled:             githubEnabled,
 		KakaoEnabled:              kakaoEnabled,
+		NaverEnabled:              naverEnabled,
 		Require2FA:                a.Require2FA,
 		HideBranding:              hideBranding,
 		PasskeyEnabled:            passkeyEnabled,
@@ -738,8 +749,8 @@ func (handler *RequestHandler) resolvePathIDs(w http.ResponseWriter, r *http.Req
 // requireAtLeastOneSignInMethod rejects sign-in configurations that
 // would leave the app with no working sign-in path. Called from any
 // handler that may flip a method off — primary email mode, Google,
-// Apple, Microsoft, GitHub, Kakao — with the prospective post-save state
-// of all six.
+// Apple, Microsoft, GitHub, Kakao, Naver — with the prospective post-save
+// state of all seven.
 //
 // Rules:
 //   - "password" mode: always OK (email + password, with OTP fallback
@@ -748,12 +759,12 @@ func (handler *RequestHandler) resolvePathIDs(w http.ResponseWriter, r *http.Req
 //   - "code" mode: always OK (passwordless OTP — same email path).
 //   - "none" mode: requires at least one OAuth provider, since there
 //     is no email path at all.
-func (handler *RequestHandler) requireAtLeastOneSignInMethod(ctx context.Context, ws *core.Workspace, isSuper bool, primaryAuthMethod string, google, apple, microsoft, github, kakao bool) bool {
+func (handler *RequestHandler) requireAtLeastOneSignInMethod(ctx context.Context, ws *core.Workspace, isSuper bool, primaryAuthMethod string, google, apple, microsoft, github, kakao, naver bool) bool {
 	switch primaryAuthMethod {
 	case core.PrimaryAuthMethodPassword, core.PrimaryAuthMethodCode, core.PrimaryAuthMethodMagicLink:
 		return true
 	case core.PrimaryAuthMethodNone:
-		return google || apple || microsoft || github || kakao
+		return google || apple || microsoft || github || kakao || naver
 	}
 	return false
 }
@@ -906,7 +917,7 @@ func (handler *RequestHandler) HandleUpdateAppAuthMethodConfig(w http.ResponseWr
 		return
 	}
 
-	if !handler.requireAtLeastOneSignInMethod(r.Context(), ws, acc.IsSuper(), method, curApp.AuthMethodGoogle, curApp.AuthMethodApple, curApp.AuthMethodMicrosoft, curApp.AuthMethodGithub, curApp.AuthMethodKakao) {
+	if !handler.requireAtLeastOneSignInMethod(r.Context(), ws, acc.IsSuper(), method, curApp.AuthMethodGoogle, curApp.AuthMethodApple, curApp.AuthMethodMicrosoft, curApp.AuthMethodGithub, curApp.AuthMethodKakao, curApp.AuthMethodNaver) {
 		WriteError(w, r, "error.noSignInMethodEnabled", http.StatusBadRequest)
 		return
 	}

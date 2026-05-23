@@ -101,7 +101,7 @@ func (handler *RequestHandler) HandleUpdateAppKakaoConfig(w http.ResponseWriter,
 		WriteError(w, r, "error.kakaoConfigIncomplete", http.StatusBadRequest)
 		return
 	}
-	if !handler.requireAtLeastOneSignInMethod(r.Context(), ws, acc.IsSuper(), curApp.PrimaryAuthMethod, curApp.AuthMethodGoogle, curApp.AuthMethodApple, curApp.AuthMethodMicrosoft, curApp.AuthMethodGithub, authMethodKakao) {
+	if !handler.requireAtLeastOneSignInMethod(r.Context(), ws, acc.IsSuper(), curApp.PrimaryAuthMethod, curApp.AuthMethodGoogle, curApp.AuthMethodApple, curApp.AuthMethodMicrosoft, curApp.AuthMethodGithub, authMethodKakao, curApp.AuthMethodNaver) {
 		WriteError(w, r, "error.noSignInMethodEnabled", http.StatusBadRequest)
 		return
 	}

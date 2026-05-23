@@ -164,6 +164,7 @@ const METHOD_VOCAB: { value: string; label: string }[] = [
   { value: "apple", label: "Apple" },
   { value: "github", label: "GitHub" },
   { value: "kakao", label: "Kakao" },
+  { value: "naver", label: "Naver" },
   { value: "passkey", label: "Passkey" },
   { value: "totp", label: "TOTP" },
   { value: "email_otp", label: "Email OTP" },
@@ -265,6 +266,7 @@ function methodPalette(method: string | undefined): { bg: string; fg: string } |
     case "apple":     return { bg: "#E5E7EB", fg: "#1F2937" }; // slate
     case "github":    return { bg: "#1F2937", fg: "#F9FAFB" }; // dark
     case "kakao":     return { bg: "#FEE500", fg: "#3C1E1E" }; // kakao yellow / brown
+    case "naver":     return { bg: "#03C75A", fg: "#FFFFFF" }; // naver green
     case "passkey":   return { bg: "#EDE9FE", fg: "#5B21B6" }; // violet
     case "totp":      return { bg: "#CCFBF1", fg: "#115E59" }; // teal
     case "email_otp":  return { bg: "#E0E7FF", fg: "#3730A3" }; // indigo
@@ -320,7 +322,7 @@ function presetParams(p: Preset["id"]): Record<string, string | string[]> | null
     case "admin":
       return { actorType: "admin" };
     case "oauth":
-      return { method: ["google", "microsoft", "apple", "github", "kakao"] };
+      return { method: ["google", "microsoft", "apple", "github", "kakao", "naver"] };
     case "failed":
       return { outcome: "failed" };
     default:

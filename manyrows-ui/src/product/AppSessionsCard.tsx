@@ -472,6 +472,7 @@ function CookieStrictnessCard({ app, cardURL, onSaved, onSuccess, onError }: {
   if (app.authMethodMicrosoft) blockers.push("Microsoft sign-in");
   if (app.authMethodGithub) blockers.push("GitHub sign-in");
   if (app.authMethodKakao) blockers.push("Kakao sign-in");
+  if (app.authMethodNaver) blockers.push("Naver sign-in");
   const strictDisabled = blockers.length > 0;
   const dirty = value !== persisted;
 

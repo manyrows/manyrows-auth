@@ -13,20 +13,20 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
-// GitHub sign-in: toggle + OAuth App credentials. GitHub doesn't have
-// a tenant concept — verification + scoping happen via the user's
-// own verified-email mechanism.
-type updateAppGithubConfigRequest struct {
-	AuthMethodGithub   *bool   `json:"authMethodGithub,omitempty"`
-	GithubClientID     *string `json:"githubClientId,omitempty"`
-	GithubClientSecret *string `json:"githubClientSecret,omitempty"`
+// Naver sign-in: toggle + OAuth credentials. Naver is OAuth2-only; both the
+// client ID and secret are mandatory (Naver always requires a client secret,
+// unlike Kakao's opt-in one).
+type updateAppNaverConfigRequest struct {
+	AuthMethodNaver   *bool   `json:"authMethodNaver,omitempty"`
+	NaverClientID     *string `json:"naverClientId,omitempty"`
+	NaverClientSecret *string `json:"naverClientSecret,omitempty"`
 }
 
-// HandleUpdateAppGithubConfig sets the GitHub sign-in toggle and OAuth
+// HandleUpdateAppNaverConfig sets the Naver sign-in toggle and OAuth
 // credentials together. Enabling requires both client ID and secret;
-// disabling when the primary email mode is "none" and no other OAuth
-// provider is on leaves the app unusable and is rejected.
-func (handler *RequestHandler) HandleUpdateAppGithubConfig(w http.ResponseWriter, r *http.Request) {
+// disabling when the primary email mode is "none" and no other OAuth provider
+// is on leaves the app unusable and is rejected.
+func (handler *RequestHandler) HandleUpdateAppNaverConfig(w http.ResponseWriter, r *http.Request) {
 	acc, ws, ok := handler.adminAndWorkspace(w, r)
 	if !ok {
 		return
@@ -39,7 +39,7 @@ func (handler *RequestHandler) HandleUpdateAppGithubConfig(w http.ResponseWriter
 		return
 	}
 
-	var req updateAppGithubConfigRequest
+	var req updateAppNaverConfigRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		log.Err(err).Msg("failed to decode json")
 		WriteError(w, r, "error.invalidJson", http.StatusBadRequest)
@@ -52,14 +52,14 @@ func (handler *RequestHandler) HandleUpdateAppGithubConfig(w http.ResponseWriter
 			WriteError(w, r, "error.appNotFound", http.StatusNotFound)
 			return
 		}
-		log.Err(curAppErr).Msg("failed to load app for github-config update")
+		log.Err(curAppErr).Msg("failed to load app for naver-config update")
 		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 		return
 	}
 
-	clientID := curApp.GithubClientID
-	if req.GithubClientID != nil {
-		trimmed := strings.TrimSpace(*req.GithubClientID)
+	clientID := curApp.NaverClientID
+	if req.NaverClientID != nil {
+		trimmed := strings.TrimSpace(*req.NaverClientID)
 		if trimmed == "" {
 			clientID = nil
 		} else {
@@ -69,19 +69,19 @@ func (handler *RequestHandler) HandleUpdateAppGithubConfig(w http.ResponseWriter
 
 	// nil = keep existing; []byte{} = clear; non-empty = encrypt+set.
 	var clientSecretEncrypted []byte
-	postSaveHasSecret := len(curApp.GithubClientSecretEncrypted) > 0
-	if req.GithubClientSecret != nil {
-		trimmed := strings.TrimSpace(*req.GithubClientSecret)
+	postSaveHasSecret := len(curApp.NaverClientSecretEncrypted) > 0
+	if req.NaverClientSecret != nil {
+		trimmed := strings.TrimSpace(*req.NaverClientSecret)
 		if trimmed == "" {
 			clientSecretEncrypted = []byte{}
 			postSaveHasSecret = false
 		} else {
 			encrypted, encErr := handler.encryptor.EncryptToBytesWithAAD(
 				[]byte(trimmed),
-				crypto.AAD("apps", "github_client_secret_encrypted", appID),
+				crypto.AAD("apps", "naver_client_secret_encrypted", appID),
 			)
 			if encErr != nil {
-				log.Err(encErr).Msg("failed to encrypt github client secret")
+				log.Err(encErr).Msg("failed to encrypt naver client secret")
 				WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 				return
 			}
@@ -90,26 +90,26 @@ func (handler *RequestHandler) HandleUpdateAppGithubConfig(w http.ResponseWriter
 		}
 	}
 
-	authMethodGithub := curApp.AuthMethodGithub
-	if req.AuthMethodGithub != nil {
-		authMethodGithub = *req.AuthMethodGithub
+	authMethodNaver := curApp.AuthMethodNaver
+	if req.AuthMethodNaver != nil {
+		authMethodNaver = *req.AuthMethodNaver
 	}
-	if authMethodGithub && (clientID == nil || *clientID == "" || !postSaveHasSecret) {
-		WriteError(w, r, "error.githubConfigIncomplete", http.StatusBadRequest)
+	if authMethodNaver && (clientID == nil || *clientID == "" || !postSaveHasSecret) {
+		WriteError(w, r, "error.naverConfigIncomplete", http.StatusBadRequest)
 		return
 	}
-	if !handler.requireAtLeastOneSignInMethod(r.Context(), ws, acc.IsSuper(), curApp.PrimaryAuthMethod, curApp.AuthMethodGoogle, curApp.AuthMethodApple, curApp.AuthMethodMicrosoft, authMethodGithub, curApp.AuthMethodKakao, curApp.AuthMethodNaver) {
+	if !handler.requireAtLeastOneSignInMethod(r.Context(), ws, acc.IsSuper(), curApp.PrimaryAuthMethod, curApp.AuthMethodGoogle, curApp.AuthMethodApple, curApp.AuthMethodMicrosoft, curApp.AuthMethodGithub, curApp.AuthMethodKakao, authMethodNaver) {
 		WriteError(w, r, "error.noSignInMethodEnabled", http.StatusBadRequest)
 		return
 	}
 
-	out, err := handler.repo.UpdateAppGithubConfig(r.Context(), ws.ID, productID, appID, repo.AppGithubConfigUpdate{
-		AuthMethodGithub:      authMethodGithub,
+	out, err := handler.repo.UpdateAppNaverConfig(r.Context(), ws.ID, productID, appID, repo.AppNaverConfigUpdate{
+		AuthMethodNaver:       authMethodNaver,
 		ClientID:              clientID,
 		ClientSecretEncrypted: clientSecretEncrypted,
 	})
 	if err != nil {
-		log.Err(err).Msg("failed to update github config")
+		log.Err(err).Msg("failed to update naver config")
 		if errors.Is(err, repo.ErrNotFound) {
 			WriteError(w, r, "error.appNotFound", http.StatusNotFound)
 			return

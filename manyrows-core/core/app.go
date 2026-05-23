@@ -187,6 +187,12 @@ type App struct {
 	KakaoClientID              *string `json:"kakaoClientId,omitempty"`
 	KakaoClientSecretEncrypted []byte  `json:"-"` // encrypted at rest, never serialized
 
+	// Naver (nid.naver.com) — OAuth2 only (no OIDC); identity is read from
+	// Naver's userinfo endpoint. NaverClientID is the app's OAuth client id.
+	AuthMethodNaver            bool    `json:"authMethodNaver"`
+	NaverClientID              *string `json:"naverClientId,omitempty"`
+	NaverClientSecretEncrypted []byte  `json:"-"` // encrypted at rest, never serialized
+
 	// 2FA
 	Require2FA bool `json:"require2fa"`
 

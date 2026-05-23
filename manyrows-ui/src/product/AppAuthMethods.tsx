@@ -80,6 +80,10 @@ export type App = {
   kakaoClientId?: string;
   kakaoOAuthRedirectUri?: string;
   hasKakaoClientSecret?: boolean;
+  authMethodNaver?: boolean;
+  naverClientId?: string;
+  naverOAuthRedirectUri?: string;
+  hasNaverClientSecret?: boolean;
   require2fa: boolean;
   passwordMinLength: number;
   passwordMinZxcvbnScore: number;
@@ -605,7 +609,7 @@ function PrimaryAuthMethodCard({ app, cardURL, onSaved, onSuccess, onError }: Ca
 // =====================================================================
 
 type OAuthProviderRow = {
-  key: "google" | "apple" | "microsoft" | "github" | "kakao";
+  key: "google" | "apple" | "microsoft" | "github" | "kakao" | "naver";
   label: string;
   enabled: boolean;
   render: () => React.ReactNode;
@@ -659,6 +663,15 @@ function ProviderIcon({ name }: { name: OAuthProviderRow["key"] }) {
           <path fill="#000000" d="M12 6c-3.5 0-6.3 2.2-6.3 4.96 0 1.78 1.2 3.34 3 4.2-.13.46-.85 2.95-.88 3.15 0 0-.02.16.09.21.1.06.23.02.23.02.3-.04 3.46-2.27 4-2.65.6.09 1.2.13 1.84.13 3.5 0 6.3-2.2 6.3-4.96C18.3 8.2 15.5 6 12 6z"/>
         </svg>
       );
+    case "naver":
+      // Naver's "N" mark, white on the brand green, as the app-icon rounded
+      // square so it reads on the admin's neutral background.
+      return (
+        <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true">
+          <rect width="24" height="24" rx="6" fill="#03C75A"/>
+          <path fill="#fff" transform="translate(5 5) scale(0.583)" d="M16.273 12.845 7.376 0H0v24h7.726V11.155L16.624 24H24V0h-7.727z"/>
+        </svg>
+      );
   }
 }
 
@@ -705,6 +718,14 @@ function OAuthProvidersList({ app, cardURL, onSaved, onSuccess, onError }: CardP
       enabled: !!app.authMethodKakao,
       render: () => (
         <KakaoCard app={app} cardURL={cardURL} onSaved={onSaved} onSuccess={onSuccess} onError={onError} />
+      ),
+    },
+    {
+      key: "naver",
+      label: "Naver",
+      enabled: !!app.authMethodNaver,
+      render: () => (
+        <NaverCard app={app} cardURL={cardURL} onSaved={onSaved} onSuccess={onSuccess} onError={onError} />
       ),
     },
   ];
@@ -1697,6 +1718,178 @@ function KakaoCard({ app, cardURL, onSaved, onSuccess, onError }: CardProps) {
             uri={app.kakaoOAuthRedirectUri}
             onCopy={() => copy(app.kakaoOAuthRedirectUri!, "Redirect URI")}
             help={t("apps.dialog.kakaoRedirectUriHelp", { defaultValue: "Register this under Kakao Login → Redirect URI on your Kakao app." })}
+            copyTitle={t("apps.copyRedirectUri", { defaultValue: "Copy redirect URI" })}
+          />
+        )}
+      </Section>
+      <SaveBar dirty={dirty} saving={saving} onSave={save} onDiscard={resetFromApp} />
+    </Stack>
+  );
+}
+
+// =====================================================================
+// Naver (nid.naver.com). OAuth2-only (no OIDC); identity comes from Naver's
+// userinfo endpoint. Client ID + secret are both required (Naver mandates a
+// client secret). The email consent must be marked Required on the customer's
+// Naver app — surfaced as a prerequisites note rather than enforced here.
+// =====================================================================
+
+function NaverCard({ app, cardURL, onSaved, onSuccess, onError }: CardProps) {
+  const { t } = useTranslation();
+  const { enqueueSnackbar } = useSnackbar();
+
+  const [enabled, setEnabled] = React.useState(!!app.authMethodNaver);
+  const [clientId, setClientId] = React.useState(app.naverClientId || "");
+  const [clientSecret, setClientSecret] = React.useState("");
+  const [clearSecret, setClearSecret] = React.useState(false);
+  const [saving, setSaving] = React.useState(false);
+
+  React.useEffect(() => {
+    setEnabled(!!app.authMethodNaver);
+    setClientId(app.naverClientId || "");
+    setClientSecret("");
+    setClearSecret(false);
+  }, [app]);
+
+  const resetFromApp = React.useCallback(() => {
+    setEnabled(!!app.authMethodNaver);
+    setClientId(app.naverClientId || "");
+    setClientSecret("");
+    setClearSecret(false);
+  }, [app]);
+
+  const dirty =
+    enabled !== !!app.authMethodNaver ||
+    clientId !== (app.naverClientId || "") ||
+    clientSecret.trim().length > 0 ||
+    clearSecret;
+
+  const willHaveSecret = !clearSecret && (!!app.hasNaverClientSecret || clientSecret.trim().length > 0);
+  const configComplete = clientId.trim().length > 0 && willHaveSecret;
+
+  async function save() {
+    if (enabled && !configComplete) {
+      onError(new Error(t("apps.naverConfigIncomplete", { defaultValue: "Configure both Client ID and Client Secret before enabling Naver sign-in." })));
+      return;
+    }
+    setSaving(true);
+    try {
+      const body: Record<string, unknown> = {
+        authMethodNaver: enabled,
+        naverClientId: clientId.trim(),
+      };
+      if (clientSecret.trim()) body.naverClientSecret = clientSecret.trim();
+      else if (clearSecret) body.naverClientSecret = "";
+      const res = await axios.put<App>(`${cardURL}/naver-config`, body);
+      onSaved(res.data);
+      onSuccess();
+    } catch (e) {
+      onError(e);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function copy(text: string, label: string) {
+    try { await navigator.clipboard.writeText(text); enqueueSnackbar(t("apps.copied", { label }), { variant: "success" }); }
+    catch { enqueueSnackbar(t("apps.copyFailed"), { variant: "error" }); }
+  }
+
+  return (
+    <Stack spacing={3.5} sx={{ maxWidth: 680 }}>
+      <Section
+        overline={t("apps.sectionOverline.oauthProvider", { defaultValue: "OAuth provider" })}
+        title={t("apps.naverConfigTitle", { defaultValue: "Naver Sign-In" })}
+        desc={t("apps.naverConfigDesc", { defaultValue: "Credentials from your Naver Developers application. Naver is OAuth2-only; ManyRows reads the account email from Naver's userinfo endpoint and uses it as the identifier." })}
+      >
+        {/* Naver-side setup the customer must complete on their own app —
+            surfaced here because sign-in fails (no email) if the email
+            consent isn't requested + marked required. */}
+        <Alert severity="info" sx={{ fontSize: 13 }}>
+          <Typography variant="body2" sx={{ fontWeight: 500, mb: 0.5 }}>
+            {t("apps.naverPrereqTitle", { defaultValue: "Set up on the Naver Developers side first" })}
+          </Typography>
+          <Typography variant="caption" color="text.secondary" component="div">
+            {t("apps.naverPrereqBody", {
+              defaultValue:
+                "1) Register a Naver Login application at developers.naver.com and paste its Client ID + Client Secret below. 2) Add the email consent item and mark it Required — Naver only returns an email the user agreed to share, and ManyRows refuses a Naver sign-in with no email. 3) Register the Callback URL below under the application's API settings.",
+            })}
+          </Typography>
+        </Alert>
+
+        <FormControlLabel
+          control={
+            <Switch
+              checked={enabled}
+              onChange={(e) => {
+                const next = e.target.checked;
+                if (next && !configComplete) {
+                  enqueueSnackbar(t("apps.naverConfigIncomplete", { defaultValue: "Configure both Client ID and Client Secret before enabling Naver sign-in." }), { variant: "warning" });
+                  return;
+                }
+                setEnabled(next);
+              }}
+              disabled={saving}
+            />
+          }
+          label={
+            <Stack spacing={0}>
+              <Typography variant="body2" sx={{ fontWeight: 500 }}>{t("apps.dialog.authMethodNaver", { defaultValue: "Enable Naver Sign-In" })}</Typography>
+              {!configComplete && (
+                <Typography variant="caption" color="text.secondary">{t("apps.naverConfigRequired", { defaultValue: "Configure Client ID + Client Secret below first." })}</Typography>
+              )}
+            </Stack>
+          }
+          sx={{ ml: 0 }}
+        />
+
+        <TextField
+          size="small"
+          fullWidth
+          label={t("apps.dialog.naverClientIdLabel", { defaultValue: "Client ID" })}
+          value={clientId}
+          onChange={(e) => setClientId(e.target.value)}
+          disabled={saving}
+          placeholder="jyvqXeaVOVmV"
+          helperText={t("apps.dialog.naverClientIdHelp", { defaultValue: "From Naver Developers → your application → Overview → Client ID" })}
+        />
+        <TextField
+          size="small"
+          fullWidth
+          type="password"
+          label={
+            <Box component="span" sx={{ display: "inline-flex", alignItems: "center", gap: 1 }}>
+              <span>{t("apps.dialog.naverClientSecretLabel", { defaultValue: "Client Secret" })}</span>
+              {app.hasNaverClientSecret && !clearSecret && (
+                <StatusChip size="xs" label={t("apps.dialog.secretSet", { defaultValue: "Configured" })} severity="success" />
+              )}
+              {clearSecret && (
+                <StatusChip size="xs" label="Will be cleared on save" severity="warning" />
+              )}
+            </Box>
+          }
+          value={clientSecret}
+          onChange={(e) => { setClientSecret(e.target.value); setClearSecret(false); }}
+          disabled={saving || clearSecret}
+          placeholder={app.hasNaverClientSecret && !clearSecret ? "Leave blank to keep current" : "From your Naver application overview"}
+          helperText={
+            <Box component="span" sx={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+              <span>{t("apps.dialog.naverClientSecretHelp", { defaultValue: "Encrypted at rest. Shown next to the Client ID in your Naver application overview." })}</span>
+              {app.hasNaverClientSecret && !clearSecret && (
+                <Button size="small" color="error" onClick={() => { setClearSecret(true); setClientSecret(""); }} sx={{ textTransform: "none", fontSize: 11, minWidth: 0, p: 0, ml: 1, whiteSpace: "nowrap" }}>Clear secret</Button>
+              )}
+              {clearSecret && (
+                <Button size="small" onClick={() => setClearSecret(false)} sx={{ textTransform: "none", fontSize: 11, minWidth: 0, p: 0, ml: 1, whiteSpace: "nowrap" }}>Undo</Button>
+              )}
+            </Box>
+          }
+        />
+        {app.naverOAuthRedirectUri && (
+          <CopyableUri
+            label={t("apps.dialog.naverRedirectUriLabel", { defaultValue: "Callback URL" })}
+            uri={app.naverOAuthRedirectUri}
+            onCopy={() => copy(app.naverOAuthRedirectUri!, "Callback URL")}
+            help={t("apps.dialog.naverRedirectUriHelp", { defaultValue: "Register this under your Naver application → API Settings → Callback URL." })}
             copyTitle={t("apps.copyRedirectUri", { defaultValue: "Copy redirect URI" })}
           />
         )}

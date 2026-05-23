@@ -79,6 +79,15 @@ function KakaoIcon() {
   );
 }
 
+function NaverIcon() {
+  // Naver "N" mark, rendered white on the brand-green button.
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="#FFFFFF" aria-hidden="true">
+      <path d="M16.273 12.845 7.376 0H0v24h7.726V11.155L16.624 24H24V0h-7.727z"/>
+    </svg>
+  );
+}
+
 export interface AuthLabels {
   // Headings
   signInTitle: string;
@@ -133,6 +142,8 @@ export interface AuthLabels {
   signingInWithGithub: string;
   signInWithKakao: string;
   signingInWithKakao: string;
+  signInWithNaver: string;
+  signingInWithNaver: string;
   signInWithPasskey: string;
   signingInWithPasskey: string;
   passkeyCancelled: string;
@@ -241,6 +252,8 @@ const DEFAULT_LABELS: AuthLabels = {
   signingInWithGithub: "Signing in...",
   signInWithKakao: "Sign in with Kakao",
   signingInWithKakao: "Signing in...",
+  signInWithNaver: "Sign in with Naver",
+  signingInWithNaver: "Signing in...",
   signInWithPasskey: "Sign in with passkey",
   signingInWithPasskey: "Signing in…",
   passkeyCancelled: "Passkey sign-in cancelled",
@@ -361,6 +374,7 @@ export default function Auth(props: {
   microsoftEnabled?: boolean;
   githubEnabled?: boolean;
   kakaoEnabled?: boolean;
+  naverEnabled?: boolean;
   externalIdps?: { slug: string; displayName: string; buttonIcon?: string }[];
   passkeyEnabled?: boolean;
   qrSignInEnabled?: boolean;
@@ -386,12 +400,13 @@ export default function Auth(props: {
   const showMicrosoft = props.microsoftEnabled === true;
   const showGithub = props.githubEnabled === true;
   const showKakao = props.kakaoEnabled === true;
+  const showNaver = props.naverEnabled === true;
   const showQRSignIn = props.qrSignInEnabled === true;
 
   // Legacy flag kept for the few places that branched on "Google is the
   // only thing we can show". Now equivalent to oauthOnly with Google
   // configured and no other social/passkey options.
-  const googleOnly = oauthOnly && showGoogle && !showApple && !showMicrosoft && !showGithub && !showKakao && !props.passkeyEnabled;
+  const googleOnly = oauthOnly && showGoogle && !showApple && !showMicrosoft && !showGithub && !showKakao && !showNaver && !props.passkeyEnabled;
   const defaultView: AuthView = (useOtp || useMagicLink) ? "email" : "password";
   // Only honor initialScreen="forgot-password" when this app actually
   // has a password form to recover. In OAuth-only mode (no email field
@@ -408,6 +423,7 @@ export default function Auth(props: {
   const [microsoftLoading, setMicrosoftLoading] = React.useState(false);
   const [githubLoading, setGithubLoading] = React.useState(false);
   const [kakaoLoading, setKakaoLoading] = React.useState(false);
+  const [naverLoading, setNaverLoading] = React.useState(false);
   const [loading, setLoading] = React.useState(false);
   const [email, setEmail] = React.useState("");
   const [code, setCode] = React.useState("");
@@ -579,6 +595,7 @@ export default function Auth(props: {
   const microsoftCleanupRef = React.useRef<(() => void) | null>(null);
   const githubCleanupRef = React.useRef<(() => void) | null>(null);
   const kakaoCleanupRef = React.useRef<(() => void) | null>(null);
+  const naverCleanupRef = React.useRef<(() => void) | null>(null);
   // One generic external-IdP popup at a time; track which slug is busy.
   const [externalLoadingSlug, setExternalLoadingSlug] = React.useState<string | null>(null);
   const externalCleanupRef = React.useRef<(() => void) | null>(null);
@@ -588,6 +605,7 @@ export default function Auth(props: {
     microsoftCleanupRef.current?.();
     githubCleanupRef.current?.();
     kakaoCleanupRef.current?.();
+    naverCleanupRef.current?.();
     externalCleanupRef.current?.();
   }, []);
 
@@ -602,7 +620,7 @@ export default function Auth(props: {
   // {type, status, payload}. status >= 400 means the inner handler
   // wrote an error response; the listener turns that into a rejected
   // Promise with an axios-shaped error so extractErrMsg can read it.
-  type OAuthProvider = "google" | "apple" | "microsoft" | "github" | "kakao";
+  type OAuthProvider = "google" | "apple" | "microsoft" | "github" | "kakao" | "naver";
   type RunOAuthArgs = {
     // Bespoke providers pass `provider`; generic external IdPs pass the
     // explicit name/authorizePath/callbackType overrides instead.
@@ -750,6 +768,12 @@ export default function Auth(props: {
     enabled: showKakao,
     setLoading: setKakaoLoading,
     cleanupRef: kakaoCleanupRef,
+  });
+  const onNaverClick = () => runPopupOAuth({
+    provider: "naver",
+    enabled: showNaver,
+    setLoading: setNaverLoading,
+    cleanupRef: naverCleanupRef,
   });
   const onExternalClick = (slug: string) => runPopupOAuth({
     name: `idp-${slug}`,
@@ -2085,7 +2109,7 @@ export default function Auth(props: {
               below the primary form. Shown on login (password/email) and
               register; passkey button is suppressed on register because
               passkeys can't sign up — there's no account yet to bind to. */}
-          <Collapse show={(view === "password" || view === "email" || view === "register") && (showGoogle || showApple || showMicrosoft || showGithub || showKakao || (props.externalIdps != null && props.externalIdps.length > 0) || (view !== "register" && (!!(props.passkeyEnabled && isPasskeySupported()) || showQRSignIn)))}>
+          <Collapse show={(view === "password" || view === "email" || view === "register") && (showGoogle || showApple || showMicrosoft || showGithub || showKakao || showNaver || (props.externalIdps != null && props.externalIdps.length > 0) || (view !== "register" && (!!(props.passkeyEnabled && isPasskeySupported()) || showQRSignIn)))}>
             <div className="ak-card-actions">
               <div className="ak-stack ak-gap-4">
                 {!googleOnly && (showPassword || view === "email" || view === "register") && (
@@ -2170,6 +2194,19 @@ export default function Auth(props: {
                     >
                       {kakaoLoading ? <Spinner size={16} /> : <KakaoIcon />}
                       Kakao
+                    </button>
+                  )}
+
+                  {showNaver && (
+                    <button
+                      className="ak-btn ak-btn-outlined"
+                      disabled={naverLoading}
+                      onClick={onNaverClick}
+                      style={{ backgroundColor: "#03C75A", borderColor: "#03C75A", color: "#FFFFFF" }}
+                      aria-label={L.signInWithNaver}
+                    >
+                      {naverLoading ? <Spinner size={16} /> : <NaverIcon />}
+                      Naver
                     </button>
                   )}
 

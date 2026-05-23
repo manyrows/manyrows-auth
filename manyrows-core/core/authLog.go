@@ -95,6 +95,7 @@ const (
 	AuthMethodApple     AuthLogMethod = "apple"
 	AuthMethodGithub    AuthLogMethod = "github"
 	AuthMethodKakao     AuthLogMethod = "kakao"
+	AuthMethodNaver     AuthLogMethod = "naver"
 	AuthMethodPasskey   AuthLogMethod = "passkey"
 	AuthMethodTOTP      AuthLogMethod = "totp"
 	AuthMethodEmailOTP  AuthLogMethod = "email_otp"

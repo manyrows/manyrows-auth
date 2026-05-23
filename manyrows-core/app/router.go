@@ -285,6 +285,7 @@ func (a *AppService) initRouter() error {
 			r.Put("/microsoft-config", requestHandler.HandleUpdateAppMicrosoftConfig)
 			r.Put("/github-config", requestHandler.HandleUpdateAppGithubConfig)
 			r.Put("/kakao-config", requestHandler.HandleUpdateAppKakaoConfig)
+			r.Put("/naver-config", requestHandler.HandleUpdateAppNaverConfig)
 			r.Get("/oidc-config", requestHandler.HandleGetAppOIDCConfig)
 			r.Put("/oidc-config", requestHandler.HandleUpdateAppOIDCConfig)
 			r.Put("/qr-sign-in-config", requestHandler.HandleUpdateAppQRSignInConfig)

@@ -17,6 +17,7 @@ const (
 	UserSourceMicrosoft  UserSource = "microsoft"
 	UserSourceGithub     UserSource = "github"
 	UserSourceKakao      UserSource = "kakao"
+	UserSourceNaver      UserSource = "naver"
 	// UserSourceExternalIDP is the coarse origin for any user who signed
 	// in through a generic configured external IdP (both OIDC and OAuth2
 	// modes). The precise per-IdP link lives in user_identities.provider

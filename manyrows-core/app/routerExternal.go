@@ -84,6 +84,8 @@ func (a *AppService) externalAPIRouter(h *api.RequestHandler, corsMiddleware fun
 			auth.Get("/github/callback", h.WorkspaceGithubCallback)
 			auth.Get("/kakao/authorize", h.WorkspaceKakaoAuthorize)
 			auth.Get("/kakao/callback", h.WorkspaceKakaoCallback)
+			auth.Get("/naver/authorize", h.WorkspaceNaverAuthorize)
+			auth.Get("/naver/callback", h.WorkspaceNaverCallback)
 			// Generic external IdP (OIDC / OAuth2), one route pair for
 			// every configured provider, keyed by {providerSlug}.
 			auth.Get("/idp/{providerSlug}/authorize", h.WorkspaceExternalIDPAuthorize)

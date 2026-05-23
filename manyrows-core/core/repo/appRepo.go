@@ -37,7 +37,7 @@ func (r *Repo) InsertApp(ctx context.Context, a core.App) (core.App, error) {
 	const q = `
 		INSERT INTO apps (id, workspace_id, product_id, type, enabled, allow_registration, allow_account_deletion, allow_email_change, default_role_id, allowed_email_domains, primary_auth_method, auth_method_google, require_2fa, google_oauth_client_id, description, app_url, user_pool_id)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
-		RETURNING id, workspace_id, product_id, type, (select name from products where id = apps.product_id) as product_name, enabled, allow_registration, allow_account_deletion, allow_email_change, default_role_id, allowed_email_domains, primary_auth_method, auth_method_google, require_2fa, google_oauth_client_id, google_oauth_client_secret_encrypted, auth_method_apple, apple_services_id, apple_team_id, apple_key_id, apple_private_key_encrypted, auth_method_microsoft, microsoft_client_id, microsoft_client_secret_encrypted, microsoft_tenant, auth_method_github, github_client_id, github_client_secret_encrypted, auth_method_kakao, kakao_client_id, kakao_client_secret_encrypted, app_url, auth_domain, session_ttl_minutes, idle_timeout_minutes, remember_me_ttl_minutes, access_token_ttl_minutes, max_sessions_per_user, created_at, updated_at, description, password_min_length, password_min_zxcvbn_score, cookie_domain, transport_mode, session_cookie_samesite, qr_sign_in_enabled, user_pool_id, (select name from user_pools where id = apps.user_pool_id) as user_pool_name
+		RETURNING id, workspace_id, product_id, type, (select name from products where id = apps.product_id) as product_name, enabled, allow_registration, allow_account_deletion, allow_email_change, default_role_id, allowed_email_domains, primary_auth_method, auth_method_google, require_2fa, google_oauth_client_id, google_oauth_client_secret_encrypted, auth_method_apple, apple_services_id, apple_team_id, apple_key_id, apple_private_key_encrypted, auth_method_microsoft, microsoft_client_id, microsoft_client_secret_encrypted, microsoft_tenant, auth_method_github, github_client_id, github_client_secret_encrypted, auth_method_kakao, kakao_client_id, kakao_client_secret_encrypted, auth_method_naver, naver_client_id, naver_client_secret_encrypted, app_url, auth_domain, session_ttl_minutes, idle_timeout_minutes, remember_me_ttl_minutes, access_token_ttl_minutes, max_sessions_per_user, created_at, updated_at, description, password_min_length, password_min_zxcvbn_score, cookie_domain, transport_mode, session_cookie_samesite, qr_sign_in_enabled, user_pool_id, (select name from user_pools where id = apps.user_pool_id) as user_pool_name
 	`
 
 	var out core.App
@@ -91,6 +91,9 @@ func (r *Repo) InsertApp(ctx context.Context, a core.App) (core.App, error) {
 		&out.AuthMethodKakao,
 		&out.KakaoClientID,
 		&out.KakaoClientSecretEncrypted,
+		&out.AuthMethodNaver,
+		&out.NaverClientID,
+		&out.NaverClientSecretEncrypted,
 		&out.AppURL,
 		&out.AuthDomain,
 		&out.SessionTTLMinutes,
@@ -123,7 +126,7 @@ func (r *Repo) InsertApp(ctx context.Context, a core.App) (core.App, error) {
 // Safer multi-tenant list (recommended to use in handlers)
 func (r *Repo) GetAppsByWorkspaceAndProductID(ctx context.Context, workspaceID, productID uuid.UUID) ([]core.App, error) {
 	const q = `
-		select id, workspace_id, product_id, type, (select name from products where id = apps.product_id) as product_name, enabled, allow_registration, allow_account_deletion, allow_email_change, default_role_id, allowed_email_domains, primary_auth_method, auth_method_google, require_2fa, google_oauth_client_id, google_oauth_client_secret_encrypted, auth_method_apple, apple_services_id, apple_team_id, apple_key_id, apple_private_key_encrypted, auth_method_microsoft, microsoft_client_id, microsoft_client_secret_encrypted, microsoft_tenant, auth_method_github, github_client_id, github_client_secret_encrypted, auth_method_kakao, kakao_client_id, kakao_client_secret_encrypted, app_url, auth_domain, session_ttl_minutes, idle_timeout_minutes, remember_me_ttl_minutes, access_token_ttl_minutes, max_sessions_per_user, created_at, updated_at, description, password_min_length, password_min_zxcvbn_score, cookie_domain, transport_mode, session_cookie_samesite, qr_sign_in_enabled, user_pool_id, (select name from user_pools where id = apps.user_pool_id) as user_pool_name
+		select id, workspace_id, product_id, type, (select name from products where id = apps.product_id) as product_name, enabled, allow_registration, allow_account_deletion, allow_email_change, default_role_id, allowed_email_domains, primary_auth_method, auth_method_google, require_2fa, google_oauth_client_id, google_oauth_client_secret_encrypted, auth_method_apple, apple_services_id, apple_team_id, apple_key_id, apple_private_key_encrypted, auth_method_microsoft, microsoft_client_id, microsoft_client_secret_encrypted, microsoft_tenant, auth_method_github, github_client_id, github_client_secret_encrypted, auth_method_kakao, kakao_client_id, kakao_client_secret_encrypted, auth_method_naver, naver_client_id, naver_client_secret_encrypted, app_url, auth_domain, session_ttl_minutes, idle_timeout_minutes, remember_me_ttl_minutes, access_token_ttl_minutes, max_sessions_per_user, created_at, updated_at, description, password_min_length, password_min_zxcvbn_score, cookie_domain, transport_mode, session_cookie_samesite, qr_sign_in_enabled, user_pool_id, (select name from user_pools where id = apps.user_pool_id) as user_pool_name
 from apps
 		where workspace_id = $1 and product_id = $2
 		order by created_at desc
@@ -170,6 +173,9 @@ from apps
 			&a.AuthMethodKakao,
 			&a.KakaoClientID,
 			&a.KakaoClientSecretEncrypted,
+			&a.AuthMethodNaver,
+			&a.NaverClientID,
+			&a.NaverClientSecretEncrypted,
 			&a.AppURL,
 			&a.AuthDomain,
 			&a.SessionTTLMinutes,
@@ -206,7 +212,7 @@ from apps
 
 func (r *Repo) GetAppByID(ctx context.Context, appID uuid.UUID) (core.App, error) {
 	const q = `
-		select id, workspace_id, product_id, type, (select name from products where id = apps.product_id) as product_name, enabled, allow_registration, allow_account_deletion, allow_email_change, default_role_id, allowed_email_domains, primary_auth_method, auth_method_google, require_2fa, google_oauth_client_id, google_oauth_client_secret_encrypted, auth_method_apple, apple_services_id, apple_team_id, apple_key_id, apple_private_key_encrypted, auth_method_microsoft, microsoft_client_id, microsoft_client_secret_encrypted, microsoft_tenant, auth_method_github, github_client_id, github_client_secret_encrypted, auth_method_kakao, kakao_client_id, kakao_client_secret_encrypted, app_url, auth_domain, session_ttl_minutes, idle_timeout_minutes, remember_me_ttl_minutes, access_token_ttl_minutes, max_sessions_per_user, created_at, updated_at, description, password_min_length, password_min_zxcvbn_score, cookie_domain, transport_mode, session_cookie_samesite, qr_sign_in_enabled, user_pool_id, (select name from user_pools where id = apps.user_pool_id) as user_pool_name
+		select id, workspace_id, product_id, type, (select name from products where id = apps.product_id) as product_name, enabled, allow_registration, allow_account_deletion, allow_email_change, default_role_id, allowed_email_domains, primary_auth_method, auth_method_google, require_2fa, google_oauth_client_id, google_oauth_client_secret_encrypted, auth_method_apple, apple_services_id, apple_team_id, apple_key_id, apple_private_key_encrypted, auth_method_microsoft, microsoft_client_id, microsoft_client_secret_encrypted, microsoft_tenant, auth_method_github, github_client_id, github_client_secret_encrypted, auth_method_kakao, kakao_client_id, kakao_client_secret_encrypted, auth_method_naver, naver_client_id, naver_client_secret_encrypted, app_url, auth_domain, session_ttl_minutes, idle_timeout_minutes, remember_me_ttl_minutes, access_token_ttl_minutes, max_sessions_per_user, created_at, updated_at, description, password_min_length, password_min_zxcvbn_score, cookie_domain, transport_mode, session_cookie_samesite, qr_sign_in_enabled, user_pool_id, (select name from user_pools where id = apps.user_pool_id) as user_pool_name
 from apps
 		where id = $1
 	`
@@ -244,6 +250,9 @@ from apps
 		&a.AuthMethodKakao,
 		&a.KakaoClientID,
 		&a.KakaoClientSecretEncrypted,
+		&a.AuthMethodNaver,
+		&a.NaverClientID,
+		&a.NaverClientSecretEncrypted,
 		&a.AppURL,
 		&a.AuthDomain,
 		&a.SessionTTLMinutes,
@@ -275,7 +284,7 @@ from apps
 
 func (r *Repo) GetAppByIDForProduct(ctx context.Context, workspaceID, productID, appID uuid.UUID) (core.App, error) {
 	const q = `
-		select id, workspace_id, product_id, type, (select name from products where id = apps.product_id) as product_name, enabled, allow_registration, allow_account_deletion, allow_email_change, default_role_id, allowed_email_domains, primary_auth_method, auth_method_google, require_2fa, google_oauth_client_id, google_oauth_client_secret_encrypted, auth_method_apple, apple_services_id, apple_team_id, apple_key_id, apple_private_key_encrypted, auth_method_microsoft, microsoft_client_id, microsoft_client_secret_encrypted, microsoft_tenant, auth_method_github, github_client_id, github_client_secret_encrypted, auth_method_kakao, kakao_client_id, kakao_client_secret_encrypted, app_url, auth_domain, session_ttl_minutes, idle_timeout_minutes, remember_me_ttl_minutes, access_token_ttl_minutes, max_sessions_per_user, created_at, updated_at, description, password_min_length, password_min_zxcvbn_score, cookie_domain, transport_mode, session_cookie_samesite, qr_sign_in_enabled, user_pool_id, (select name from user_pools where id = apps.user_pool_id) as user_pool_name
+		select id, workspace_id, product_id, type, (select name from products where id = apps.product_id) as product_name, enabled, allow_registration, allow_account_deletion, allow_email_change, default_role_id, allowed_email_domains, primary_auth_method, auth_method_google, require_2fa, google_oauth_client_id, google_oauth_client_secret_encrypted, auth_method_apple, apple_services_id, apple_team_id, apple_key_id, apple_private_key_encrypted, auth_method_microsoft, microsoft_client_id, microsoft_client_secret_encrypted, microsoft_tenant, auth_method_github, github_client_id, github_client_secret_encrypted, auth_method_kakao, kakao_client_id, kakao_client_secret_encrypted, auth_method_naver, naver_client_id, naver_client_secret_encrypted, app_url, auth_domain, session_ttl_minutes, idle_timeout_minutes, remember_me_ttl_minutes, access_token_ttl_minutes, max_sessions_per_user, created_at, updated_at, description, password_min_length, password_min_zxcvbn_score, cookie_domain, transport_mode, session_cookie_samesite, qr_sign_in_enabled, user_pool_id, (select name from user_pools where id = apps.user_pool_id) as user_pool_name
 from apps
 		where id = $1 and workspace_id = $2 and product_id = $3
 	`
@@ -313,6 +322,9 @@ from apps
 		&a.AuthMethodKakao,
 		&a.KakaoClientID,
 		&a.KakaoClientSecretEncrypted,
+		&a.AuthMethodNaver,
+		&a.NaverClientID,
+		&a.NaverClientSecretEncrypted,
 		&a.AppURL,
 		&a.AuthDomain,
 		&a.SessionTTLMinutes,
@@ -379,7 +391,7 @@ func (r *Repo) UpdateAppEnabled(ctx context.Context, workspaceID, productID, app
 		    description = $12,
 		    updated_at = now()
 		where id = $1 and workspace_id = $2 and product_id = $3
-		returning id, workspace_id, product_id, type, (select name from products where id = apps.product_id) as product_name, enabled, allow_registration, allow_account_deletion, allow_email_change, default_role_id, allowed_email_domains, primary_auth_method, auth_method_google, require_2fa, google_oauth_client_id, google_oauth_client_secret_encrypted, auth_method_apple, apple_services_id, apple_team_id, apple_key_id, apple_private_key_encrypted, auth_method_microsoft, microsoft_client_id, microsoft_client_secret_encrypted, microsoft_tenant, auth_method_github, github_client_id, github_client_secret_encrypted, auth_method_kakao, kakao_client_id, kakao_client_secret_encrypted, app_url, auth_domain, session_ttl_minutes, idle_timeout_minutes, remember_me_ttl_minutes, access_token_ttl_minutes, max_sessions_per_user, created_at, updated_at, description, password_min_length, password_min_zxcvbn_score, cookie_domain, transport_mode, session_cookie_samesite, qr_sign_in_enabled, user_pool_id, (select name from user_pools where id = apps.user_pool_id) as user_pool_name
+		returning id, workspace_id, product_id, type, (select name from products where id = apps.product_id) as product_name, enabled, allow_registration, allow_account_deletion, allow_email_change, default_role_id, allowed_email_domains, primary_auth_method, auth_method_google, require_2fa, google_oauth_client_id, google_oauth_client_secret_encrypted, auth_method_apple, apple_services_id, apple_team_id, apple_key_id, apple_private_key_encrypted, auth_method_microsoft, microsoft_client_id, microsoft_client_secret_encrypted, microsoft_tenant, auth_method_github, github_client_id, github_client_secret_encrypted, auth_method_kakao, kakao_client_id, kakao_client_secret_encrypted, auth_method_naver, naver_client_id, naver_client_secret_encrypted, app_url, auth_domain, session_ttl_minutes, idle_timeout_minutes, remember_me_ttl_minutes, access_token_ttl_minutes, max_sessions_per_user, created_at, updated_at, description, password_min_length, password_min_zxcvbn_score, cookie_domain, transport_mode, session_cookie_samesite, qr_sign_in_enabled, user_pool_id, (select name from user_pools where id = apps.user_pool_id) as user_pool_name
 	`
 
 	var out core.App
@@ -417,6 +429,9 @@ func (r *Repo) UpdateAppEnabled(ctx context.Context, workspaceID, productID, app
 		&out.AuthMethodKakao,
 		&out.KakaoClientID,
 		&out.KakaoClientSecretEncrypted,
+		&out.AuthMethodNaver,
+		&out.NaverClientID,
+		&out.NaverClientSecretEncrypted,
 		&out.AppURL,
 		&out.AuthDomain,
 		&out.SessionTTLMinutes,
@@ -486,6 +501,9 @@ func scanAppFull(row appRowScanner, a *core.App) error {
 		&a.AuthMethodKakao,
 		&a.KakaoClientID,
 		&a.KakaoClientSecretEncrypted,
+		&a.AuthMethodNaver,
+		&a.NaverClientID,
+		&a.NaverClientSecretEncrypted,
 		&a.AppURL,
 		&a.AuthDomain,
 		&a.SessionTTLMinutes,
@@ -507,7 +525,7 @@ func scanAppFull(row appRowScanner, a *core.App) error {
 	)
 }
 
-const appColumnsReturning = `id, workspace_id, product_id, type, (select name from products where id = apps.product_id) as product_name, enabled, allow_registration, allow_account_deletion, allow_email_change, default_role_id, allowed_email_domains, primary_auth_method, auth_method_google, require_2fa, google_oauth_client_id, google_oauth_client_secret_encrypted, auth_method_apple, apple_services_id, apple_team_id, apple_key_id, apple_private_key_encrypted, auth_method_microsoft, microsoft_client_id, microsoft_client_secret_encrypted, microsoft_tenant, auth_method_github, github_client_id, github_client_secret_encrypted, auth_method_kakao, kakao_client_id, kakao_client_secret_encrypted, app_url, auth_domain, session_ttl_minutes, idle_timeout_minutes, remember_me_ttl_minutes, access_token_ttl_minutes, max_sessions_per_user, created_at, updated_at, description, password_min_length, password_min_zxcvbn_score, cookie_domain, transport_mode, session_cookie_samesite, qr_sign_in_enabled, user_pool_id, (select name from user_pools where id = apps.user_pool_id) as user_pool_name`
+const appColumnsReturning = `id, workspace_id, product_id, type, (select name from products where id = apps.product_id) as product_name, enabled, allow_registration, allow_account_deletion, allow_email_change, default_role_id, allowed_email_domains, primary_auth_method, auth_method_google, require_2fa, google_oauth_client_id, google_oauth_client_secret_encrypted, auth_method_apple, apple_services_id, apple_team_id, apple_key_id, apple_private_key_encrypted, auth_method_microsoft, microsoft_client_id, microsoft_client_secret_encrypted, microsoft_tenant, auth_method_github, github_client_id, github_client_secret_encrypted, auth_method_kakao, kakao_client_id, kakao_client_secret_encrypted, auth_method_naver, naver_client_id, naver_client_secret_encrypted, app_url, auth_domain, session_ttl_minutes, idle_timeout_minutes, remember_me_ttl_minutes, access_token_ttl_minutes, max_sessions_per_user, created_at, updated_at, description, password_min_length, password_min_zxcvbn_score, cookie_domain, transport_mode, session_cookie_samesite, qr_sign_in_enabled, user_pool_id, (select name from user_pools where id = apps.user_pool_id) as user_pool_name`
 
 // AppRegistrationUpdate carries self-registration settings + the
 // require-2FA flag (a cross-cutting policy that applies to all sign-in
@@ -853,6 +871,40 @@ func (r *Repo) UpdateAppKakaoConfig(ctx context.Context, workspaceID, productID,
 	err := scanAppFull(r.db.Pool().QueryRow(ctx, q,
 		appID, workspaceID, productID,
 		u.AuthMethodKakao, u.ClientID, u.ClientSecretEncrypted,
+	), &out)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return core.App{}, ErrNotFound
+		}
+		return core.App{}, err
+	}
+	return out, nil
+}
+
+// AppNaverConfigUpdate carries the Naver sign-in toggle + OAuth credentials.
+// ClientSecretEncrypted: nil = keep current, []byte{} = clear,
+// non-empty = set.
+type AppNaverConfigUpdate struct {
+	AuthMethodNaver       bool
+	ClientID              *string
+	ClientSecretEncrypted []byte
+}
+
+// UpdateAppNaverConfig sets the Naver toggle + client_id/secret atomically.
+func (r *Repo) UpdateAppNaverConfig(ctx context.Context, workspaceID, productID, appID uuid.UUID, u AppNaverConfigUpdate) (core.App, error) {
+	q := `
+		update apps
+		set auth_method_naver = $4,
+		    naver_client_id = $5,
+		    naver_client_secret_encrypted = COALESCE($6, naver_client_secret_encrypted),
+		    updated_at = now()
+		where id = $1 and workspace_id = $2 and product_id = $3
+		returning ` + appColumnsReturning
+
+	var out core.App
+	err := scanAppFull(r.db.Pool().QueryRow(ctx, q,
+		appID, workspaceID, productID,
+		u.AuthMethodNaver, u.ClientID, u.ClientSecretEncrypted,
 	), &out)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
