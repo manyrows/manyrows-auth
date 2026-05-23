@@ -108,25 +108,32 @@ function titleCase(s: string): string {
 function CreateRoleDialog(props: {
   open: boolean;
   onClose: () => void;
-  onSave: (vals: Pick<Role, "name" | "slug">) => void;
+  onSave: (vals: Pick<Role, "name" | "slug">) => void | Promise<void>;
   t: TFunc;
 }) {
   const { open, onClose, onSave, t } = props;
   const [name, setName] = React.useState("");
   const [slug, setSlug] = React.useState("");
+  const [submitting, setSubmitting] = React.useState(false);
 
   React.useEffect(() => {
     if (!open) return;
     setName("");
     setSlug("");
+    setSubmitting(false);
   }, [open]);
 
   const canSave = name.trim().length > 0 && slug.trim().length > 0;
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!canSave) return;
-    onSave({ name: titleCase(name.trim()), slug: normalizeSlugInput(slug) });
+    if (!canSave || submitting) return;
+    setSubmitting(true);
+    try {
+      await onSave({ name: titleCase(name.trim()), slug: normalizeSlugInput(slug) });
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -159,7 +166,7 @@ function CreateRoleDialog(props: {
           <Button onClick={onClose} color="inherit" sx={{ textTransform: "none" }}>
             {t("roles.dialog.cancel")}
           </Button>
-          <Button type="submit" variant="contained" disabled={!canSave} sx={{ textTransform: "none" }}>
+          <Button type="submit" variant="contained" disabled={!canSave || submitting} sx={{ textTransform: "none" }}>
             {t("roles.dialog.create")}
           </Button>
         </DialogActions>
@@ -174,13 +181,14 @@ function EditRoleDialog(props: {
   open: boolean;
   role: Role | null;
   onClose: () => void;
-  onSave: (vals: Pick<Role, "name" | "slug">) => void;
+  onSave: (vals: Pick<Role, "name" | "slug">) => void | Promise<void>;
   t: TFunc;
 }) {
   const { open, role, onClose, onSave, t } = props;
 
   const [name, setName] = React.useState("");
   const [slug, setSlug] = React.useState("");
+  const [submitting, setSubmitting] = React.useState(false);
 
   const roleId = role?.id;
   const roleName = role?.name;
@@ -189,14 +197,20 @@ function EditRoleDialog(props: {
     if (!open || !role) return;
     setName(role.name ?? "");
     setSlug(role.slug ?? "");
+    setSubmitting(false);
   }, [open, roleId, roleName, roleSlug]);
 
   const canSave = name.trim().length > 0 && slug.trim().length > 0;
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!canSave) return;
-    onSave({ name: titleCase(name.trim()), slug: normalizeSlugInput(slug) });
+    if (!canSave || submitting) return;
+    setSubmitting(true);
+    try {
+      await onSave({ name: titleCase(name.trim()), slug: normalizeSlugInput(slug) });
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -220,7 +234,7 @@ function EditRoleDialog(props: {
           <Button onClick={onClose} color="inherit" sx={{ textTransform: "none" }}>
             {t("roles.dialog.cancel")}
           </Button>
-          <Button type="submit" variant="contained" disabled={!canSave} sx={{ textTransform: "none" }}>
+          <Button type="submit" variant="contained" disabled={!canSave || submitting} sx={{ textTransform: "none" }}>
             {t("roles.dialog.save")}
           </Button>
         </DialogActions>

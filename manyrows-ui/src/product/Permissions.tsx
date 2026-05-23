@@ -113,18 +113,20 @@ function PermissionDialog({
   mode: "create" | "edit";
   initial?: Partial<Permission>;
   onClose: () => void;
-  onSave: (vals: Pick<Permission, "name" | "slug">) => void;
+  onSave: (vals: Pick<Permission, "name" | "slug">) => void | Promise<void>;
   disabled?: boolean;
   disabledReason?: string;
   t: TFunc;
 }) {
   const [name, setName] = React.useState("");
   const [slug, setSlug] = React.useState("");
+  const [submitting, setSubmitting] = React.useState(false);
 
   React.useEffect(() => {
     if (!open) return;
     setName(initial?.name ?? "");
     setSlug(initial?.slug ?? "");
+    setSubmitting(false);
   }, [open, initial?.id]);
 
   const canSave = !disabled && name.trim().length > 0 && slug.trim().length > 0;
@@ -132,13 +134,18 @@ function PermissionDialog({
   // Preview the derived group
   const derivedGroup = slug.trim() ? deriveGroupFromSlug(normalizeSlugInput(slug)) : "";
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!canSave) return;
-    onSave({
-      name: titleCase(name.trim()),
-      slug: normalizeSlugInput(slug),
-    });
+    if (!canSave || submitting) return;
+    setSubmitting(true);
+    try {
+      await onSave({
+        name: titleCase(name.trim()),
+        slug: normalizeSlugInput(slug),
+      });
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -205,7 +212,7 @@ function PermissionDialog({
           <Button onClick={onClose} color="inherit" sx={{ textTransform: "none" }}>
             {t("permissions.dialog.cancel")}
           </Button>
-          <Button type="submit" variant="contained" disabled={!canSave} sx={{ textTransform: "none" }}>
+          <Button type="submit" variant="contained" disabled={!canSave || submitting} sx={{ textTransform: "none" }}>
             {t("permissions.dialog.save")}
           </Button>
         </DialogActions>

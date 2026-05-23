@@ -64,6 +64,7 @@ export default function AppCorsOrigins({ workspaceId, productId, appId, open = t
   const [editValue, setEditValue] = React.useState("");
 
   const [errorMsg, setErrorMsg] = React.useState<string | null>(null);
+  const [saving, setSaving] = React.useState(false);
 
   const loadOrigins = React.useCallback(async () => {
     setLoading(true);
@@ -98,9 +99,10 @@ export default function AppCorsOrigins({ workspaceId, productId, appId, open = t
   };
 
   const createOrigin = async () => {
-    if (atLimit) return;
+    if (atLimit || saving) return;
     const origin = newOrigin.trim();
     if (!origin) return;
+    setSaving(true);
     try {
       await axios.post(basePath, { origin });
       setCreateOpen(false);
@@ -108,11 +110,14 @@ export default function AppCorsOrigins({ workspaceId, productId, appId, open = t
       await loadOrigins();
     } catch (e) {
       setErrorMsg(sanitizeErrorMsg(extractApiError(e, t("error.generic"))));
+    } finally {
+      setSaving(false);
     }
   };
 
   const confirmDelete = async () => {
-    if (!deleteOrigin) return;
+    if (!deleteOrigin || saving) return;
+    setSaving(true);
     try {
       await axios.delete(`${basePath}/${deleteOrigin.id}`);
       setDeleteOrigin(null);
@@ -120,6 +125,8 @@ export default function AppCorsOrigins({ workspaceId, productId, appId, open = t
     } catch (e) {
       setDeleteOrigin(null);
       setErrorMsg(sanitizeErrorMsg(extractApiError(e, t("error.generic"))));
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -136,9 +143,10 @@ export default function AppCorsOrigins({ workspaceId, productId, appId, open = t
   };
 
   const saveEdit = async () => {
-    if (!editOrigin) return;
+    if (!editOrigin || saving) return;
     const origin = editValue.trim();
     if (!origin) return;
+    setSaving(true);
     try {
       await axios.patch(`${basePath}/${editOrigin.id}`, { origin });
       setEditOrigin(null);
@@ -146,6 +154,8 @@ export default function AppCorsOrigins({ workspaceId, productId, appId, open = t
       await loadOrigins();
     } catch (e) {
       setErrorMsg(sanitizeErrorMsg(extractApiError(e, t("error.generic"))));
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -263,7 +273,7 @@ export default function AppCorsOrigins({ workspaceId, productId, appId, open = t
         </DialogContent>
         <DialogActions>
           <Button onClick={closeCreate}>{t("common.cancel")}</Button>
-          <Button variant="contained" onClick={createOrigin} disabled={atLimit || !newOrigin.trim()}>
+          <Button variant="contained" onClick={createOrigin} disabled={atLimit || !newOrigin.trim() || saving}>
             {t("common.add")}
           </Button>
         </DialogActions>
@@ -290,7 +300,7 @@ export default function AppCorsOrigins({ workspaceId, productId, appId, open = t
         </DialogContent>
         <DialogActions>
           <Button onClick={closeEdit}>{t("common.cancel")}</Button>
-          <Button variant="contained" onClick={saveEdit} disabled={!editValue.trim()}>
+          <Button variant="contained" onClick={saveEdit} disabled={!editValue.trim() || saving}>
             {t("common.save")}
           </Button>
         </DialogActions>
@@ -306,7 +316,7 @@ export default function AppCorsOrigins({ workspaceId, productId, appId, open = t
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setDeleteOrigin(null)}>{t("common.cancel")}</Button>
-          <Button color="error" variant="contained" onClick={confirmDelete}>
+          <Button color="error" variant="contained" onClick={confirmDelete} disabled={saving}>
             {t("common.delete")}
           </Button>
         </DialogActions>

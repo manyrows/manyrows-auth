@@ -71,6 +71,7 @@ export default function AppIPAllowlist({ workspaceId, productId, appId, open = t
   const [editDescription, setEditDescription] = React.useState("");
 
   const [errorMsg, setErrorMsg] = React.useState<string | null>(null);
+  const [saving, setSaving] = React.useState(false);
 
   const loadEntries = React.useCallback(async () => {
     setLoading(true);
@@ -107,9 +108,10 @@ export default function AppIPAllowlist({ workspaceId, productId, appId, open = t
   };
 
   const createEntry = async () => {
-    if (atLimit) return;
+    if (atLimit || saving) return;
     const ipRange = newIPRange.trim();
     if (!ipRange) return;
+    setSaving(true);
     try {
       await axios.post(basePath, {
         ipRange,
@@ -121,11 +123,14 @@ export default function AppIPAllowlist({ workspaceId, productId, appId, open = t
       await loadEntries();
     } catch (e) {
       setErrorMsg(sanitizeErrorMsg(extractApiError(e, t("error.generic"))));
+    } finally {
+      setSaving(false);
     }
   };
 
   const confirmDelete = async () => {
-    if (!deleteEntry) return;
+    if (!deleteEntry || saving) return;
+    setSaving(true);
     try {
       await axios.delete(`${basePath}/${deleteEntry.id}`);
       setDeleteEntry(null);
@@ -133,6 +138,8 @@ export default function AppIPAllowlist({ workspaceId, productId, appId, open = t
     } catch (e) {
       setDeleteEntry(null);
       setErrorMsg(sanitizeErrorMsg(extractApiError(e, t("error.generic"))));
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -151,9 +158,10 @@ export default function AppIPAllowlist({ workspaceId, productId, appId, open = t
   };
 
   const saveEdit = async () => {
-    if (!editEntry) return;
+    if (!editEntry || saving) return;
     const ipRange = editIPRange.trim();
     if (!ipRange) return;
+    setSaving(true);
     try {
       await axios.patch(`${basePath}/${editEntry.id}`, {
         ipRange,
@@ -165,6 +173,8 @@ export default function AppIPAllowlist({ workspaceId, productId, appId, open = t
       await loadEntries();
     } catch (e) {
       setErrorMsg(sanitizeErrorMsg(extractApiError(e, t("error.generic"))));
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -297,7 +307,7 @@ export default function AppIPAllowlist({ workspaceId, productId, appId, open = t
         </DialogContent>
         <DialogActions>
           <Button onClick={closeCreate}>{t("common.cancel")}</Button>
-          <Button variant="contained" onClick={createEntry} disabled={atLimit || !newIPRange.trim()}>
+          <Button variant="contained" onClick={createEntry} disabled={atLimit || !newIPRange.trim() || saving}>
             {t("common.add")}
           </Button>
         </DialogActions>
@@ -332,7 +342,7 @@ export default function AppIPAllowlist({ workspaceId, productId, appId, open = t
         </DialogContent>
         <DialogActions>
           <Button onClick={closeEdit}>{t("common.cancel")}</Button>
-          <Button variant="contained" onClick={saveEdit} disabled={!editIPRange.trim()}>
+          <Button variant="contained" onClick={saveEdit} disabled={!editIPRange.trim() || saving}>
             {t("common.save")}
           </Button>
         </DialogActions>
@@ -348,7 +358,7 @@ export default function AppIPAllowlist({ workspaceId, productId, appId, open = t
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setDeleteEntry(null)}>{t("common.cancel")}</Button>
-          <Button color="error" variant="contained" onClick={confirmDelete}>
+          <Button color="error" variant="contained" onClick={confirmDelete} disabled={saving}>
             {t("common.remove")}
           </Button>
         </DialogActions>

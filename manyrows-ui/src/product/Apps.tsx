@@ -200,16 +200,18 @@ export default function Apps({ project, workspace }: Props) {
 
     setSaving(true);
     try {
-      const res = await axios.post<App>(`${appsBasePath}/`, {
+      await axios.post<App>(`${appsBasePath}/`, {
         type: createType,
         enabled: true,
         appUrl: trimmedCreateUrl,
         primaryAuthMethod: createPrimaryAuth,
         userPoolId: createPoolMode === "existing" ? createPoolId : undefined,
       });
-      const created = res.data;
-
-      setApps((prev) => [created, ...prev.filter((a) => a.id !== created.id)]);
+      // Refetch rather than optimistically inserting res.data: the create
+      // response is the raw row, without the join-populated productName /
+      // userPoolName, so an optimistic insert renders "(unnamed app)" until
+      // the next load.
+      await load();
       enqueueSnackbar(t("apps.appCreated"), { variant: "success" });
       closeCreate();
     } catch (e) {

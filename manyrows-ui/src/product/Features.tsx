@@ -552,29 +552,45 @@ export default function Features({ project, appId: fixedAppId }: Props) {
     return count;
   }
 
+  // Apply the same enabled state to a flag across ALL apps, settling every
+  // request so one failure doesn't abort the rest mid-way (which would leave a
+  // half-applied state). Returns how many apps failed.
+  async function applyFlagToAllApps(flagId: string, enabled: boolean): Promise<number> {
+    const results = await Promise.allSettled(
+      apps.map((app) =>
+        apiJson(`${base}/featureFlags/${flagId}/apps/${app.id}`, {
+          method: "PUT",
+          data: { enabled, status: "active" },
+        }),
+      ),
+    );
+    return results.filter((r) => r.status === "rejected").length;
+  }
+
   // Kill switch: disable a flag across ALL apps
   async function handleKillSwitch() {
-    if (!selected) return;
+    const flag = selected;
+    if (!flag) return;
 
     setSaving(true);
     setError(null);
     try {
-      // Disable in all apps
-      for (const app of apps) {
-        await apiJson(`${base}/featureFlags/${selected.id}/apps/${app.id}`, {
-          method: "PUT",
-          data: {
-            enabled: false,
-            status: "active",
-          },
-        });
-      }
-
+      const failed = await applyFlagToAllApps(flag.id, false);
       setKillSwitchOpen(false);
       setSelected(null);
-
-      enqueueSnackbar(t("features.snackbar.killSwitchActivated", { key: selected.key }), { variant: "warning" });
       await refreshAll();
+      if (failed > 0) {
+        const msg = t("features.snackbar.killSwitchPartial", {
+          defaultValue: "Disabled on {{ok}} of {{total}} apps; {{failed}} failed",
+          ok: apps.length - failed,
+          total: apps.length,
+          failed,
+        });
+        setError(msg);
+        enqueueSnackbar(msg, { variant: "error" });
+      } else {
+        enqueueSnackbar(t("features.snackbar.killSwitchActivated", { key: flag.key }), { variant: "warning" });
+      }
     } catch (e) {
       const msg = extractApiError(e, t("features.snackbar.killSwitchFailed"));
       setError(msg);
@@ -586,26 +602,28 @@ export default function Features({ project, appId: fixedAppId }: Props) {
 
   // Enable a flag across ALL apps
   async function handleEnableAll() {
-    if (!selected) return;
+    const flag = selected;
+    if (!flag) return;
 
     setSaving(true);
     setError(null);
     try {
-      for (const app of apps) {
-        await apiJson(`${base}/featureFlags/${selected.id}/apps/${app.id}`, {
-          method: "PUT",
-          data: {
-            enabled: true,
-            status: "active",
-          },
-        });
-      }
-
+      const failed = await applyFlagToAllApps(flag.id, true);
       setEnableAllOpen(false);
       setSelected(null);
-
-      enqueueSnackbar(t("features.snackbar.enabledAll", { key: selected.key }), { variant: "success" });
       await refreshAll();
+      if (failed > 0) {
+        const msg = t("features.snackbar.enableAllPartial", {
+          defaultValue: "Enabled on {{ok}} of {{total}} apps; {{failed}} failed",
+          ok: apps.length - failed,
+          total: apps.length,
+          failed,
+        });
+        setError(msg);
+        enqueueSnackbar(msg, { variant: "error" });
+      } else {
+        enqueueSnackbar(t("features.snackbar.enabledAll", { key: flag.key }), { variant: "success" });
+      }
     } catch (e) {
       const msg = extractApiError(e, t("features.snackbar.enableAllFailed"));
       setError(msg);
