@@ -361,6 +361,15 @@ transport), selectable per app.
 
 ---
 
+## Design notes
+
+The *why* behind the non-obvious decisions - password hashing, DPoP-bound
+refresh tokens, verified-email account linking, secrets-at-rest, and the
+"standard" features deliberately left out - is written up in
+[`docs/design-notes.md`](docs/design-notes.md).
+
+---
+
 ## Development
 
 ```bash
