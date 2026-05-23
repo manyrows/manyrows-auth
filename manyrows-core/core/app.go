@@ -21,7 +21,7 @@ const (
 // can configure itself without a separate prop.
 //   - local : JWT in localStorage / Bearer header. Default.
 //   - cookie: first-party HttpOnly cookie set by ManyRows directly
-//             (custom domain or same-host deploy).
+//     (custom domain or same-host deploy).
 const (
 	TransportModeLocal  = "local"
 	TransportModeCookie = "cookie"
@@ -134,8 +134,8 @@ type App struct {
 	// ProductName is the parent product's name, populated by repo
 	// JOIN/subquery on read. Not persisted on the apps table - the
 	// display name is computed from product + env type.
-	ProductName string  `json:"productName"`
-	Description *string `json:"description,omitempty"`
+	ProductName string    `json:"productName"`
+	Description *string   `json:"description,omitempty"`
 	CreatedAt   time.Time `json:"createdAt"`
 	UpdatedAt   time.Time `json:"updatedAt"`
 	Enabled     bool      `json:"enabled"`
@@ -179,6 +179,13 @@ type App struct {
 	AuthMethodGithub            bool    `json:"authMethodGithub"`
 	GithubClientID              *string `json:"githubClientId,omitempty"`
 	GithubClientSecretEncrypted []byte  `json:"-"` // encrypted at rest, never serialized
+
+	// Kakao (kauth.kakao.com) — OIDC, verified against Kakao's JWKS like
+	// Microsoft. KakaoClientID is the app's REST API key (Kakao's term for
+	// the OAuth client_id).
+	AuthMethodKakao            bool    `json:"authMethodKakao"`
+	KakaoClientID              *string `json:"kakaoClientId,omitempty"`
+	KakaoClientSecretEncrypted []byte  `json:"-"` // encrypted at rest, never serialized
 
 	// 2FA
 	Require2FA bool `json:"require2fa"`

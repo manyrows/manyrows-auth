@@ -116,7 +116,7 @@ func (handler *RequestHandler) HandleUpdateAppAppleConfig(w http.ResponseWriter,
 			return
 		}
 	}
-	if !handler.requireAtLeastOneSignInMethod(r.Context(), ws, acc.IsSuper(), curApp.PrimaryAuthMethod, curApp.AuthMethodGoogle, authMethodApple, curApp.AuthMethodMicrosoft, curApp.AuthMethodGithub) {
+	if !handler.requireAtLeastOneSignInMethod(r.Context(), ws, acc.IsSuper(), curApp.PrimaryAuthMethod, curApp.AuthMethodGoogle, authMethodApple, curApp.AuthMethodMicrosoft, curApp.AuthMethodGithub, curApp.AuthMethodKakao) {
 		WriteError(w, r, "error.noSignInMethodEnabled", http.StatusBadRequest)
 		return
 	}

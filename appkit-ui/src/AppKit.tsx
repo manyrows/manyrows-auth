@@ -210,6 +210,7 @@ type AppResource = {
   appleEnabled?: boolean;
   microsoftEnabled?: boolean;
   githubEnabled?: boolean;
+  kakaoEnabled?: boolean;
   externalIdps?: { slug: string; displayName: string; buttonIcon?: string }[];
   passkeyEnabled?: boolean;
   qrSignInEnabled?: boolean;
@@ -1807,10 +1808,10 @@ export default function AppKit(props: AppKitProps) {
           )
         ) : authStatus === "unauthenticated" ? (
           props.hideAuthUI ? null :
-          <Auth workspaceBaseUrl={appBaseURL} cookieMode={cookieMode} onTokenPair={onTokenPairReceived} allowRegistration={app?.allowRegistration} appId={app?.id} googleOAuthClientId={app?.googleOAuthClientId} appleEnabled={app?.appleEnabled} microsoftEnabled={app?.microsoftEnabled} githubEnabled={app?.githubEnabled} externalIdps={app?.externalIdps} primaryAuthMethod={app?.primaryAuthMethod} passkeyEnabled={app?.passkeyEnabled} qrSignInEnabled={app?.qrSignInEnabled && !props.suppressQRSignIn} hideBranding={app?.hideBranding} require2fa={app?.require2fa} header={props.authHeader} labels={props.labels} initialScreen={props.initialScreen} onScreenChange={props.onScreenChange} embedded={props.embedded} />
+          <Auth workspaceBaseUrl={appBaseURL} cookieMode={cookieMode} onTokenPair={onTokenPairReceived} allowRegistration={app?.allowRegistration} appId={app?.id} googleOAuthClientId={app?.googleOAuthClientId} appleEnabled={app?.appleEnabled} microsoftEnabled={app?.microsoftEnabled} githubEnabled={app?.githubEnabled} kakaoEnabled={app?.kakaoEnabled} externalIdps={app?.externalIdps} primaryAuthMethod={app?.primaryAuthMethod} passkeyEnabled={app?.passkeyEnabled} qrSignInEnabled={app?.qrSignInEnabled && !props.suppressQRSignIn} hideBranding={app?.hideBranding} require2fa={app?.require2fa} header={props.authHeader} labels={props.labels} initialScreen={props.initialScreen} onScreenChange={props.onScreenChange} embedded={props.embedded} />
         ) : !appData ? (
           props.hideAuthUI ? null :
-          <Auth workspaceBaseUrl={appBaseURL} cookieMode={cookieMode} onTokenPair={onTokenPairReceived} allowRegistration={app?.allowRegistration} appId={app?.id} googleOAuthClientId={app?.googleOAuthClientId} appleEnabled={app?.appleEnabled} microsoftEnabled={app?.microsoftEnabled} githubEnabled={app?.githubEnabled} externalIdps={app?.externalIdps} primaryAuthMethod={app?.primaryAuthMethod} passkeyEnabled={app?.passkeyEnabled} qrSignInEnabled={app?.qrSignInEnabled && !props.suppressQRSignIn} hideBranding={app?.hideBranding} require2fa={app?.require2fa} header={props.authHeader} labels={props.labels} initialScreen={props.initialScreen} onScreenChange={props.onScreenChange} embedded={props.embedded} />
+          <Auth workspaceBaseUrl={appBaseURL} cookieMode={cookieMode} onTokenPair={onTokenPairReceived} allowRegistration={app?.allowRegistration} appId={app?.id} googleOAuthClientId={app?.googleOAuthClientId} appleEnabled={app?.appleEnabled} microsoftEnabled={app?.microsoftEnabled} githubEnabled={app?.githubEnabled} kakaoEnabled={app?.kakaoEnabled} externalIdps={app?.externalIdps} primaryAuthMethod={app?.primaryAuthMethod} passkeyEnabled={app?.passkeyEnabled} qrSignInEnabled={app?.qrSignInEnabled && !props.suppressQRSignIn} hideBranding={app?.hideBranding} require2fa={app?.require2fa} header={props.authHeader} labels={props.labels} initialScreen={props.initialScreen} onScreenChange={props.onScreenChange} embedded={props.embedded} />
         ) : totpSetupNeeded ? (
           <TOTPSetupGate
             workspaceBaseURL={appBaseURL}
@@ -1880,7 +1881,7 @@ export default function AppKit(props: AppKitProps) {
               allowAccountDeletion={app?.allowAccountDeletion ?? true}
               allowEmailChange={app?.allowEmailChange ?? true}
               primaryAuthMethod={app?.primaryAuthMethod}
-              oauthEnabled={!!(app?.googleOAuthClientId || app?.appleEnabled || app?.microsoftEnabled || app?.githubEnabled || (app?.externalIdps && app.externalIdps.length > 0))}
+              oauthEnabled={!!(app?.googleOAuthClientId || app?.appleEnabled || app?.microsoftEnabled || app?.githubEnabled || app?.kakaoEnabled || (app?.externalIdps && app.externalIdps.length > 0))}
               onLogout={logout}
             />
           </div>

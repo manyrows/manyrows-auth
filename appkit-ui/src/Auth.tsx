@@ -70,6 +70,15 @@ function GithubIcon() {
   );
 }
 
+function KakaoIcon() {
+  // Kakao speech-bubble symbol, rendered black on the brand-yellow button.
+  return (
+    <svg width="18" height="18" viewBox="0 0 256 256" aria-hidden="true">
+      <path fill="#000000" d="M128 36C70.562 36 24 72.713 24 118c0 29.279 19.466 54.97 48.748 69.477-1.593 5.494-10.237 35.34-10.581 37.69 0 0-.207 1.762.934 2.434s2.483.15 2.483.15c3.286-.46 37.977-24.823 43.96-29.048 6.062.84 12.276 1.297 18.456 1.297 57.438 0 104-36.713 104-82 0-45.287-46.562-82-104-82z"/>
+    </svg>
+  );
+}
+
 export interface AuthLabels {
   // Headings
   signInTitle: string;
@@ -122,6 +131,8 @@ export interface AuthLabels {
   signingInWithMicrosoft: string;
   signInWithGithub: string;
   signingInWithGithub: string;
+  signInWithKakao: string;
+  signingInWithKakao: string;
   signInWithPasskey: string;
   signingInWithPasskey: string;
   passkeyCancelled: string;
@@ -228,6 +239,8 @@ const DEFAULT_LABELS: AuthLabels = {
   signingInWithMicrosoft: "Signing in...",
   signInWithGithub: "Sign in with GitHub",
   signingInWithGithub: "Signing in...",
+  signInWithKakao: "Sign in with Kakao",
+  signingInWithKakao: "Signing in...",
   signInWithPasskey: "Sign in with passkey",
   signingInWithPasskey: "Signing in…",
   passkeyCancelled: "Passkey sign-in cancelled",
@@ -347,6 +360,7 @@ export default function Auth(props: {
   appleEnabled?: boolean;
   microsoftEnabled?: boolean;
   githubEnabled?: boolean;
+  kakaoEnabled?: boolean;
   externalIdps?: { slug: string; displayName: string; buttonIcon?: string }[];
   passkeyEnabled?: boolean;
   qrSignInEnabled?: boolean;
@@ -371,12 +385,13 @@ export default function Auth(props: {
   const showApple = props.appleEnabled === true;
   const showMicrosoft = props.microsoftEnabled === true;
   const showGithub = props.githubEnabled === true;
+  const showKakao = props.kakaoEnabled === true;
   const showQRSignIn = props.qrSignInEnabled === true;
 
   // Legacy flag kept for the few places that branched on "Google is the
   // only thing we can show". Now equivalent to oauthOnly with Google
   // configured and no other social/passkey options.
-  const googleOnly = oauthOnly && showGoogle && !showApple && !showMicrosoft && !showGithub && !props.passkeyEnabled;
+  const googleOnly = oauthOnly && showGoogle && !showApple && !showMicrosoft && !showGithub && !showKakao && !props.passkeyEnabled;
   const defaultView: AuthView = (useOtp || useMagicLink) ? "email" : "password";
   // Only honor initialScreen="forgot-password" when this app actually
   // has a password form to recover. In OAuth-only mode (no email field
@@ -392,6 +407,7 @@ export default function Auth(props: {
   const [appleLoading, setAppleLoading] = React.useState(false);
   const [microsoftLoading, setMicrosoftLoading] = React.useState(false);
   const [githubLoading, setGithubLoading] = React.useState(false);
+  const [kakaoLoading, setKakaoLoading] = React.useState(false);
   const [loading, setLoading] = React.useState(false);
   const [email, setEmail] = React.useState("");
   const [code, setCode] = React.useState("");
@@ -562,6 +578,7 @@ export default function Auth(props: {
   const appleCleanupRef = React.useRef<(() => void) | null>(null);
   const microsoftCleanupRef = React.useRef<(() => void) | null>(null);
   const githubCleanupRef = React.useRef<(() => void) | null>(null);
+  const kakaoCleanupRef = React.useRef<(() => void) | null>(null);
   // One generic external-IdP popup at a time; track which slug is busy.
   const [externalLoadingSlug, setExternalLoadingSlug] = React.useState<string | null>(null);
   const externalCleanupRef = React.useRef<(() => void) | null>(null);
@@ -570,6 +587,7 @@ export default function Auth(props: {
     appleCleanupRef.current?.();
     microsoftCleanupRef.current?.();
     githubCleanupRef.current?.();
+    kakaoCleanupRef.current?.();
     externalCleanupRef.current?.();
   }, []);
 
@@ -584,7 +602,7 @@ export default function Auth(props: {
   // {type, status, payload}. status >= 400 means the inner handler
   // wrote an error response; the listener turns that into a rejected
   // Promise with an axios-shaped error so extractErrMsg can read it.
-  type OAuthProvider = "google" | "apple" | "microsoft" | "github";
+  type OAuthProvider = "google" | "apple" | "microsoft" | "github" | "kakao";
   type RunOAuthArgs = {
     // Bespoke providers pass `provider`; generic external IdPs pass the
     // explicit name/authorizePath/callbackType overrides instead.
@@ -726,6 +744,12 @@ export default function Auth(props: {
     enabled: showGithub,
     setLoading: setGithubLoading,
     cleanupRef: githubCleanupRef,
+  });
+  const onKakaoClick = () => runPopupOAuth({
+    provider: "kakao",
+    enabled: showKakao,
+    setLoading: setKakaoLoading,
+    cleanupRef: kakaoCleanupRef,
   });
   const onExternalClick = (slug: string) => runPopupOAuth({
     name: `idp-${slug}`,
@@ -2061,7 +2085,7 @@ export default function Auth(props: {
               below the primary form. Shown on login (password/email) and
               register; passkey button is suppressed on register because
               passkeys can't sign up — there's no account yet to bind to. */}
-          <Collapse show={(view === "password" || view === "email" || view === "register") && (showGoogle || showApple || showMicrosoft || showGithub || (props.externalIdps != null && props.externalIdps.length > 0) || (view !== "register" && (!!(props.passkeyEnabled && isPasskeySupported()) || showQRSignIn)))}>
+          <Collapse show={(view === "password" || view === "email" || view === "register") && (showGoogle || showApple || showMicrosoft || showGithub || showKakao || (props.externalIdps != null && props.externalIdps.length > 0) || (view !== "register" && (!!(props.passkeyEnabled && isPasskeySupported()) || showQRSignIn)))}>
             <div className="ak-card-actions">
               <div className="ak-stack ak-gap-4">
                 {!googleOnly && (showPassword || view === "email" || view === "register") && (
@@ -2133,6 +2157,19 @@ export default function Auth(props: {
                     >
                       {githubLoading ? <Spinner size={16} /> : <GithubIcon />}
                       GitHub
+                    </button>
+                  )}
+
+                  {showKakao && (
+                    <button
+                      className="ak-btn ak-btn-outlined"
+                      disabled={kakaoLoading}
+                      onClick={onKakaoClick}
+                      style={{ backgroundColor: "#FEE500", borderColor: "#FEE500", color: "rgba(0,0,0,0.85)" }}
+                      aria-label={L.signInWithKakao}
+                    >
+                      {kakaoLoading ? <Spinner size={16} /> : <KakaoIcon />}
+                      Kakao
                     </button>
                   )}
 

@@ -16,6 +16,7 @@ const (
 	UserSourceApple      UserSource = "apple"
 	UserSourceMicrosoft  UserSource = "microsoft"
 	UserSourceGithub     UserSource = "github"
+	UserSourceKakao      UserSource = "kakao"
 	// UserSourceExternalIDP is the coarse origin for any user who signed
 	// in through a generic configured external IdP (both OIDC and OAuth2
 	// modes). The precise per-IdP link lives in user_identities.provider
@@ -105,4 +106,3 @@ func ToUserResource(u *User) *UserResource {
 		Source:          u.Source,
 	}
 }
-

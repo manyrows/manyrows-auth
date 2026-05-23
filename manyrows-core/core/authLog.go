@@ -60,11 +60,11 @@ const (
 	AuthEventSessionRevoked AuthLogEvent = "session.revoked"
 	AuthEventSessionsPruned AuthLogEvent = "sessions.pruned"
 
-	AuthEventPasswordSet             AuthLogEvent = "password.set"
-	AuthEventPasswordChanged         AuthLogEvent = "password.changed"
-	AuthEventPasswordCleared         AuthLogEvent = "password.cleared"
-	AuthEventPasswordResetRequested  AuthLogEvent = "password.reset_requested"
-	AuthEventPasswordResetCompleted  AuthLogEvent = "password.reset_completed"
+	AuthEventPasswordSet            AuthLogEvent = "password.set"
+	AuthEventPasswordChanged        AuthLogEvent = "password.changed"
+	AuthEventPasswordCleared        AuthLogEvent = "password.cleared"
+	AuthEventPasswordResetRequested AuthLogEvent = "password.reset_requested"
+	AuthEventPasswordResetCompleted AuthLogEvent = "password.reset_completed"
 
 	AuthEventEmailChangeRequested AuthLogEvent = "email.change_requested"
 	AuthEventEmailChanged         AuthLogEvent = "email.changed"
@@ -94,6 +94,7 @@ const (
 	AuthMethodMicrosoft AuthLogMethod = "microsoft"
 	AuthMethodApple     AuthLogMethod = "apple"
 	AuthMethodGithub    AuthLogMethod = "github"
+	AuthMethodKakao     AuthLogMethod = "kakao"
 	AuthMethodPasskey   AuthLogMethod = "passkey"
 	AuthMethodTOTP      AuthLogMethod = "totp"
 	AuthMethodEmailOTP  AuthLogMethod = "email_otp"
@@ -121,32 +122,32 @@ const (
 type AuthLogFailureReason string
 
 const (
-	AuthFailWrongPassword         AuthLogFailureReason = "wrong_password"
-	AuthFailUnknownUser           AuthLogFailureReason = "unknown_user"
-	AuthFailEmailNotVerified      AuthLogFailureReason = "email_not_verified"
-	AuthFailEmailNotProvided      AuthLogFailureReason = "email_not_provided"
-	AuthFailTOTPRequired          AuthLogFailureReason = "totp_required"
-	AuthFailTOTPInvalid           AuthLogFailureReason = "totp_invalid"
-	AuthFailAccountLocked         AuthLogFailureReason = "account_locked"
-	AuthFailAccountDisabled       AuthLogFailureReason = "account_disabled"
-	AuthFailInvalidState          AuthLogFailureReason = "invalid_state"
-	AuthFailInvalidCode           AuthLogFailureReason = "invalid_code"
-	AuthFailExpiredCode           AuthLogFailureReason = "expired_code"
-	AuthFailRegistrationDisabled  AuthLogFailureReason = "registration_disabled"
-	AuthFailDomainNotAllowed      AuthLogFailureReason = "domain_not_allowed"
-	AuthFailIdentityConflict      AuthLogFailureReason = "identity_conflict"
-	AuthFailProviderExchangeFail  AuthLogFailureReason = "provider_exchange_failed"
-	AuthFailAudienceMismatch      AuthLogFailureReason = "audience_mismatch"
-	AuthFailTenantMismatch        AuthLogFailureReason = "tenant_mismatch"
-	AuthFailRateLimited           AuthLogFailureReason = "rate_limited"
-	AuthFailInternalError         AuthLogFailureReason = "internal_error"
+	AuthFailWrongPassword        AuthLogFailureReason = "wrong_password"
+	AuthFailUnknownUser          AuthLogFailureReason = "unknown_user"
+	AuthFailEmailNotVerified     AuthLogFailureReason = "email_not_verified"
+	AuthFailEmailNotProvided     AuthLogFailureReason = "email_not_provided"
+	AuthFailTOTPRequired         AuthLogFailureReason = "totp_required"
+	AuthFailTOTPInvalid          AuthLogFailureReason = "totp_invalid"
+	AuthFailAccountLocked        AuthLogFailureReason = "account_locked"
+	AuthFailAccountDisabled      AuthLogFailureReason = "account_disabled"
+	AuthFailInvalidState         AuthLogFailureReason = "invalid_state"
+	AuthFailInvalidCode          AuthLogFailureReason = "invalid_code"
+	AuthFailExpiredCode          AuthLogFailureReason = "expired_code"
+	AuthFailRegistrationDisabled AuthLogFailureReason = "registration_disabled"
+	AuthFailDomainNotAllowed     AuthLogFailureReason = "domain_not_allowed"
+	AuthFailIdentityConflict     AuthLogFailureReason = "identity_conflict"
+	AuthFailProviderExchangeFail AuthLogFailureReason = "provider_exchange_failed"
+	AuthFailAudienceMismatch     AuthLogFailureReason = "audience_mismatch"
+	AuthFailTenantMismatch       AuthLogFailureReason = "tenant_mismatch"
+	AuthFailRateLimited          AuthLogFailureReason = "rate_limited"
+	AuthFailInternalError        AuthLogFailureReason = "internal_error"
 
 	// Passkey-specific verification failures. Generic
 	// AuthFailInvalidCode is too vague for an admin trying to
 	// distinguish a misbehaving authenticator from a typo'd OTP.
-	AuthFailPasskeyInvalid         AuthLogFailureReason = "passkey_invalid"          // challenge/response invalid, sign-count regression
-	AuthFailPasskeyUVRequired      AuthLogFailureReason = "passkey_uv_required"      // authenticator skipped user verification
-	AuthFailPasskeyCloneSuspected  AuthLogFailureReason = "passkey_clone_suspected"  // CloneWarning from the WebAuthn library
+	AuthFailPasskeyInvalid        AuthLogFailureReason = "passkey_invalid"         // challenge/response invalid, sign-count regression
+	AuthFailPasskeyUVRequired     AuthLogFailureReason = "passkey_uv_required"     // authenticator skipped user verification
+	AuthFailPasskeyCloneSuspected AuthLogFailureReason = "passkey_clone_suspected" // CloneWarning from the WebAuthn library
 )
 
 // AuthLogActorType distinguishes who triggered the event from who it

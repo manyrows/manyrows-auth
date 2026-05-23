@@ -884,7 +884,7 @@ export default function AppUsers({ project, appId: appIdProp }: Props) {
   type UserIdentity = { provider: string; providerEmail?: string; createdAt: string; lastLoginAt: string };
   const [identities, setIdentities] = React.useState<UserIdentity[]>([]);
   const [identitiesLoading, setIdentitiesLoading] = React.useState(false);
-  const PROVIDER_LABEL: Record<string, string> = { google: "Google", apple: "Apple", microsoft: "Microsoft", github: "GitHub" };
+  const PROVIDER_LABEL: Record<string, string> = { google: "Google", apple: "Apple", microsoft: "Microsoft", github: "GitHub", kakao: "Kakao" };
 
   const loadIdentities = React.useCallback(async (userId: string, appId: string) => {
     setIdentitiesLoading(true);

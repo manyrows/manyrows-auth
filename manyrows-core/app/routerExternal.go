@@ -82,6 +82,8 @@ func (a *AppService) externalAPIRouter(h *api.RequestHandler, corsMiddleware fun
 			auth.Get("/microsoft/callback", h.WorkspaceMicrosoftCallback)
 			auth.Get("/github/authorize", h.WorkspaceGithubAuthorize)
 			auth.Get("/github/callback", h.WorkspaceGithubCallback)
+			auth.Get("/kakao/authorize", h.WorkspaceKakaoAuthorize)
+			auth.Get("/kakao/callback", h.WorkspaceKakaoCallback)
 			// Generic external IdP (OIDC / OAuth2), one route pair for
 			// every configured provider, keyed by {providerSlug}.
 			auth.Get("/idp/{providerSlug}/authorize", h.WorkspaceExternalIDPAuthorize)
@@ -728,4 +730,3 @@ func ipMatchesRange(ip net.IP, ipRange string) bool {
 // =====================
 // API RATE LIMITING (monthly call limits)
 // =====================
-

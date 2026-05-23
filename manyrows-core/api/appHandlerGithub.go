@@ -98,7 +98,7 @@ func (handler *RequestHandler) HandleUpdateAppGithubConfig(w http.ResponseWriter
 		WriteError(w, r, "error.githubConfigIncomplete", http.StatusBadRequest)
 		return
 	}
-	if !handler.requireAtLeastOneSignInMethod(r.Context(), ws, acc.IsSuper(), curApp.PrimaryAuthMethod, curApp.AuthMethodGoogle, curApp.AuthMethodApple, curApp.AuthMethodMicrosoft, authMethodGithub) {
+	if !handler.requireAtLeastOneSignInMethod(r.Context(), ws, acc.IsSuper(), curApp.PrimaryAuthMethod, curApp.AuthMethodGoogle, curApp.AuthMethodApple, curApp.AuthMethodMicrosoft, authMethodGithub, curApp.AuthMethodKakao) {
 		WriteError(w, r, "error.noSignInMethodEnabled", http.StatusBadRequest)
 		return
 	}

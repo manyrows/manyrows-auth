@@ -164,6 +164,7 @@ const PROVIDER_LABEL: Record<string, string> = {
   apple: "Apple",
   microsoft: "Microsoft",
   github: "GitHub",
+  kakao: "Kakao",
 };
 
 export default function Profile({ workspaceBaseUrl, jwtToken, user, onBack, hideBranding, passkeyEnabled, allowAccountDeletion = true, allowEmailChange = true, onLogout, primaryAuthMethod, oauthEnabled = true }: ProfileProps) {
@@ -1548,7 +1549,7 @@ export default function Profile({ workspaceBaseUrl, jwtToken, user, onBack, hide
           {identitiesError && <div style={alertError}><span>{identitiesError}</span></div>}
           {!identitiesLoading && identities.length === 0 && !identitiesError && (
             <span style={{ fontSize: 13, color: "var(--ak-color-text-secondary, #666)" }}>
-              No connected accounts. Sign in with Google, Apple, Microsoft, or GitHub to link one.
+              No connected accounts. Sign in with Google, Apple, Microsoft, GitHub, or Kakao to link one.
             </span>
           )}
           {identities.map((i) => (

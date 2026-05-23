@@ -76,6 +76,10 @@ export type App = {
   githubClientId?: string;
   githubOAuthRedirectUri?: string;
   hasGithubClientSecret?: boolean;
+  authMethodKakao?: boolean;
+  kakaoClientId?: string;
+  kakaoOAuthRedirectUri?: string;
+  hasKakaoClientSecret?: boolean;
   require2fa: boolean;
   passwordMinLength: number;
   passwordMinZxcvbnScore: number;
@@ -601,7 +605,7 @@ function PrimaryAuthMethodCard({ app, cardURL, onSaved, onSuccess, onError }: Ca
 // =====================================================================
 
 type OAuthProviderRow = {
-  key: "google" | "apple" | "microsoft" | "github";
+  key: "google" | "apple" | "microsoft" | "github" | "kakao";
   label: string;
   enabled: boolean;
   render: () => React.ReactNode;
@@ -644,6 +648,17 @@ function ProviderIcon({ name }: { name: OAuthProviderRow["key"] }) {
           <path d="M12 .5C5.4.5 0 5.9 0 12.5c0 5.3 3.4 9.8 8.2 11.4.6.1.8-.3.8-.6v-2.1c-3.3.7-4-1.6-4-1.6-.6-1.4-1.4-1.8-1.4-1.8-1.1-.8.1-.8.1-.8 1.2.1 1.9 1.3 1.9 1.3 1.1 1.9 2.9 1.4 3.6 1 .1-.8.4-1.4.8-1.7-2.7-.3-5.5-1.3-5.5-6 0-1.3.5-2.4 1.3-3.3-.1-.3-.6-1.6.1-3.3 0 0 1-.3 3.3 1.3 1-.3 2-.4 3-.4s2 .1 3 .4c2.3-1.6 3.3-1.3 3.3-1.3.7 1.7.2 3 .1 3.3.8.9 1.3 2 1.3 3.3 0 4.7-2.8 5.7-5.5 6 .4.4.8 1.1.8 2.2v3.3c0 .3.2.7.8.6 4.8-1.6 8.2-6.1 8.2-11.4C24 5.9 18.6.5 12 .5z"/>
         </svg>
       );
+    case "kakao":
+      // Kakao's recognisable mark: a black speech bubble on the brand
+      // yellow, rendered as the app-icon rounded square so it reads on the
+      // admin's neutral background (the multicolor providers keep their
+      // brand colours; this is Kakao's).
+      return (
+        <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true">
+          <rect width="24" height="24" rx="6" fill="#FEE500"/>
+          <path fill="#000000" d="M12 6c-3.5 0-6.3 2.2-6.3 4.96 0 1.78 1.2 3.34 3 4.2-.13.46-.85 2.95-.88 3.15 0 0-.02.16.09.21.1.06.23.02.23.02.3-.04 3.46-2.27 4-2.65.6.09 1.2.13 1.84.13 3.5 0 6.3-2.2 6.3-4.96C18.3 8.2 15.5 6 12 6z"/>
+        </svg>
+      );
   }
 }
 
@@ -682,6 +697,14 @@ function OAuthProvidersList({ app, cardURL, onSaved, onSuccess, onError }: CardP
       enabled: !!app.authMethodGithub,
       render: () => (
         <GithubCard app={app} cardURL={cardURL} onSaved={onSaved} onSuccess={onSuccess} onError={onError} />
+      ),
+    },
+    {
+      key: "kakao",
+      label: "Kakao",
+      enabled: !!app.authMethodKakao,
+      render: () => (
+        <KakaoCard app={app} cardURL={cardURL} onSaved={onSaved} onSuccess={onSuccess} onError={onError} />
       ),
     },
   ];
@@ -1500,6 +1523,180 @@ function GithubCard({ app, cardURL, onSaved, onSuccess, onError }: CardProps) {
             uri={app.githubOAuthRedirectUri}
             onCopy={() => copy(app.githubOAuthRedirectUri!, "Callback URL")}
             help={t("apps.dialog.githubRedirectUriHelp", { defaultValue: "Paste this into the OAuth App's \"Authorization callback URL\" field on GitHub." })}
+            copyTitle={t("apps.copyRedirectUri", { defaultValue: "Copy redirect URI" })}
+          />
+        )}
+      </Section>
+      <SaveBar dirty={dirty} saving={saving} onSave={save} onDiscard={resetFromApp} />
+    </Stack>
+  );
+}
+
+// =====================================================================
+// Kakao (kauth.kakao.com). OIDC, verified against Kakao's JWKS like
+// Microsoft. Client ID is the Kakao app's REST API key; the secret is
+// required like the other bespoke providers (the customer enables Kakao's
+// Client Secret feature). The account_email consent + Business
+// verification requirement is the customer's own Kakao-side setup, so it's
+// surfaced as a prerequisites note rather than enforced here.
+// =====================================================================
+
+function KakaoCard({ app, cardURL, onSaved, onSuccess, onError }: CardProps) {
+  const { t } = useTranslation();
+  const { enqueueSnackbar } = useSnackbar();
+
+  const [enabled, setEnabled] = React.useState(!!app.authMethodKakao);
+  const [clientId, setClientId] = React.useState(app.kakaoClientId || "");
+  const [clientSecret, setClientSecret] = React.useState("");
+  const [clearSecret, setClearSecret] = React.useState(false);
+  const [saving, setSaving] = React.useState(false);
+
+  React.useEffect(() => {
+    setEnabled(!!app.authMethodKakao);
+    setClientId(app.kakaoClientId || "");
+    setClientSecret("");
+    setClearSecret(false);
+  }, [app]);
+
+  const resetFromApp = React.useCallback(() => {
+    setEnabled(!!app.authMethodKakao);
+    setClientId(app.kakaoClientId || "");
+    setClientSecret("");
+    setClearSecret(false);
+  }, [app]);
+
+  const dirty =
+    enabled !== !!app.authMethodKakao ||
+    clientId !== (app.kakaoClientId || "") ||
+    clientSecret.trim().length > 0 ||
+    clearSecret;
+
+  const willHaveSecret = !clearSecret && (!!app.hasKakaoClientSecret || clientSecret.trim().length > 0);
+  const configComplete = clientId.trim().length > 0 && willHaveSecret;
+
+  async function save() {
+    if (enabled && !configComplete) {
+      onError(new Error(t("apps.kakaoConfigIncomplete", { defaultValue: "Configure both REST API key and Client Secret before enabling Kakao sign-in." })));
+      return;
+    }
+    setSaving(true);
+    try {
+      const body: Record<string, unknown> = {
+        authMethodKakao: enabled,
+        kakaoClientId: clientId.trim(),
+      };
+      if (clientSecret.trim()) body.kakaoClientSecret = clientSecret.trim();
+      else if (clearSecret) body.kakaoClientSecret = "";
+      const res = await axios.put<App>(`${cardURL}/kakao-config`, body);
+      onSaved(res.data);
+      onSuccess();
+    } catch (e) {
+      onError(e);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function copy(text: string, label: string) {
+    try { await navigator.clipboard.writeText(text); enqueueSnackbar(t("apps.copied", { label }), { variant: "success" }); }
+    catch { enqueueSnackbar(t("apps.copyFailed"), { variant: "error" }); }
+  }
+
+  return (
+    <Stack spacing={3.5} sx={{ maxWidth: 680 }}>
+      <Section
+        overline={t("apps.sectionOverline.oauthProvider", { defaultValue: "OAuth provider" })}
+        title={t("apps.kakaoConfigTitle", { defaultValue: "Kakao Sign-In" })}
+        desc={t("apps.kakaoConfigDesc", { defaultValue: "Credentials from your Kakao Developers app. ManyRows verifies the Kakao OpenID Connect id_token and uses the account email as the identifier." })}
+      >
+        {/* Kakao-side setup the customer must complete on their own Kakao
+            app — surfaced here because sign-in fails (no email / no
+            id_token) if these are missing, and the cause isn't obvious. */}
+        <Alert severity="info" sx={{ fontSize: 13 }}>
+          <Typography variant="body2" sx={{ fontWeight: 500, mb: 0.5 }}>
+            {t("apps.kakaoPrereqTitle", { defaultValue: "Set up on the Kakao Developers side first" })}
+          </Typography>
+          <Typography variant="caption" color="text.secondary" component="div">
+            {t("apps.kakaoPrereqBody", {
+              defaultValue:
+                "1) The Client ID below is your Kakao app's REST API key. 2) Turn on \"Activate OpenID Connect\" (Kakao Login → product settings). 3) Enable the Client Secret (Security) and paste it below. 4) Add the account_email consent item and set it Required — Kakao requires Business verification (사업자등록) to release email. Kakao only shares an email once it is verified, and ManyRows refuses a Kakao sign-in with no email.",
+            })}
+          </Typography>
+        </Alert>
+
+        <FormControlLabel
+          control={
+            <Switch
+              checked={enabled}
+              onChange={(e) => {
+                const next = e.target.checked;
+                if (next && !configComplete) {
+                  enqueueSnackbar(t("apps.kakaoConfigIncomplete", { defaultValue: "Configure both REST API key and Client Secret before enabling Kakao sign-in." }), { variant: "warning" });
+                  return;
+                }
+                setEnabled(next);
+              }}
+              disabled={saving}
+            />
+          }
+          label={
+            <Stack spacing={0}>
+              <Typography variant="body2" sx={{ fontWeight: 500 }}>{t("apps.dialog.authMethodKakao", { defaultValue: "Enable Kakao Sign-In" })}</Typography>
+              {!configComplete && (
+                <Typography variant="caption" color="text.secondary">{t("apps.kakaoConfigRequired", { defaultValue: "Configure REST API key + Client Secret below first." })}</Typography>
+              )}
+            </Stack>
+          }
+          sx={{ ml: 0 }}
+        />
+
+        <TextField
+          size="small"
+          fullWidth
+          label={t("apps.dialog.kakaoClientIdLabel", { defaultValue: "REST API key (Client ID)" })}
+          value={clientId}
+          onChange={(e) => setClientId(e.target.value)}
+          disabled={saving}
+          placeholder="a1b2c3d4e5f6..."
+          helperText={t("apps.dialog.kakaoClientIdHelp", { defaultValue: "From Kakao Developers → My Application → App Keys → REST API key" })}
+        />
+        <TextField
+          size="small"
+          fullWidth
+          type="password"
+          label={
+            <Box component="span" sx={{ display: "inline-flex", alignItems: "center", gap: 1 }}>
+              <span>{t("apps.dialog.kakaoClientSecretLabel", { defaultValue: "Client Secret" })}</span>
+              {app.hasKakaoClientSecret && !clearSecret && (
+                <StatusChip size="xs" label={t("apps.dialog.secretSet", { defaultValue: "Configured" })} severity="success" />
+              )}
+              {clearSecret && (
+                <StatusChip size="xs" label="Will be cleared on save" severity="warning" />
+              )}
+            </Box>
+          }
+          value={clientSecret}
+          onChange={(e) => { setClientSecret(e.target.value); setClearSecret(false); }}
+          disabled={saving || clearSecret}
+          placeholder={app.hasKakaoClientSecret && !clearSecret ? "Leave blank to keep current" : "Kakao Login → Security → Client Secret"}
+          helperText={
+            <Box component="span" sx={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+              <span>{t("apps.dialog.kakaoClientSecretHelp", { defaultValue: "Encrypted at rest. Generate and activate it under Kakao Login → Security → Client Secret on your Kakao app." })}</span>
+              {app.hasKakaoClientSecret && !clearSecret && (
+                <Button size="small" color="error" onClick={() => { setClearSecret(true); setClientSecret(""); }} sx={{ textTransform: "none", fontSize: 11, minWidth: 0, p: 0, ml: 1, whiteSpace: "nowrap" }}>Clear secret</Button>
+              )}
+              {clearSecret && (
+                <Button size="small" onClick={() => setClearSecret(false)} sx={{ textTransform: "none", fontSize: 11, minWidth: 0, p: 0, ml: 1, whiteSpace: "nowrap" }}>Undo</Button>
+              )}
+            </Box>
+          }
+        />
+        {app.kakaoOAuthRedirectUri && (
+          <CopyableUri
+            label={t("apps.dialog.kakaoRedirectUriLabel", { defaultValue: "Redirect URI" })}
+            uri={app.kakaoOAuthRedirectUri}
+            onCopy={() => copy(app.kakaoOAuthRedirectUri!, "Redirect URI")}
+            help={t("apps.dialog.kakaoRedirectUriHelp", { defaultValue: "Register this under Kakao Login → Redirect URI on your Kakao app." })}
             copyTitle={t("apps.copyRedirectUri", { defaultValue: "Copy redirect URI" })}
           />
         )}
