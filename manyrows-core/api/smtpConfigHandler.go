@@ -256,7 +256,7 @@ func (handler *RequestHandler) HandleTestSMTPConfig(w http.ResponseWriter, r *ht
 
 	if sendErr != nil {
 		log.Err(sendErr).Msg("test email send failed")
-		WriteError(w, r, "error.smtpTestFailed", http.StatusBadGateway)
+		WriteErrorf(w, r, "error.smtpTestFailed", http.StatusBadGateway, sendErr.Error())
 		return
 	}
 
