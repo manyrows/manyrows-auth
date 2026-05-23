@@ -459,7 +459,7 @@ export default function Sessions(props: Props) {
             ),
             endAdornment: emailInput ? (
               <InputAdornment position="end">
-                <IconButton size="small" onClick={clearSearch} aria-label="clear">
+                <IconButton size="small" onClick={clearSearch} aria-label={t("common.clear", { defaultValue: "Clear" })}>
                   <X size={14} strokeWidth={1.75} />
                 </IconButton>
               </InputAdornment>

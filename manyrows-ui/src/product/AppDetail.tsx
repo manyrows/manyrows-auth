@@ -404,13 +404,13 @@ export default function AppDetail({ project, workspace, appId, onAppUpdated }: P
                       <Typography sx={{ fontFamily: "var(--font-mono)", fontSize: 12.5, color: "text.secondary", wordBreak: "break-all" }}>
                         {app.id}
                       </Typography>
-                      <Tooltip title="Copy App ID">
+                      <Tooltip title={t("apps.copyAppId", { defaultValue: "Copy App ID" })}>
                         <IconButton
                           size="small"
                           onClick={() => {
                             navigator.clipboard.writeText(app.id).then(
-                              () => enqueueSnackbar("App ID copied", { variant: "success" }),
-                              () => enqueueSnackbar("Copy failed", { variant: "error" }),
+                              () => enqueueSnackbar(t("apps.idCopied", { defaultValue: "App ID copied" }), { variant: "success" }),
+                              () => enqueueSnackbar(t("apps.copyFailed", { defaultValue: "Copy failed" }), { variant: "error" }),
                             );
                           }}
                           sx={{ color: "text.secondary" }}
