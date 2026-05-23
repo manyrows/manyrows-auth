@@ -170,16 +170,15 @@ func (handler *RequestHandler) HandleGetAppUserActivity(w http.ResponseWriter, r
 		return
 	}
 
-	userID, err := utils.GetPathUUID("userId", r)
-	if err != nil || userID == uuid.Nil {
-		WriteError(w, r, "error.invalidUserId", http.StatusBadRequest)
+	user, ok := handler.loadUserScopedToApp(w, r, appID)
+	if !ok {
 		return
 	}
 
 	rangeDays := parseRangeDays(r)
-	summary, err := handler.repo.GetUserActivityForApp(r.Context(), appID, userID, rangeDays, 50)
+	summary, err := handler.repo.GetUserActivityForApp(r.Context(), appID, user.ID, rangeDays, 50)
 	if err != nil {
-		log.Err(err).Str("userId", userID.String()).Msg("failed to load user activity")
+		log.Err(err).Str("userId", user.ID.String()).Msg("failed to load user activity")
 		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 		return
 	}

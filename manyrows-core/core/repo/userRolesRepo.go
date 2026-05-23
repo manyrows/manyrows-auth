@@ -522,12 +522,38 @@ func (r *Repo) GetDirectPermissionIDs(ctx context.Context, productID, userID, ap
 
 // SetDirectPermissions replaces all direct permissions for a user in an app.
 func (r *Repo) SetDirectPermissions(ctx context.Context, productID, userID, appID uuid.UUID, permissionIDs []uuid.UUID) error {
-	_ = productID
+	if appID == uuid.Nil {
+		return ErrBadRequest
+	}
 	tx, err := r.db.Pool().Begin(ctx)
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback(ctx)
+
+	// Validate app belongs to project (guards an admin in project A from writing
+	// grants scoped to project B — mirrors ReplaceUserRoles).
+	{
+		var one int
+		if err := tx.QueryRow(ctx, `select 1 from apps where id = $1 and product_id = $2`, appID, productID).Scan(&one); err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return ErrBadRequest
+			}
+			return err
+		}
+	}
+
+	// Validate all permissions belong to this project.
+	if len(permissionIDs) > 0 {
+		permIDs := uniqueUUIDs(permissionIDs)
+		var cnt int
+		if err := tx.QueryRow(ctx, `select count(*) from permissions where product_id = $1 and id = any($2::uuid[])`, productID, permIDs).Scan(&cnt); err != nil {
+			return err
+		}
+		if cnt != len(permIDs) {
+			return ErrBadRequest
+		}
+	}
 
 	// Delete existing
 	_, err = tx.Exec(ctx,

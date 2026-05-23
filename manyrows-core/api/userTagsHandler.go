@@ -6,7 +6,6 @@ import (
 
 	"manyrows-core/utils"
 
-	"github.com/gofrs/uuid/v5"
 	"github.com/rs/zerolog/log"
 )
 
@@ -27,13 +26,12 @@ func (handler *RequestHandler) HandleListUserTags(w http.ResponseWriter, r *http
 	if !ok {
 		return
 	}
-	userID, err := utils.GetPathUUID("userId", r)
-	if err != nil || userID == uuid.Nil {
-		WriteError(w, r, "error.invalidUserId", http.StatusBadRequest)
+	user, ok := handler.loadUserScopedToApp(w, r, appID)
+	if !ok {
 		return
 	}
 
-	tags, err := handler.repo.ListUserTags(r.Context(), appID, userID)
+	tags, err := handler.repo.ListUserTags(r.Context(), appID, user.ID)
 	if err != nil {
 		log.Err(err).Msg("failed to list user tags")
 		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
@@ -53,9 +51,8 @@ func (handler *RequestHandler) HandleReplaceUserTags(w http.ResponseWriter, r *h
 	if !ok {
 		return
 	}
-	userID, err := utils.GetPathUUID("userId", r)
-	if err != nil || userID == uuid.Nil {
-		WriteError(w, r, "error.invalidUserId", http.StatusBadRequest)
+	user, ok := handler.loadUserScopedToApp(w, r, appID)
+	if !ok {
 		return
 	}
 
@@ -69,7 +66,7 @@ func (handler *RequestHandler) HandleReplaceUserTags(w http.ResponseWriter, r *h
 		req.Tags = req.Tags[:50]
 	}
 
-	tags, err := handler.repo.ReplaceUserTags(r.Context(), appID, userID, req.Tags)
+	tags, err := handler.repo.ReplaceUserTags(r.Context(), appID, user.ID, req.Tags)
 	if err != nil {
 		log.Err(err).Msg("failed to replace user tags")
 		WriteError(w, r, "error.internalError", http.StatusInternalServerError)

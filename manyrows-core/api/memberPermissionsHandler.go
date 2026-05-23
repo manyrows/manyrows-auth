@@ -2,8 +2,10 @@ package api
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 
+	"manyrows-core/core/repo"
 	"manyrows-core/utils"
 
 	"github.com/go-chi/chi/v5"
@@ -74,6 +76,11 @@ func (handler *RequestHandler) HandleSetMemberPermissions(w http.ResponseWriter,
 	}
 
 	if err := handler.repo.SetDirectPermissions(r.Context(), project.ID, userID, body.AppID, body.PermissionIDs); err != nil {
+		if errors.Is(err, repo.ErrBadRequest) {
+			// appId or a permissionId doesn't belong to this product.
+			WriteError(w, r, "error.badRequest", http.StatusBadRequest)
+			return
+		}
 		log.Err(err).Msg("failed to set direct permissions")
 		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 		return

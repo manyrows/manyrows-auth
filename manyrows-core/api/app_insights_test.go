@@ -685,11 +685,13 @@ func TestGetProductMembersActivityCounts(t *testing.T) {
 	}
 }
 
-func TestUserActivity_InvalidUserIDReturns400(t *testing.T) {
+func TestUserActivity_InvalidUserIDReturns404(t *testing.T) {
 	fix := newInsightsFixture(t)
 	rr := hitInsights(t, fix, "/users/not-a-uuid/activity")
-	if rr.Code != http.StatusBadRequest {
-		t.Errorf("status = %d, want 400 for bogus userId", rr.Code)
+	// loadUserScopedToApp treats a malformed/unknown/foreign-pool user as 404,
+	// consistent with the identity/passkey admin handlers.
+	if rr.Code != http.StatusNotFound {
+		t.Errorf("status = %d, want 404 for bogus userId", rr.Code)
 	}
 }
 

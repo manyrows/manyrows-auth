@@ -1000,12 +1000,11 @@ func (handler *RequestHandler) HandleAdminListUserPasskeys(w http.ResponseWriter
 	if !ok {
 		return
 	}
-	uid, err := uuid.FromString(chi.URLParam(r, "userId"))
-	if err != nil {
-		WriteError(w, r, "error.badRequest", http.StatusBadRequest)
+	user, ok := handler.loadUserScopedToApp(w, r, appID)
+	if !ok {
 		return
 	}
-	passkeys, err := handler.repo.ListPasskeysByUser(r.Context(), appID, uid)
+	passkeys, err := handler.repo.ListPasskeysByUser(r.Context(), appID, user.ID)
 	if err != nil {
 		log.Err(err).Msg("Could not list user passkeys (admin)")
 		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
@@ -1025,11 +1024,11 @@ func (handler *RequestHandler) HandleAdminDeleteUserPasskey(w http.ResponseWrite
 	if !ok {
 		return
 	}
-	uid, err := uuid.FromString(chi.URLParam(r, "userId"))
-	if err != nil {
-		WriteError(w, r, "error.badRequest", http.StatusBadRequest)
+	user, ok := handler.loadUserScopedToApp(w, r, appID)
+	if !ok {
 		return
 	}
+	uid := user.ID
 	pid, err := uuid.FromString(chi.URLParam(r, "passkeyId"))
 	if err != nil {
 		WriteError(w, r, "error.badRequest", http.StatusBadRequest)

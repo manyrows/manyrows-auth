@@ -206,6 +206,12 @@ func (handler *RequestHandler) HandleCreateApiKey(w http.ResponseWriter, r *http
 			WriteError(w, r, "error.badRequest", http.StatusBadRequest)
 			return
 		}
+		// Confirm the app belongs to this workspace — otherwise the key would be
+		// stamped to a foreign or nonexistent app id within your own workspace.
+		if app, err := handler.repo.GetAppByID(r.Context(), parsed); err != nil || app.WorkspaceID != ws.ID {
+			WriteError(w, r, "error.appNotFound", http.StatusNotFound)
+			return
+		}
 		appID = &parsed
 	}
 
