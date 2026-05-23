@@ -59,22 +59,34 @@ offline verification and real revocation. The short access-token TTL bounds how
 long a revoked-but-unexpired token keeps working; the refresh exchange is where
 revocation actually bites.
 
+### Session tokens live in HttpOnly cookies, scoped to one registrable domain
+
+In the browser flow the access token (`mr_at_<app>`) and refresh token
+(`mr_rt_<app>`) are delivered as `HttpOnly`, `Secure`, `SameSite=Lax` cookies — an
+app can tighten `SameSite` to `Strict` — rather than handed to page JavaScript to
+hold. When a workspace runs several apps under one parent domain, the cookie
+`Domain` can be widened to a shared parent (`.example.com`) so the session follows
+the user across subdomains; that value is checked against the Public Suffix List,
+and a bare suffix like `.co.uk` or `.github.io` is refused.
+
+`HttpOnly` is the decision that matters here: a token in `localStorage` is readable
+by any script on the page, so a single XSS bug exfiltrates it, whereas an
+`HttpOnly` cookie is sent automatically and never exposed to JavaScript. The
+public-suffix check guards the `Domain` widening — without it an operator could
+scope a cookie to `.co.uk` and leak sessions to every unrelated site under it. That
+same registrable-domain ceiling is why cross-domain SSO is out of scope (below): a
+cookie can't safely reach further.
+
 ### Refresh tokens are bound to the device that holds them (DPoP)
 
-We bind client refresh tokens to a non-extractable browser keypair using DPoP
-(RFC 9449). Refreshing then requires signing a fresh proof with that key; we verify
-the proof against the key thumbprint (RFC 7638) stored with the token, reject
-replays via a short-lived cache, and keep the accepted clock skew asymmetric
-(generous into the past, tight into the future), so a captured proof can't extend
-its own lifetime.
-
-The refresh token is the high-value theft target: on its own, a bearer refresh
-token mints new access tokens indefinitely. Binding it to a key the browser won't
-surrender makes an exfiltrated refresh token inert without the device that issued
-it. We deliberately shipped only this half (refresh-token binding) and deferred
-access-token binding (the `cnf`/`ath` claims), rather than blocking the whole
-feature on the whole spec. Stopping the worst attack first beats shipping nothing
-until everything is done.
+The refresh token is the high-value theft target: a bearer refresh token mints new
+access tokens indefinitely. So we bind it to a non-extractable browser keypair with
+DPoP (RFC 9449) — each refresh carries a fresh proof signed by that key, checked
+against the thumbprint (RFC 7638) stored with the token, replays rejected and the
+accepted clock skew kept asymmetric (generous into the past, tight into the future)
+so a captured proof can't extend its own life. An exfiltrated refresh token is then
+inert without the device that issued it. Binding access tokens too (the `cnf`/`ath`
+half of the spec) is deferred — see "Still open".
 
 ## Identity and OAuth
 
