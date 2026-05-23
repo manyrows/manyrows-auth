@@ -130,8 +130,9 @@ export default function AppIPAllowlist({ workspaceId, productId, appId, open = t
       await axios.delete(`${basePath}/${deleteEntry.id}`);
       setDeleteEntry(null);
       await loadEntries();
-    } catch {
+    } catch (e) {
       setDeleteEntry(null);
+      setErrorMsg(sanitizeErrorMsg(extractApiError(e, t("error.generic"))));
     }
   };
 

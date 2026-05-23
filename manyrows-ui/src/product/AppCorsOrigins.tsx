@@ -117,8 +117,9 @@ export default function AppCorsOrigins({ workspaceId, productId, appId, open = t
       await axios.delete(`${basePath}/${deleteOrigin.id}`);
       setDeleteOrigin(null);
       await loadOrigins();
-    } catch {
+    } catch (e) {
       setDeleteOrigin(null);
+      setErrorMsg(sanitizeErrorMsg(extractApiError(e, t("error.generic"))));
     }
   };
 

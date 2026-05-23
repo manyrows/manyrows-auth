@@ -95,15 +95,18 @@ export default function Register(props: Props) {
     window.setTimeout(() => emailRef.current?.focus(), 50);
   }, []);
 
-  if (registrationClosed) {
-    return <Navigate to="/app/login" replace />;
-  }
-
+  // These hooks must run unconditionally on every render — keep them above the
+  // early return below, or React throws "rendered fewer hooks than expected"
+  // when registrationClosed flips after authCfg loads.
   const emailTrimmed = normalizeEmail(email);
   const emailOk = useMemo(() => validateEmail(emailTrimmed), [emailTrimmed]);
 
   const pwTrimmed = password.trim();
   const pwOk = useMemo(() => pwTrimmed.length >= 10, [pwTrimmed]);
+
+  if (registrationClosed) {
+    return <Navigate to="/app/login" replace />;
+  }
 
   // Only require a Turnstile token when the operator has Turnstile
   // configured - when site key isn't published the widget never
