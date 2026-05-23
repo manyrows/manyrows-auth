@@ -2,7 +2,6 @@ package api
 
 import (
 	"context"
-	"manyrows-core/auth"
 	"manyrows-core/core"
 	"manyrows-core/core/repo"
 	"manyrows-core/core/validation"
@@ -82,95 +81,6 @@ func (handler *RequestHandler) AdminLogout(w http.ResponseWriter, r *http.Reques
 		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 		return
 	}
-}
-
-func (handler *RequestHandler) AdminSendMagicLink(w http.ResponseWriter, r *http.Request) {
-	acc, _, err := handler.adminAuthService.GetLoggedInAccount(r)
-	if err != nil {
-		log.Err(err).Msg("failed to get logged in account for send magic link")
-		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
-		return
-	}
-	if acc != nil {
-		// already logged in
-		WriteError(w, r, "error.alreadyLoggedIn", http.StatusForbidden)
-		return
-	}
-
-	req := AuthRequest{}
-	if !utils.ReadJson(w, r, &req) {
-		return
-	}
-
-	toEmail, vr := auth.ValidateEmail(req.Email)
-	if !vr.Ok() {
-		WriteValidationError(w, r, vr)
-		return
-	}
-
-	ip := auth.ClientIP(r)
-
-	if !handler.checkAttemptRateLimit(w, r, attemptPurposeMagicLink, ip, toEmail, "magic link (admin)", nil) {
-		return
-	}
-	if !handler.checkEmailSendDailyQuota(w, r, attemptPurposeMagicLink, toEmail, "magic link (admin)", nil) {
-		return
-	}
-
-	// record attempt
-	if err := handler.repo.InsertAttempt(r.Context(), attemptPurposeMagicLink, toEmail, ip); err != nil {
-		log.Err(err).Msg("failed to insert magic link attempt")
-		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
-		return
-	}
-
-	acc, vr2, err := handler.repo.GetAccountByEmail(r.Context(), toEmail)
-	if err != nil {
-		log.Err(err).Msg("Could not look up admin by email")
-		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
-		return
-	}
-	if !vr2.Ok() {
-		WriteValidationError(w, r, vr2)
-		return
-	}
-
-	purpose := "admin_register"
-	if acc != nil {
-		purpose = "admin_login"
-	}
-
-	rawToken, err := handler.createMagicToken(r.Context(), purpose, toEmail)
-	if err != nil {
-		log.Err(err).Msg("Could not create magic token")
-		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
-		return
-	}
-
-	link := handler.config.GetBaseURL() + "/admin/auth?token=" + rawToken
-
-	// Send the right email copy
-	// Use account language if available, otherwise default to "en"
-	lang := "en"
-	if acc != nil && acc.Language != "" {
-		lang = acc.Language
-	}
-	if purpose == "admin_login" {
-		if err := handler.emailService.SendAdminLoginEmail(toEmail, link, lang); err != nil {
-			log.Err(err).Msg("Could not send login magic link email")
-			WriteError(w, r, "error.internalError", http.StatusInternalServerError)
-			return
-		}
-	} else {
-		if err := handler.emailService.SendAdminRegisterEmail(toEmail, link, lang); err != nil {
-			log.Err(err).Msg("Could not send register magic link email")
-			WriteError(w, r, "error.internalError", http.StatusInternalServerError)
-			return
-		}
-	}
-
-	// Always return OK (don’t leak)
-	utils.WriteJson(w, map[string]any{"ok": true})
 }
 
 func (handler *RequestHandler) createMagicToken(ctx context.Context, purpose string, toEmail string) (string, error) {
