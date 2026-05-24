@@ -353,6 +353,43 @@ function ConfirmRemoveMemberDialog(props: {
 
 /** ===== Dialog: Add/Edit member roles (app REQUIRED) ===== */
 
+// ConfirmActionDialog — presentational shell for the small "are you sure?"
+// dialogs (enable/disable, clear password, reset 2FA, unlock). The parent owns
+// all state and the async confirm handler (open/close/reload/snackbar logic is
+// unchanged, just passed in via onConfirm), so this only unifies the repeated
+// Dialog/Title/Content/Actions + loading-aware confirm button boilerplate.
+function ConfirmActionDialog(props: {
+  open: boolean;
+  loading: boolean;
+  title: React.ReactNode;
+  children: React.ReactNode;
+  cancelLabel: string;
+  confirmLabel: string;
+  loadingLabel?: string;
+  confirmColor?: "primary" | "error";
+  onClose: () => void;
+  onConfirm: () => void;
+}) {
+  return (
+    <Dialog open={props.open} onClose={props.loading ? undefined : props.onClose} maxWidth="xs" fullWidth>
+      <DialogTitle>{props.title}</DialogTitle>
+      <DialogContent>{props.children}</DialogContent>
+      <DialogActions>
+        <Button onClick={props.onClose} disabled={props.loading}>{props.cancelLabel}</Button>
+        <Button
+          variant="contained"
+          disableElevation
+          color={props.confirmColor ?? "primary"}
+          disabled={props.loading}
+          onClick={props.onConfirm}
+        >
+          {props.loading ? (props.loadingLabel ?? "...") : props.confirmLabel}
+        </Button>
+      </DialogActions>
+    </Dialog>
+  );
+}
+
 function MemberRolesDialog(props: {
   open: boolean;
   mode: "add" | "edit";
@@ -2576,211 +2613,149 @@ export default function AppUsers({ project, appId: appIdProp }: Props) {
       </Dialog>
 
       {/* Enable/Disable confirmation dialog */}
-      <Dialog
+      <ConfirmActionDialog
         open={toggleOpen}
-        onClose={toggleLoading ? undefined : () => { setToggleOpen(false); setToggleMember(null); }}
-        fullWidth
-        maxWidth="xs"
+        loading={toggleLoading}
+        title={toggleMember?.enabled !== false
+          ? t("projectMembers.disableTitle", "Disable user")
+          : t("projectMembers.enableTitle", "Enable user")}
+        cancelLabel={t("common.cancel")}
+        confirmLabel={toggleMember?.enabled !== false
+          ? t("projectMembers.disableBtn", "Disable")
+          : t("projectMembers.enableBtn", "Enable")}
+        confirmColor={toggleMember?.enabled !== false ? "error" : "primary"}
+        onClose={() => { setToggleOpen(false); setToggleMember(null); }}
+        onConfirm={async () => {
+          if (!toggleMember) return;
+          setToggleLoading(true);
+          try {
+            const newEnabled = toggleMember.enabled === false;
+            await setUserEnabled(project.workspaceId, toggleMember.accountId, newEnabled);
+            setToggleOpen(false);
+            setToggleMember(null);
+            setInfoOpen(false);
+            setInfoMember(null);
+            await refreshList();
+            enqueueSnackbar(
+              newEnabled
+                ? t("projectMembers.userEnabled", "User enabled")
+                : t("projectMembers.userDisabled", "User disabled"),
+              { variant: "success" },
+            );
+          } catch {
+            enqueueSnackbar(t("projectMembers.failedToSave"), { variant: "error" });
+          } finally {
+            setToggleLoading(false);
+          }
+        }}
       >
-        <DialogTitle>
-          {toggleMember?.enabled !== false
-            ? t("projectMembers.disableTitle", "Disable user")
-            : t("projectMembers.enableTitle", "Enable user")}
-        </DialogTitle>
-        <DialogContent>
-          <Stack spacing={1.5} sx={{ pt: 1 }}>
-            <Typography variant="body2" color="text.secondary">
-              {toggleMember?.enabled !== false
-                ? t("projectMembers.disableBody", "This user will no longer be able to log in. All active sessions will be revoked.")
-                : t("projectMembers.enableBody", "This user will be able to log in again.")}
-            </Typography>
-            <Typography variant="body2" fontWeight={500}>{toggleMember?.email}</Typography>
-          </Stack>
-        </DialogContent>
-        <DialogActions>
-          <Button
-            onClick={() => { setToggleOpen(false); setToggleMember(null); }}
-            disabled={toggleLoading}
-          >
-            {t("common.cancel")}
-          </Button>
-          <Button
-            variant="contained"
-            disableElevation
-            color={toggleMember?.enabled !== false ? "error" : "primary"}
-            disabled={toggleLoading}
-            onClick={async () => {
-              if (!toggleMember) return;
-              setToggleLoading(true);
-              try {
-                const newEnabled = toggleMember.enabled === false;
-                await setUserEnabled(project.workspaceId, toggleMember.accountId, newEnabled);
-                setToggleOpen(false);
-                setToggleMember(null);
-                setInfoOpen(false);
-                setInfoMember(null);
-                await refreshList();
-                enqueueSnackbar(
-                  newEnabled
-                    ? t("projectMembers.userEnabled", "User enabled")
-                    : t("projectMembers.userDisabled", "User disabled"),
-                  { variant: "success" },
-                );
-              } catch {
-                enqueueSnackbar(t("projectMembers.failedToSave"), { variant: "error" });
-              } finally {
-                setToggleLoading(false);
-              }
-            }}
-          >
-            {toggleLoading
-              ? "..."
-              : toggleMember?.enabled !== false
-                ? t("projectMembers.disableBtn", "Disable")
-                : t("projectMembers.enableBtn", "Enable")}
-          </Button>
-        </DialogActions>
-      </Dialog>
+        <Stack spacing={1.5} sx={{ pt: 1 }}>
+          <Typography variant="body2" color="text.secondary">
+            {toggleMember?.enabled !== false
+              ? t("projectMembers.disableBody", "This user will no longer be able to log in. All active sessions will be revoked.")
+              : t("projectMembers.enableBody", "This user will be able to log in again.")}
+          </Typography>
+          <Typography variant="body2" fontWeight={500}>{toggleMember?.email}</Typography>
+        </Stack>
+      </ConfirmActionDialog>
 
       {/* Clear-password confirmation. Destructive but recoverable -
           the user can set a new password via /auth/forgot-password
           (or in-profile set-password) to restore email/password
           sign-in. OAuth + passkey are unaffected. All active
           sessions are revoked server-side as part of the operation. */}
-      <Dialog
+      <ConfirmActionDialog
         open={clearPwOpen}
-        onClose={() => clearPwLoading ? null : (setClearPwOpen(false), setClearPwMember(null))}
-        maxWidth="xs"
-        fullWidth
+        loading={clearPwLoading}
+        title={t("projectMembers.clearPwTitle", { defaultValue: "Clear password?" })}
+        cancelLabel={t("common.cancel")}
+        confirmLabel={t("projectMembers.clearPasswordAction", { defaultValue: "Clear password" })}
+        confirmColor="error"
+        onClose={() => { setClearPwOpen(false); setClearPwMember(null); }}
+        onConfirm={async () => {
+          if (!clearPwMember) return;
+          setClearPwLoading(true);
+          try {
+            await clearUserPassword(project.workspaceId, clearPwMember.accountId);
+            setClearPwOpen(false);
+            setClearPwMember(null);
+            setInfoOpen(false);
+            setInfoMember(null);
+            await refreshList();
+            enqueueSnackbar(t("projectMembers.passwordCleared", { defaultValue: "Password cleared" }), { variant: "success" });
+          } catch {
+            enqueueSnackbar(t("projectMembers.passwordClearFailed", { defaultValue: "Failed to clear password" }), { variant: "error" });
+          } finally {
+            setClearPwLoading(false);
+          }
+        }}
       >
-        <DialogTitle>{t("projectMembers.clearPwTitle", { defaultValue: "Clear password?" })}</DialogTitle>
-        <DialogContent>
-          <Stack spacing={1.5}>
-            <Typography variant="body2">
-              {t("projectMembers.clearPwBody", { defaultValue: "The user's password will be unset. They can no longer sign in with email + password until they reset via the forgot-password flow. OAuth and passkey sign-in are unaffected." })}
-            </Typography>
-            <Typography variant="body2" color="text.secondary">
-              <Trans i18nKey="projectMembers.clearPwSessions" values={{ email: clearPwMember?.email }} components={tc}>
-                All active sessions for <strong>{"{{email}}"}</strong> will also be revoked.
-              </Trans>
-            </Typography>
-          </Stack>
-        </DialogContent>
-        <DialogActions>
-          <Button
-            onClick={() => { setClearPwOpen(false); setClearPwMember(null); }}
-            disabled={clearPwLoading}
-          >
-            {t("common.cancel")}
-          </Button>
-          <Button
-            variant="contained"
-            disableElevation
-            color="error"
-            disabled={clearPwLoading}
-            onClick={async () => {
-              if (!clearPwMember) return;
-              setClearPwLoading(true);
-              try {
-                await clearUserPassword(project.workspaceId, clearPwMember.accountId);
-                setClearPwOpen(false);
-                setClearPwMember(null);
-                setInfoOpen(false);
-                setInfoMember(null);
-                await refreshList();
-                enqueueSnackbar(t("projectMembers.passwordCleared", { defaultValue: "Password cleared" }), { variant: "success" });
-              } catch {
-                enqueueSnackbar(t("projectMembers.passwordClearFailed", { defaultValue: "Failed to clear password" }), { variant: "error" });
-              } finally {
-                setClearPwLoading(false);
-              }
-            }}
-          >
-            {clearPwLoading ? "..." : t("projectMembers.clearPasswordAction", { defaultValue: "Clear password" })}
-          </Button>
-        </DialogActions>
-      </Dialog>
+        <Stack spacing={1.5}>
+          <Typography variant="body2">
+            {t("projectMembers.clearPwBody", { defaultValue: "The user's password will be unset. They can no longer sign in with email + password until they reset via the forgot-password flow. OAuth and passkey sign-in are unaffected." })}
+          </Typography>
+          <Typography variant="body2" color="text.secondary">
+            <Trans i18nKey="projectMembers.clearPwSessions" values={{ email: clearPwMember?.email }} components={tc}>
+              All active sessions for <strong>{"{{email}}"}</strong> will also be revoked.
+            </Trans>
+          </Typography>
+        </Stack>
+      </ConfirmActionDialog>
 
       {/* Reset 2FA — removes the user's authenticator so a locked-out user can re-enroll. */}
-      <Dialog
+      <ConfirmActionDialog
         open={resetTotpOpen}
-        onClose={() => (resetTotpLoading ? null : setResetTotpOpen(false))}
-        maxWidth="xs"
-        fullWidth
+        loading={resetTotpLoading}
+        title={`${t("projectMembers.reset2fa", "Reset 2FA")}?`}
+        cancelLabel={t("common.cancel")}
+        confirmLabel={t("projectMembers.reset2fa", "Reset 2FA")}
+        confirmColor="error"
+        onClose={() => setResetTotpOpen(false)}
+        onConfirm={async () => {
+          if (!infoMember || !selectedAppId) return;
+          setResetTotpLoading(true);
+          try {
+            await resetUserTotp(project.workspaceId, project.id, selectedAppId, infoMember.accountId);
+            setResetTotpOpen(false);
+            enqueueSnackbar(t("projectMembers.reset2faDone", "2FA reset"), { variant: "success" });
+          } catch {
+            enqueueSnackbar(t("projectMembers.reset2faFailed", "Failed to reset 2FA"), { variant: "error" });
+          } finally {
+            setResetTotpLoading(false);
+          }
+        }}
       >
-        <DialogTitle>{t("projectMembers.reset2fa", "Reset 2FA")}?</DialogTitle>
-        <DialogContent>
-          <Typography variant="body2">
-            {t("projectMembers.reset2faBody", "The user's two-factor authentication (authenticator app) will be removed. They'll sign in without a second factor until they set it up again — use this when a user has lost their authenticator.")}
-          </Typography>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setResetTotpOpen(false)} disabled={resetTotpLoading}>
-            {t("common.cancel")}
-          </Button>
-          <Button
-            variant="contained"
-            disableElevation
-            color="error"
-            disabled={resetTotpLoading}
-            onClick={async () => {
-              if (!infoMember || !selectedAppId) return;
-              setResetTotpLoading(true);
-              try {
-                await resetUserTotp(project.workspaceId, project.id, selectedAppId, infoMember.accountId);
-                setResetTotpOpen(false);
-                enqueueSnackbar(t("projectMembers.reset2faDone", "2FA reset"), { variant: "success" });
-              } catch {
-                enqueueSnackbar(t("projectMembers.reset2faFailed", "Failed to reset 2FA"), { variant: "error" });
-              } finally {
-                setResetTotpLoading(false);
-              }
-            }}
-          >
-            {resetTotpLoading ? "..." : t("projectMembers.reset2fa", "Reset 2FA")}
-          </Button>
-        </DialogActions>
-      </Dialog>
+        <Typography variant="body2">
+          {t("projectMembers.reset2faBody", "The user's two-factor authentication (authenticator app) will be removed. They'll sign in without a second factor until they set it up again — use this when a user has lost their authenticator.")}
+        </Typography>
+      </ConfirmActionDialog>
 
       {/* Unlock account — clears a failed-login lockout. */}
-      <Dialog
+      <ConfirmActionDialog
         open={unlockOpen}
-        onClose={() => (unlockLoading ? null : setUnlockOpen(false))}
-        maxWidth="xs"
-        fullWidth
+        loading={unlockLoading}
+        title={`${t("projectMembers.unlockAccount", "Unlock account")}?`}
+        cancelLabel={t("common.cancel")}
+        confirmLabel={t("projectMembers.unlockAccount", "Unlock account")}
+        onClose={() => setUnlockOpen(false)}
+        onConfirm={async () => {
+          if (!infoMember || !selectedAppId) return;
+          setUnlockLoading(true);
+          try {
+            await unlockUserAccount(project.workspaceId, project.id, selectedAppId, infoMember.accountId);
+            setUnlockOpen(false);
+            enqueueSnackbar(t("projectMembers.unlockDone", "Account unlocked"), { variant: "success" });
+          } catch {
+            enqueueSnackbar(t("projectMembers.unlockFailed", "Failed to unlock account"), { variant: "error" });
+          } finally {
+            setUnlockLoading(false);
+          }
+        }}
       >
-        <DialogTitle>{t("projectMembers.unlockAccount", "Unlock account")}?</DialogTitle>
-        <DialogContent>
-          <Typography variant="body2">
-            {t("projectMembers.unlockBody", "Clears a failed-login lockout so the user can sign in again immediately.")}
-          </Typography>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setUnlockOpen(false)} disabled={unlockLoading}>
-            {t("common.cancel")}
-          </Button>
-          <Button
-            variant="contained"
-            disableElevation
-            disabled={unlockLoading}
-            onClick={async () => {
-              if (!infoMember || !selectedAppId) return;
-              setUnlockLoading(true);
-              try {
-                await unlockUserAccount(project.workspaceId, project.id, selectedAppId, infoMember.accountId);
-                setUnlockOpen(false);
-                enqueueSnackbar(t("projectMembers.unlockDone", "Account unlocked"), { variant: "success" });
-              } catch {
-                enqueueSnackbar(t("projectMembers.unlockFailed", "Failed to unlock account"), { variant: "error" });
-              } finally {
-                setUnlockLoading(false);
-              }
-            }}
-          >
-            {unlockLoading ? "..." : t("projectMembers.unlockAccount", "Unlock account")}
-          </Button>
-        </DialogActions>
-      </Dialog>
+        <Typography variant="body2">
+          {t("projectMembers.unlockBody", "Clears a failed-login lockout so the user can sign in again immediately.")}
+        </Typography>
+      </ConfirmActionDialog>
 
       {/* Set password */}
       <Dialog open={setPwOpen} onClose={() => (setPwLoading ? null : setSetPwOpen(false))} maxWidth="xs" fullWidth>
