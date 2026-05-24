@@ -1,5 +1,5 @@
 import * as React from "react";
-import axios, { AxiosError } from "axios";
+import { apiJson } from "../lib/api.ts";
 import { useSnackbar } from "notistack";
 import { useTranslation } from "react-i18next";
 import type { Product, Workspace } from "../core.ts";
@@ -149,53 +149,6 @@ export default function Webhooks({ project, appId }: Props) {
   const [hasMoreDeliveries, setHasMoreDeliveries] = React.useState(false);
   const [retryingId, setRetryingId] = React.useState<string | null>(null);
   const [deliveryStatusFilter, setDeliveryStatusFilter] = React.useState<string>("all");
-
-  // ── API helper ──
-
-  async function apiJson<T>(
-    path: string,
-    init?: {
-      method?: string;
-      data?: unknown;
-      params?: Record<string, unknown>;
-    },
-  ): Promise<T> {
-    try {
-      const res = await axios.request({
-        url: path,
-        method: init?.method || "GET",
-        data: init?.data,
-        params: init?.params,
-        withCredentials: true,
-        validateStatus: () => true,
-      });
-
-      if (res.status < 200 || res.status >= 300) {
-        const msg =
-          (typeof res.data === "string" && res.data) ||
-          (res.data && typeof res.data === "object" && ((res.data as Record<string, string>).message || (res.data as Record<string, string>).error)) ||
-          res.statusText ||
-          "Request failed";
-        throw new Error(msg);
-      }
-
-      if (res.status === 204 || res.status === 205) {
-        return null as unknown as T;
-      }
-
-      return (res.data ?? null) as T;
-    } catch (e: unknown) {
-      const err = e as AxiosError;
-      type ErrBody = { issues?: { message?: string }[]; message?: string };
-      const data = err.response?.data as ErrBody | string | undefined;
-      const msg =
-        (data && typeof data === "object" ? data.issues?.[0]?.message || data.message : null) ||
-        (typeof data === "string" ? data : null) ||
-        (err instanceof Error ? err.message : null) ||
-        "Request failed";
-      throw new Error(msg);
-    }
-  }
 
   // ── Load ──
 
