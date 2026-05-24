@@ -775,7 +775,14 @@ export default function AppUsers({ project, appId: appIdProp }: Props) {
   const selectedAppIdRef = React.useRef(selectedAppId);
   selectedAppIdRef.current = selectedAppId;
 
+  // Generation counters for the two loaders: only the most recently-initiated
+  // load commits its result. Without this, rapid app/paging/search/filter
+  // changes (or a mutation-triggered reload racing an effect-triggered one)
+  // let a slow older response overwrite a newer one — last-to-*complete* wins
+  // instead of last-requested.
+  const coreReqId = React.useRef(0);
   const refreshCore = React.useCallback(async () => {
+    const reqId = ++coreReqId.current;
     setCoreLoading(true);
     setErr(null);
     try {
@@ -784,6 +791,7 @@ export default function AppUsers({ project, appId: appIdProp }: Props) {
         getApps(project),
         getProductMemberRoles(project),
       ]);
+      if (reqId !== coreReqId.current) return;
 
       setRoles(r);
       setApps(fetchedApps);
@@ -793,9 +801,10 @@ export default function AppUsers({ project, appId: appIdProp }: Props) {
         if (fetchedApps[0]) setSelectedAppId(fetchedApps[0].id);
       }
     } catch (e) {
+      if (reqId !== coreReqId.current) return;
       setErr(extractApiError(e, t("projectMembers.failedToLoadCore", { defaultValue: "Failed to load roles/apps" })));
     } finally {
-      setCoreLoading(false);
+      if (reqId === coreReqId.current) setCoreLoading(false);
     }
   }, [project]);
 
@@ -804,19 +813,23 @@ export default function AppUsers({ project, appId: appIdProp }: Props) {
   }, [refreshCore]);
 
   // list load: depends on selected app + paging/search
+  const listReqId = React.useRef(0);
   const refreshList = React.useCallback(async () => {
     if (!selectedAppId) return;
 
+    const reqId = ++listReqId.current;
     setListLoading(true);
     setErr(null);
     try {
       const pmPaged = await getProductMembersPaged(project, selectedAppId, memberPage, membersPerPage, memberSearchApplied, inactiveFilterDays, enabledFilter, roleFilter);
+      if (reqId !== listReqId.current) return;
       setProductMembers(pmPaged.members);
       setProductMembersTotal(pmPaged.total);
     } catch (e) {
+      if (reqId !== listReqId.current) return;
       setErr(extractApiError(e, t("projectMembers.failedToLoadList", { defaultValue: "Failed to load product members" })));
     } finally {
-      setListLoading(false);
+      if (reqId === listReqId.current) setListLoading(false);
     }
   }, [project, selectedAppId, memberPage, membersPerPage, memberSearchApplied, inactiveFilterDays, enabledFilter, roleFilter]);
 
