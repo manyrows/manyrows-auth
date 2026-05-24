@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"manyrows-core/auth"
 	"manyrows-core/auth/client"
 	"manyrows-core/core"
 	"manyrows-core/core/repo"
@@ -875,7 +876,7 @@ func (handler *RequestHandler) handleOIDCRefreshTokenGrant(w http.ResponseWriter
 	// Access token uses host-only iss for SDK compatibility.
 	pair, err := handler.clientAuthService.RefreshTokenPair(
 		ctx, refreshTokenStr, app.ID,
-		r.UserAgent(), strings.TrimSpace(r.Header.Get("X-Forwarded-For")),
+		r.UserAgent(), auth.ClientIP(r),
 		ttlFromAppMinutes(app.SessionTTLMinutes),
 		ttlFromAppMinutes(app.AccessTokenTTLMinutes),
 		ttlFromAppMinutes(app.IdleTimeoutMinutes),
@@ -945,7 +946,7 @@ func (handler *RequestHandler) issueOIDCTokenSet(ctx context.Context, w http.Res
 			ctx,
 			ses.ID,
 			r.UserAgent(),
-			strings.TrimSpace(r.Header.Get("X-Forwarded-For")),
+			auth.ClientIP(r),
 			ttlFromAppMinutes(app.SessionTTLMinutes),
 			"",
 		)
