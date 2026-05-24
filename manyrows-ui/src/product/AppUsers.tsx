@@ -665,11 +665,14 @@ function MemberRolesDialog(props: {
 
 /** ===== Page ===== */
 
-export default function AppUsers({ project, appId: appIdProp }: Props) {
-  const { enqueueSnackbar } = useSnackbar();
-  const navigate = useNavigate();
+// useAppUsers owns the data layer for the screen: roles/apps/member-roles
+// (core) and the app-filtered, paged member list, plus the filter/search/
+// paging state those depend on and the two loaders. Pulling it out of the
+// component keeps the (large) JSX shell focused on presentation. Returns
+// state + setters with the same names the component used inline, so callers
+// read like before.
+function useAppUsers(project: Product, appIdProp?: string) {
   const { t } = useTranslation();
-
   const fixedApp = !!appIdProp;
 
   // Two independent fetch lifecycles - refreshCore loads roles/apps/
@@ -700,7 +703,6 @@ export default function AppUsers({ project, appId: appIdProp }: Props) {
   const [projectMembers, setProductMembers] = React.useState<WorkspaceMember[]>([]);
   const [projectMembersTotal, setProductMembersTotal] = React.useState(0);
 
-
   const hasApps = apps.length > 0;
   const hasRoles = roles.length > 0;
 
@@ -721,25 +723,6 @@ export default function AppUsers({ project, appId: appIdProp }: Props) {
     return () => { alive = false; };
   }, [selectedAppId, project]);
 
-  // Per-user activity drill-down dialog state.
-  const [activityUser, setActivityUser] = React.useState<{ id: string; email: string } | null>(null);
-  const openActivityDialog = (userId: string, email: string) => {
-    setActivityUser({ id: userId, email });
-  };
-  const closeActivityDialog = () => setActivityUser(null);
-
-  // Tag-edit dialog state.
-  const [tagsUser, setTagsUser] = React.useState<{ id: string; email: string; tags: string[] } | null>(null);
-  const openTagsDialog = (m: WorkspaceMember) => {
-    setTagsUser({ id: m.accountId, email: m.email, tags: m.tags ?? [] });
-  };
-  const closeTagsDialog = () => setTagsUser(null);
-  const onTagsSaved = (userId: string, tags: string[]) => {
-    setProductMembers((prev) =>
-      prev.map((m) => (m.accountId === userId ? { ...m, tags } : m)),
-    );
-  };
-
   // "Inactive users" segment: 0 = show everyone, otherwise users whose
   // last_login_at is older than N days (or never logged in) are shown.
   const [inactiveFilterDays, setInactiveFilterDays] = React.useState<number>(0);
@@ -749,34 +732,6 @@ export default function AppUsers({ project, appId: appIdProp }: Props) {
   // Role-presence segment: "" = any, "with" = members with >=1 role,
   // "without" = members with no role in this app.
   const [roleFilter, setRoleFilter] = React.useState<RoleFilter>("");
-
-  // Bulk actions: multi-select state + dialog state.
-  type BulkError = { id: string; email: string; message: string };
-  const [selectedIds, setSelectedIds] = React.useState<Set<string>>(new Set());
-  const [bulkMode, setBulkMode] = React.useState<"disable" | "enable" | "delete" | null>(null);
-  const [bulkLoading, setBulkLoading] = React.useState(false);
-  const [bulkProgress, setBulkProgress] = React.useState<{ done: number; total: number; errors: BulkError[] }>({ done: 0, total: 0, errors: [] });
-
-  const toggleSelect = React.useCallback((id: string) => {
-    setSelectedIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) {
-        next.delete(id);
-      } else {
-        next.add(id);
-      }
-      return next;
-    });
-  }, []);
-  const clearSelection = React.useCallback(() => setSelectedIds(new Set()), []);
-
-  const goApps = React.useCallback(() => {
-    navigate(`/app/workspace/${project.workspaceId}/products/${project.id}/apps`);
-  }, [navigate, project.workspaceId, project.id]);
-
-  const goRoles = React.useCallback(() => {
-    navigate(`/app/workspace/${project.workspaceId}/products/${project.id}/roles`);
-  }, [navigate, project.workspaceId, project.id]);
 
   // Paging/search for the app-filtered list
   const [memberPage, setMemberPage] = React.useState(0);
@@ -873,6 +828,141 @@ export default function AppUsers({ project, appId: appIdProp }: Props) {
   React.useEffect(() => {
     refreshList();
   }, [refreshList]);
+
+  return {
+    loading,
+    err,
+    setErr,
+    roles,
+    apps,
+    setMemberRolesState,
+    selectedAppId,
+    setSelectedAppId,
+    selectedApp,
+    projectMembers,
+    setProductMembers,
+    projectMembersTotal,
+    hasApps,
+    hasRoles,
+    appUrl,
+    currentAppId,
+    inactiveFilterDays,
+    setInactiveFilterDays,
+    enabledFilter,
+    setEnabledFilter,
+    roleFilter,
+    setRoleFilter,
+    memberPage,
+    setMemberPage,
+    membersPerPage,
+    setMembersPerPage,
+    memberSearchDraft,
+    setMemberSearchDraft,
+    memberSearchApplied,
+    setMemberSearchApplied,
+    searchActive,
+    draftDiffers,
+    roleById,
+    rolesByAccountForSelectedApp,
+    refreshCore,
+    refreshList,
+  };
+}
+
+export default function AppUsers({ project, appId: appIdProp }: Props) {
+  const { enqueueSnackbar } = useSnackbar();
+  const navigate = useNavigate();
+  const { t } = useTranslation();
+
+  const fixedApp = !!appIdProp;
+
+  // Data layer (roles/apps/member-roles + the app-filtered member list, the
+  // filter/search/paging state, and the two loaders) lives in useAppUsers.
+  const {
+    loading,
+    err,
+    setErr,
+    roles,
+    apps,
+    setMemberRolesState,
+    selectedAppId,
+    setSelectedAppId,
+    selectedApp,
+    projectMembers,
+    setProductMembers,
+    projectMembersTotal,
+    hasApps,
+    hasRoles,
+    appUrl,
+    currentAppId,
+    inactiveFilterDays,
+    setInactiveFilterDays,
+    enabledFilter,
+    setEnabledFilter,
+    roleFilter,
+    setRoleFilter,
+    memberPage,
+    setMemberPage,
+    membersPerPage,
+    setMembersPerPage,
+    memberSearchDraft,
+    setMemberSearchDraft,
+    memberSearchApplied,
+    setMemberSearchApplied,
+    searchActive,
+    draftDiffers,
+    roleById,
+    rolesByAccountForSelectedApp,
+    refreshCore,
+    refreshList,
+  } = useAppUsers(project, appIdProp);
+
+  // Per-user activity drill-down dialog state.
+  const [activityUser, setActivityUser] = React.useState<{ id: string; email: string } | null>(null);
+  const openActivityDialog = (userId: string, email: string) => {
+    setActivityUser({ id: userId, email });
+  };
+  const closeActivityDialog = () => setActivityUser(null);
+
+  // Tag-edit dialog state.
+  const [tagsUser, setTagsUser] = React.useState<{ id: string; email: string; tags: string[] } | null>(null);
+  const openTagsDialog = (m: WorkspaceMember) => {
+    setTagsUser({ id: m.accountId, email: m.email, tags: m.tags ?? [] });
+  };
+  const closeTagsDialog = () => setTagsUser(null);
+  const onTagsSaved = (userId: string, tags: string[]) => {
+    setProductMembers((prev) =>
+      prev.map((m) => (m.accountId === userId ? { ...m, tags } : m)),
+    );
+  };
+
+  // Bulk actions: multi-select state + dialog state.
+  type BulkError = { id: string; email: string; message: string };
+  const [selectedIds, setSelectedIds] = React.useState<Set<string>>(new Set());
+  const [bulkMode, setBulkMode] = React.useState<"disable" | "enable" | "delete" | null>(null);
+  const [bulkLoading, setBulkLoading] = React.useState(false);
+  const [bulkProgress, setBulkProgress] = React.useState<{ done: number; total: number; errors: BulkError[] }>({ done: 0, total: 0, errors: [] });
+
+  const toggleSelect = React.useCallback((id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+  }, []);
+  const clearSelection = React.useCallback(() => setSelectedIds(new Set()), []);
+
+  const goApps = React.useCallback(() => {
+    navigate(`/app/workspace/${project.workspaceId}/products/${project.id}/apps`);
+  }, [navigate, project.workspaceId, project.id]);
+
+  const goRoles = React.useCallback(() => {
+    navigate(`/app/workspace/${project.workspaceId}/products/${project.id}/roles`);
+  }, [navigate, project.workspaceId, project.id]);
 
   // Drop selection whenever the visible page contents change so we don't
   // operate on a user that scrolled out of view.
