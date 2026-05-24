@@ -657,7 +657,7 @@ func (r *Repo) UpdateAppTransportMode(ctx context.Context, workspaceID, productI
 func (r *Repo) UpdateAppSessionCookieSameSite(ctx context.Context, workspaceID, productID, appID uuid.UUID, mode string) (core.App, error) {
 	q := `
 		update apps
-		set session_cookie_samesite, qr_sign_in_enabled, user_pool_id, (select name from user_pools where id = apps.user_pool_id) as user_pool_name = $4,
+		set session_cookie_samesite = $4,
 		    updated_at = now()
 		where id = $1 and workspace_id = $2 and product_id = $3
 		returning ` + appColumnsReturning
