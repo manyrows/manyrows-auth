@@ -4,11 +4,14 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"manyrows-core/core"
 	"manyrows-core/core/repo"
 	"math/rand"
+	"net"
 	"net/http"
+	"syscall"
 	"time"
 
 	"github.com/gofrs/uuid/v5"
@@ -25,12 +28,71 @@ type Dispatcher struct {
 
 const maxConcurrentDeliveries = 10
 
-func NewDispatcher(r *repo.Repo) *Dispatcher {
+// webhookTimeout caps a single delivery's HTTP round-trip at the transport
+// layer. deliver() additionally wraps each attempt in a 30s context; this is
+// the lower, hard ceiling and also bounds the connect (dial) phase.
+const webhookTimeout = 10 * time.Second
+
+func NewDispatcher(r *repo.Repo, devMode bool) *Dispatcher {
 	return &Dispatcher{
 		repo:   r,
-		client: &http.Client{Timeout: 10 * time.Second},
+		client: newWebhookClient(devMode),
 		sem:    make(chan struct{}, maxConcurrentDeliveries),
 	}
+}
+
+// newWebhookClient builds the delivery HTTP client with two SSRF guards that
+// complement the registration-time check (api.ValidateWebhookURL):
+//
+//   - CheckRedirect refuses to follow redirects, so a URL that validated as
+//     public cannot 302 the client onto an internal address.
+//   - In production a dialer Control hook re-checks the *resolved* IP at
+//     connect time, defeating DNS rebinding — the IP seen at registration and
+//     the IP seen at delivery can differ, and only this check sees the latter.
+//
+// Dev mode skips the IP guard so installs can point webhooks at localhost,
+// mirroring ValidateWebhookURL's dev behaviour.
+func newWebhookClient(devMode bool) *http.Client {
+	dialer := &net.Dialer{Timeout: webhookTimeout}
+	if !devMode {
+		dialer.Control = func(_, address string, _ syscall.RawConn) error {
+			host, _, err := net.SplitHostPort(address)
+			if err != nil {
+				return err
+			}
+			ip := net.ParseIP(host)
+			if ip == nil {
+				return fmt.Errorf("webhook: refusing to dial unparseable address %q", address)
+			}
+			if isBlockedDialIP(ip) {
+				return fmt.Errorf("webhook: refusing to connect to non-public IP %s", ip)
+			}
+			return nil
+		}
+	}
+
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport.DialContext = dialer.DialContext
+
+	return &http.Client{
+		Timeout:   webhookTimeout,
+		Transport: transport,
+		CheckRedirect: func(*http.Request, []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
+}
+
+// isBlockedDialIP reports whether ip is in a range a webhook must never reach.
+// Mirrors ValidateWebhookURL's production rejections (loopback / private /
+// link-local) plus the unspecified address. Link-local (169.254.0.0/16,
+// fe80::/10) covers the cloud-metadata endpoint at 169.254.169.254.
+func isBlockedDialIP(ip net.IP) bool {
+	return ip.IsLoopback() ||
+		ip.IsPrivate() ||
+		ip.IsLinkLocalUnicast() ||
+		ip.IsLinkLocalMulticast() ||
+		ip.IsUnspecified()
 }
 
 func (d *Dispatcher) Start(ctx context.Context) {
