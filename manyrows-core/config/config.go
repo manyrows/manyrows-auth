@@ -486,4 +486,3 @@ func envBool(key string, def bool) bool {
 	}
 	return v == "1" || v == "true" || v == "yes"
 }
-

@@ -210,11 +210,11 @@ func TestMigrateRow_BadCiphertext_Error(t *testing.T) {
 	aad := []byte("apps:any:ignored")
 
 	cases := map[string][]byte{
-		"empty":             {},
-		"unknown version":   {0xFF, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00},
-		"v04 too short":     {0x04, 0x00, 0x00},
+		"empty":                 {},
+		"unknown version":       {0xFF, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00},
+		"v04 too short":         {0x04, 0x00, 0x00},
 		"v04 garbage after kid": append([]byte{0x04, 0x01, 0x02, 0x03, 0x04}, make([]byte, 32)...),
-		"random bytes":      bytes.Repeat([]byte{0xAB}, 64),
+		"random bytes":          bytes.Repeat([]byte{0xAB}, 64),
 	}
 	for name, data := range cases {
 		t.Run(name, func(t *testing.T) {

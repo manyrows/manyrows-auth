@@ -16,12 +16,12 @@ import (
 type PasswordAuthOutcome int
 
 const (
-	PWAuthInvalid          PasswordAuthOutcome = iota // zero value never returned
-	PWAuthOK                                          // credentials valid, user usable
-	PWAuthNoUser                                      // user not found OR has no password (collapsed to one outcome to avoid leaking enumeration)
-	PWAuthLocked                                      // user account is in a lockout window
-	PWAuthNotVerified                                 // user has not verified their email
-	PWAuthWrongPassword                               // user exists, has password, but it didn't match
+	PWAuthInvalid       PasswordAuthOutcome = iota // zero value never returned
+	PWAuthOK                                       // credentials valid, user usable
+	PWAuthNoUser                                   // user not found OR has no password (collapsed to one outcome to avoid leaking enumeration)
+	PWAuthLocked                                   // user account is in a lockout window
+	PWAuthNotVerified                              // user has not verified their email
+	PWAuthWrongPassword                            // user exists, has password, but it didn't match
 )
 
 // PasswordAuthResult is what the caller gets back from

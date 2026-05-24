@@ -103,15 +103,15 @@ func scanAuthLog(row interface {
 	Scan(dest ...any) error
 }) (*core.AuthLog, error) {
 	var (
-		l                core.AuthLog
-		method           *string
-		failure          *string
-		emailAttempted   *string
-		actorLabel       *string
-		ipText           *string
-		userAgent        *string
-		requestID        *string
-		metadataRaw      []byte
+		l              core.AuthLog
+		method         *string
+		failure        *string
+		emailAttempted *string
+		actorLabel     *string
+		ipText         *string
+		userAgent      *string
+		requestID      *string
+		metadataRaw    []byte
 	)
 	if err := row.Scan(
 		&l.ID, &l.WorkspaceID, &l.AppID, &l.CreatedAt,

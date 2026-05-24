@@ -82,9 +82,9 @@ type ConfigKey struct {
 type ConfigValue struct {
 	ID uuid.UUID `json:"id"`
 
-	ProductID     uuid.UUID `json:"productId"`
-	AppID uuid.UUID `json:"appId"`
-	ConfigKeyID   uuid.UUID `json:"configKeyId"`
+	ProductID   uuid.UUID `json:"productId"`
+	AppID       uuid.UUID `json:"appId"`
+	ConfigKeyID uuid.UUID `json:"configKeyId"`
 
 	// Public/private: JSON value (string/number/bool/array/etc). Nil means unset (but note: "unset" normally means no row).
 	// We use RawMessage so we can roundtrip without losing typing.

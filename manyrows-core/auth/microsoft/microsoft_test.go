@@ -65,7 +65,7 @@ func TestIsValidTenant(t *testing.T) {
 		{"11111111-2222-3333-4444-555555555555", true},
 		{"", false},
 		{"random-string", false},
-		{"00000000-0000-0000-0000-00000000000z", false}, // bad hex
+		{"00000000-0000-0000-0000-00000000000z", false},  // bad hex
 		{"00000000-0000-0000-0000-0000000000000", false}, // too long
 	}
 	for _, c := range cases {

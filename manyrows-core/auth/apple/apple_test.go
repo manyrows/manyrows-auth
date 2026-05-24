@@ -228,4 +228,3 @@ func TestRSAKeyFromJWK_InvalidEncoding(t *testing.T) {
 		t.Error("expected error on bad exponent encoding")
 	}
 }
-

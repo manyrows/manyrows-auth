@@ -120,7 +120,7 @@ func TestSetSessionCookies_BothCookiesWritten(t *testing.T) {
 		t.Errorf("access MaxAge = %d, want 900 (TokenPair.ExpiresIn)", at.MaxAge)
 	}
 	if rt.MaxAge != int((7 * 24 * time.Hour).Seconds()) {
-		t.Errorf("refresh MaxAge = %d, want %d", rt.MaxAge, int((7*24*time.Hour).Seconds()))
+		t.Errorf("refresh MaxAge = %d, want %d", rt.MaxAge, int((7 * 24 * time.Hour).Seconds()))
 	}
 }
 

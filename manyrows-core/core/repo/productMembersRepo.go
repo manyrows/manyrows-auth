@@ -109,9 +109,9 @@ const (
 //
 //   - Kind="" / RoleID=nil   : no filter (any role state, including none)
 //   - Kind="without"         : members with no user_roles row in the app
-//                              (or project, when no app is specified)
+//     (or project, when no app is specified)
 //   - Kind="specific"        : members with a user_roles row whose
-//                              role_id matches RoleID
+//     role_id matches RoleID
 type MemberRoleFilter struct {
 	Kind   string
 	RoleID uuid.UUID
@@ -121,11 +121,12 @@ func (f MemberRoleFilter) Any() bool { return f.Kind == "" }
 
 // GetProductMembersByApp returns members of (product_id, app_id) when
 // appID is non-nil, otherwise all members across the project's apps.
-// - page is 0-based
-// - email is optional substring match (case-insensitive)
-// - inactiveDays: if > 0, only return users whose last_login_at is older
-//   than N days (or null). Powers the "inactive users" segment in the admin UI.
-// - enabledFilter: filter by users.enabled. "" = no filter.
+//   - page is 0-based
+//   - email is optional substring match (case-insensitive)
+//   - inactiveDays: if > 0, only return users whose last_login_at is older
+//     than N days (or null). Powers the "inactive users" segment in the admin UI.
+//   - enabledFilter: filter by users.enabled. "" = no filter.
+//
 // Returns: members, totalCount (distinct users)
 func (r *Repo) GetProductMembersByApp(
 	ctx context.Context,

@@ -125,11 +125,11 @@ type dpopClaims struct {
 	IAT int64  `json:"iat"`
 }
 
-func (c dpopClaims) GetExpirationTime() (*jwt.NumericDate, error)  { return nil, nil }
-func (c dpopClaims) GetNotBefore() (*jwt.NumericDate, error)       { return nil, nil }
-func (c dpopClaims) GetIssuer() (string, error)                    { return "", nil }
-func (c dpopClaims) GetSubject() (string, error)                   { return "", nil }
-func (c dpopClaims) GetAudience() (jwt.ClaimStrings, error)        { return nil, nil }
+func (c dpopClaims) GetExpirationTime() (*jwt.NumericDate, error) { return nil, nil }
+func (c dpopClaims) GetNotBefore() (*jwt.NumericDate, error)      { return nil, nil }
+func (c dpopClaims) GetIssuer() (string, error)                   { return "", nil }
+func (c dpopClaims) GetSubject() (string, error)                  { return "", nil }
+func (c dpopClaims) GetAudience() (jwt.ClaimStrings, error)       { return nil, nil }
 func (c dpopClaims) GetIssuedAt() (*jwt.NumericDate, error) {
 	return jwt.NewNumericDate(time.Unix(c.IAT, 0)), nil
 }

@@ -8,12 +8,12 @@ import (
 
 func TestRequestBaseURL(t *testing.T) {
 	cases := []struct {
-		name        string
-		host        string
-		xfHost      string
-		xfProto     string
-		tls         bool
-		want        string
+		name    string
+		host    string
+		xfHost  string
+		xfProto string
+		tls     bool
+		want    string
 	}{
 		{name: "plain http", host: "example.com", want: "http://example.com"},
 		{name: "tls direct", host: "example.com", tls: true, want: "https://example.com"},

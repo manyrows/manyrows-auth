@@ -187,4 +187,3 @@ func loadTrustedProxies() *TrustedProxies {
 	def, _ := ParseTrustedProxies("private")
 	return def
 }
-

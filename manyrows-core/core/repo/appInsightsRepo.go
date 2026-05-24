@@ -224,9 +224,10 @@ func scanTimeseries(ctx context.Context, r *Repo, q string, appID uuid.UUID, ran
 // GetAppActivityTimeseries returns DAU/WAU/MAU for each day in the window.
 //
 // For each day D in [today - rangeDays + 1, today]:
-//   DAU(D) = COUNT DISTINCT subject_user_id where event-day = D
-//   WAU(D) = COUNT DISTINCT subject_user_id where event-day in (D-6, D]
-//   MAU(D) = COUNT DISTINCT subject_user_id where event-day in (D-29, D]
+//
+//	DAU(D) = COUNT DISTINCT subject_user_id where event-day = D
+//	WAU(D) = COUNT DISTINCT subject_user_id where event-day in (D-6, D]
+//	MAU(D) = COUNT DISTINCT subject_user_id where event-day in (D-29, D]
 //
 // Cost: the LEFT JOIN matches every event in [D-29, D] for every day D in
 // the window, so the intermediate row count is O(rangeDays × events_in_30d).

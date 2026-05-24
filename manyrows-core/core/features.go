@@ -41,7 +41,7 @@ type FeatureFlagOverride struct {
 	ID uuid.UUID `json:"id"`
 
 	ProductID     uuid.UUID `json:"productId"`
-	AppID uuid.UUID `json:"appId"`
+	AppID         uuid.UUID `json:"appId"`
 	FeatureFlagID uuid.UUID `json:"featureFlagId"`
 
 	Enabled bool `json:"enabled"`

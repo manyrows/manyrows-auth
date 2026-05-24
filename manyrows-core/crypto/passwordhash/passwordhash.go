@@ -63,7 +63,7 @@ func Hash(password string) (string, error) {
 // Returns:
 //   - ok  : password matched
 //   - err : encoding malformed (does NOT include "wrong password" —
-//           that's ok=false, err=nil)
+//     that's ok=false, err=nil)
 //
 // On err != nil, ok is false.
 func Verify(encoded, password string) (ok bool, err error) {

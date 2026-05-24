@@ -37,9 +37,9 @@ var (
 )
 
 var (
-	ErrCodeExchange     = errors.New("github auth code exchange failed")
-	ErrUserFetch        = errors.New("github user fetch failed")
-	ErrNoVerifiedEmail  = errors.New("github account has no verified primary email")
+	ErrCodeExchange    = errors.New("github auth code exchange failed")
+	ErrUserFetch       = errors.New("github user fetch failed")
+	ErrNoVerifiedEmail = errors.New("github account has no verified primary email")
 )
 
 // TokenInfo is the verified subset returned to the workspace handler.

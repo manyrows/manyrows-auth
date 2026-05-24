@@ -527,7 +527,6 @@ func TestBulkImportWorkspaceAccounts_TooMany(t *testing.T) {
 	}
 }
 
-
 // TestGetWorkspaceAccounts_EnrichedFields tests that the accounts response includes
 // the enriched fields: enabled, source, and createdAt.
 func TestGetWorkspaceAccounts_EnrichedFields(t *testing.T) {

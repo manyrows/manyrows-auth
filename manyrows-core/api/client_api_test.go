@@ -4728,8 +4728,8 @@ func TestWorkspaceResetPassword_InvalidCode(t *testing.T) {
 	defer testEnv.CleanupTestData(t, fixtures)
 
 	body := map[string]any{
-		"email":       emailAddr,
-		"code":        "123456",
+		"email": emailAddr,
+		"code":  "123456",
 		// zxcvbn-strong password so the invalid-code path runs without
 		// tripping the password-strength validator first.
 		"newPassword": "Tr0ub4dor&3-correct-horse",

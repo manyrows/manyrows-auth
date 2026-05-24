@@ -659,6 +659,7 @@ func (handler *RequestHandler) HandlePairLandingPage(w http.ResponseWriter, r *h
 //     set is auto-sent via credentials:include
 //   - local-mode (Bearer-only): the JWT captured via AppKit's onJWT
 //     callback rides in the Authorization header
+//
 // Both headers go on every request so neither side has to know which
 // mode the app is in.
 //

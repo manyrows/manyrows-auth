@@ -1241,4 +1241,3 @@ func (handler *RequestHandler) OIDCEndSession(w http.ResponseWriter, r *http.Req
 	w.Header().Set("Cache-Control", "no-store")
 	_, _ = w.Write([]byte(`<!doctype html><html><head><meta charset="utf-8"><title>Signed out</title></head><body style="font-family:system-ui;padding:2rem"><h1>Signed out</h1><p>You have been signed out.</p></body></html>`))
 }
-

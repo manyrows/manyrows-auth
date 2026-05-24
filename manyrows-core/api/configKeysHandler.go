@@ -467,7 +467,6 @@ func (handler *RequestHandler) HandleUpsertConfigValue(w http.ResponseWriter, r 
 		}
 	}
 
-
 	utils.WriteJsonWithStatusCode(w, ConfigValueResponse{ConfigValue: out}, http.StatusOK)
 }
 
@@ -488,7 +487,6 @@ func (handler *RequestHandler) HandleDeleteConfigValue(w http.ResponseWriter, r 
 		WriteError(w, r, "error.invalidAppId", http.StatusBadRequest)
 		return
 	}
-
 
 	err = handler.repo.DeleteConfigValue(r.Context(), project.ID, configKeyID, appID)
 	if err != nil {

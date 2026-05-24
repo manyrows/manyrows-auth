@@ -41,13 +41,13 @@ type WebhookDelivery struct {
 // list in the health dashboard. Trimmed payload/response so the response
 // stays compact.
 type WebhookDeliveryFailure struct {
-	ID           string `json:"id"`
-	WebhookID    string `json:"webhookId"`
-	WebhookURL   string `json:"webhookUrl"`
-	Event        string `json:"event"`
-	StatusCode   *int   `json:"statusCode,omitempty"`
-	Attempts     int    `json:"attempts"`
-	CreatedAt    string `json:"createdAt"`
+	ID         string `json:"id"`
+	WebhookID  string `json:"webhookId"`
+	WebhookURL string `json:"webhookUrl"`
+	Event      string `json:"event"`
+	StatusCode *int   `json:"statusCode,omitempty"`
+	Attempts   int    `json:"attempts"`
+	CreatedAt  string `json:"createdAt"`
 }
 
 // WebhookHealth backs the stat-card row + recent-failures list on the

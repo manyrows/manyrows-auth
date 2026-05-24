@@ -32,7 +32,7 @@ var ErrOIDCRequiresCookieTransport = errors.New("OIDC requires cookie transport 
 // TTL policy lives here, not in the schema, so it can move without
 // a migration:
 //   - Auth codes: 60s. Plenty of headroom for the customer's redirect
-//     + their backend's token call; below this you start losing real
+//   - their backend's token call; below this you start losing real
 //     users on slow networks.
 //   - Pending /authorize: 10 min. Covers a user landing on the AppKit
 //     sign-in page and taking their time with email verification.
@@ -266,7 +266,7 @@ func (r *Repo) GetAppOIDCConfig(ctx context.Context, appID uuid.UUID) (*core.OID
 // simple and matches how the per-provider OAuth configs are set today.
 type UpdateAppOIDCConfigParams struct {
 	Enabled                bool
-	ClientSecretHash       *string  // pass nil to leave the existing hash unchanged; pass a non-nil empty string to clear it (public client)
+	ClientSecretHash       *string // pass nil to leave the existing hash unchanged; pass a non-nil empty string to clear it (public client)
 	RedirectURIs           []string
 	PostLogoutRedirectURIs []string
 }

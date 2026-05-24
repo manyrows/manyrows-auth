@@ -81,10 +81,10 @@ func withFakeGithubURLs(t *testing.T, base string) func() {
 
 func TestFetchPrimaryVerifiedEmail_Lifecycle(t *testing.T) {
 	cases := []struct {
-		name        string
-		emailsBody  string
-		wantEmail   string
-		wantErrIs   error
+		name       string
+		emailsBody string
+		wantEmail  string
+		wantErrIs  error
 	}{
 		{
 			"primary verified — returns it",

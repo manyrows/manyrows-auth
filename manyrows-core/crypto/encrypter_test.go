@@ -110,7 +110,6 @@ func TestGetKeyBytes_Empty(t *testing.T) {
 	}
 }
 
-
 // Operators upgrading past the ambiguous-bare-string rejection should
 // be able to make either intent explicit and get the bytes they
 // expected. This confirms both prefixed forms yield distinct, valid

@@ -14,21 +14,21 @@ func TestParseTrustedProxies_DefaultIsPrivate(t *testing.T) {
 		t.Fatalf("ParseTrustedProxies: %v", err)
 	}
 	for _, addr := range []string{
-		"10.0.0.5:1234",       // RFC1918
-		"172.16.0.1:80",       // RFC1918
-		"192.168.1.1:443",     // RFC1918
-		"127.0.0.1:8080",      // loopback v4
-		"[::1]:443",           // loopback v6
-		"[fd00::1]:443",       // ULA v6
+		"10.0.0.5:1234",   // RFC1918
+		"172.16.0.1:80",   // RFC1918
+		"192.168.1.1:443", // RFC1918
+		"127.0.0.1:8080",  // loopback v4
+		"[::1]:443",       // loopback v6
+		"[fd00::1]:443",   // ULA v6
 	} {
 		if !tp.IsTrusted(addr) {
 			t.Errorf("expected %q to be trusted under default, was not", addr)
 		}
 	}
 	for _, addr := range []string{
-		"198.51.100.10:1234",  // public v4
-		"203.0.113.7:80",      // public v4
-		"[2001:db8::1]:443",   // public v6
+		"198.51.100.10:1234", // public v4
+		"203.0.113.7:80",     // public v4
+		"[2001:db8::1]:443",  // public v6
 	} {
 		if tp.IsTrusted(addr) {
 			t.Errorf("expected %q to be untrusted under default, was trusted", addr)

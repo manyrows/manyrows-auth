@@ -37,11 +37,11 @@ var (
 //
 //   - existing active member  -> (user, false, nil)
 //   - existing pool user, no membership row:
-//       AllowRegistration true  -> EnsureAppMember, return (user, false, nil)
-//       AllowRegistration false -> (nil, false, ErrRegistrationDisabled)
+//     AllowRegistration true  -> EnsureAppMember, return (user, false, nil)
+//     AllowRegistration false -> (nil, false, ErrRegistrationDisabled)
 //   - no pool user yet:
-//       AllowRegistration true  -> create user + membership, return (user, true, nil)
-//       AllowRegistration false -> (nil, false, ErrRegistrationDisabled)
+//     AllowRegistration true  -> create user + membership, return (user, true, nil)
+//     AllowRegistration false -> (nil, false, ErrRegistrationDisabled)
 //   - existing member, status != active -> (nil, false, ErrAppUserDisabled)
 //
 // userCreated is true only when a brand new pool user was inserted (for

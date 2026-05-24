@@ -19,8 +19,8 @@ type MemberResource struct {
 
 	// Per-app activity stats. Populated only when the handler can resolve
 	// an app context (e.g. the AppUsers admin page). Zero when unknown.
-	ActiveSessions    int `json:"activeSessions,omitempty"`
-	LoginFailures7d   int `json:"loginFailures7d,omitempty"`
+	ActiveSessions  int `json:"activeSessions,omitempty"`
+	LoginFailures7d int `json:"loginFailures7d,omitempty"`
 
 	// Free-form tags (e.g. "vip", "internal"). Same per-app scoping as
 	// activity stats. Empty slice when unknown / app context missing.

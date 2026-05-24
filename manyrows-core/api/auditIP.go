@@ -26,4 +26,3 @@ func auditRequestIP(r *http.Request) (string, *netip.Addr) {
 	}
 	return ip, nil
 }
-

@@ -518,4 +518,3 @@ func appendFragment(rawURL, fragment string) string {
 	u.Fragment = fragment
 	return u.String()
 }
-

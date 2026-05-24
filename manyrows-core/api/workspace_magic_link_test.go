@@ -479,4 +479,3 @@ func TestConsumeMagicLink_TokenSingleUse(t *testing.T) {
 		t.Errorf("replay should redirect with invalid_token, got %q", second.Header().Get("Location"))
 	}
 }
-

@@ -644,4 +644,3 @@ func TestDeletePoolOrphanUsers_Success(t *testing.T) {
 		t.Errorf("app member must NOT be purged, count=%d", got)
 	}
 }
-

@@ -32,11 +32,11 @@ func setupTagsRouter(t *testing.T) *chi.Mux {
 }
 
 type tagsFixture struct {
-	router  *chi.Mux
-	acc     *core.Account
-	ws      *core.Workspace
-	app     *core.App
-	claims  core.TokenClaims
+	router *chi.Mux
+	acc    *core.Account
+	ws     *core.Workspace
+	app    *core.App
+	claims core.TokenClaims
 }
 
 func newTagsFixture(t *testing.T) *tagsFixture {
@@ -111,11 +111,11 @@ func TestUserTags_ReplaceNormalizes(t *testing.T) {
 
 	resp := hitTags(t, fix, http.MethodPut, "/users/"+user.String()+"/tags",
 		map[string]any{"tags": []string{
-			"  VIP  ",       // trim + lowercase
-			"vip",           // dup of above after normalize
-			"INTERNAL",      // lowercase
-			"",              // empty → drop
-			"   ",           // whitespace → drop
+			"  VIP  ",  // trim + lowercase
+			"vip",      // dup of above after normalize
+			"INTERNAL", // lowercase
+			"",         // empty → drop
+			"   ",      // whitespace → drop
 			"this-tag-is-way-too-long-and-exceeds-the-forty-character-limit", // > 40
 		}},
 	)

@@ -218,9 +218,9 @@ func (r *Repo) GetUserRolesByUserAndAppID(
 }
 
 type ReplaceUserRolesParams struct {
-	ProductID uuid.UUID   // used to validate roles belong to this project
+	ProductID uuid.UUID // used to validate roles belong to this project
 	UserID    uuid.UUID
-	AppID     uuid.UUID   // required — project-wide grants no longer exist
+	AppID     uuid.UUID // required — project-wide grants no longer exist
 	RoleIDs   []uuid.UUID
 	Now       time.Time
 }

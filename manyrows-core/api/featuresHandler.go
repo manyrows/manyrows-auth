@@ -44,7 +44,7 @@ type UpdateFeatureFlagRequest struct {
 
 type UpsertFeatureFlagOverrideRequest struct {
 	Enabled *bool       `json:"enabled"`
-	Status  *string     `json:"status"` // "active" (default), "disabled"
+	Status  *string     `json:"status"`            // "active" (default), "disabled"
 	RoleIDs []uuid.UUID `json:"roleIds,omitempty"` // restrict to users with one of these roles
 }
 

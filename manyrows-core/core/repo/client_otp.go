@@ -13,8 +13,8 @@ import (
 
 // Sentinel errors (follow your existing pattern)
 var (
-	ErrClientOTPNotFound        = errors.New("client otp not found")
-	ErrClientOTPAttemptsCapHit  = errors.New("client otp attempts cap reached")
+	ErrClientOTPNotFound       = errors.New("client otp not found")
+	ErrClientOTPAttemptsCapHit = errors.New("client otp attempts cap reached")
 )
 
 // DeleteUnusedClientOTPs deletes any unused OTP rows for (app, email).

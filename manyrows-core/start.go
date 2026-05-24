@@ -90,4 +90,3 @@ func runEncryptionMigration() error {
 	}
 	return nil
 }
-

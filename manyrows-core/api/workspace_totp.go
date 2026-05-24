@@ -539,7 +539,8 @@ func (handler *RequestHandler) completeWorkspaceTOTPLogin(
 	rememberMe bool,
 ) {
 	// Block banned users / assign default role
-	if ctxApp, appOk := core.AppFromContext(r.Context()); appOk {		handler.ensureDefaultRole(r.Context(), ctxApp, user)
+	if ctxApp, appOk := core.AppFromContext(r.Context()); appOk {
+		handler.ensureDefaultRole(r.Context(), ctxApp, user)
 	}
 
 	ua := strings.TrimSpace(r.UserAgent())

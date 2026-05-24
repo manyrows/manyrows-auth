@@ -34,15 +34,15 @@ const (
 // Auth-code-flow constants. Only the values we actually support are
 // listed; the discovery document advertises this exact set.
 const (
-	OIDCResponseTypeCode             = "code"
-	OIDCGrantTypeAuthorizationCode   = "authorization_code"
-	OIDCGrantTypeRefreshToken        = "refresh_token"
-	OIDCCodeChallengeMethodS256      = "S256"
-	OIDCTokenEndpointAuthBasic       = "client_secret_basic"
-	OIDCTokenEndpointAuthPost        = "client_secret_post"
-	OIDCTokenEndpointAuthNone        = "none"
-	OIDCSubjectTypePublic            = "public"
-	OIDCIDTokenSigningAlgValueES256  = "ES256"
+	OIDCResponseTypeCode            = "code"
+	OIDCGrantTypeAuthorizationCode  = "authorization_code"
+	OIDCGrantTypeRefreshToken       = "refresh_token"
+	OIDCCodeChallengeMethodS256     = "S256"
+	OIDCTokenEndpointAuthBasic      = "client_secret_basic"
+	OIDCTokenEndpointAuthPost       = "client_secret_post"
+	OIDCTokenEndpointAuthNone       = "none"
+	OIDCSubjectTypePublic           = "public"
+	OIDCIDTokenSigningAlgValueES256 = "ES256"
 )
 
 // OIDCAuthCode is a single-use authorization-code grant. Persisted by

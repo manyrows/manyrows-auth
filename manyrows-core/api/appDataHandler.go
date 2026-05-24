@@ -10,8 +10,8 @@ import (
 )
 
 type AdminAppData struct {
-	Env        string               `json:"env"`
-	BaseURL    string               `json:"baseUrl"`
+	Env     string `json:"env"`
+	BaseURL string `json:"baseUrl"`
 	// Version is the build version (config.BuildVersion). The admin
 	// UI shows it in the account menu so operators / support can
 	// confirm which release is running.

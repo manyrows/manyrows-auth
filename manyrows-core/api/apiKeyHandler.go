@@ -122,7 +122,6 @@ func (handler *RequestHandler) HandleUpdateApiKey(w http.ResponseWriter, r *http
 		return
 	}
 
-
 	if err := handler.repo.UpdateAPIKeyName(r.Context(), ws.ID, keyID, name); err != nil {
 		log.Err(err).Msg("failed to update API key name")
 		WriteError(w, r, "error.internalError", http.StatusInternalServerError)

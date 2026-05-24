@@ -80,7 +80,7 @@ func newWebhookHealthApp(t *testing.T) (accID, wsID, appID uuid.UUID) {
 	return a.ID, w.ID, ap.ID
 }
 
-func intPtr(v int) *int            { return &v }
+func intPtr(v int) *int              { return &v }
 func timePtr(t time.Time) *time.Time { return &t }
 
 /* -------------------------------------------------------------------------- */

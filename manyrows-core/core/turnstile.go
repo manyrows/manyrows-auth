@@ -35,8 +35,9 @@ var turnstileHTTPClient = &http.Client{Timeout: 5 * time.Second}
 // siteverify when the configured secret matches.
 //
 // See: https://developers.cloudflare.com/turnstile/troubleshooting/testing/
-//   1x0000000000000000000000000000000AA — always passes
-//   3x0000000000000000000000000000000AA — always passes (challenge)
+//
+//	1x0000000000000000000000000000000AA — always passes
+//	3x0000000000000000000000000000000AA — always passes (challenge)
 func IsTurnstileTestSecret(secret string) bool {
 	return strings.HasPrefix(secret, "1x0000") || strings.HasPrefix(secret, "3x0000")
 }

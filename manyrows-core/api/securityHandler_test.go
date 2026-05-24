@@ -64,7 +64,7 @@ func withSuperAdmin(t *testing.T, email string) {
 }
 
 type signingKeyResp struct {
-	Current  struct {
+	Current struct {
 		KID string `json:"kid"`
 	} `json:"current"`
 	Previous *struct {

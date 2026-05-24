@@ -344,4 +344,3 @@ func (handler *RequestHandler) completeTier1OAuthLogin(
 		"session":      toClientSessionResource(ses),
 	})
 }
-
