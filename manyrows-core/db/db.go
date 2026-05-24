@@ -4,6 +4,7 @@ import (
 	"context"
 	"embed"
 	"fmt"
+	"hash/fnv"
 	"strconv"
 	"strings"
 	"time"
@@ -211,15 +212,11 @@ func (d *DB) initPool(c Config) error {
 		return err
 	}
 
-	// Schema must exist before any pooled connection runs DDL or
-	// goose attempts to create its version table. AfterConnect
-	// already pinned search_path; this just creates the namespace
-	// the path points at when the DB is empty.
-	if _, err := d.pool.Exec(context.Background(), fmt.Sprintf("CREATE SCHEMA IF NOT EXISTS %s", schema)); err != nil {
-		log.Err(err).Msg("Unable to create db schema")
-		return err
-	}
-
+	// The schema (the namespace AfterConnect's search_path points at) is
+	// created in runMigrations, under the same advisory lock that guards
+	// the migrations — so concurrent boots can't race "CREATE SCHEMA IF
+	// NOT EXISTS" on the catalog either. SET search_path tolerates a
+	// not-yet-existing schema, and nothing queries before migrations run.
 	d.initialized = true
 	return nil
 }
@@ -231,11 +228,75 @@ func (d *DB) Shutdown() {
 	d.pool.Close()
 }
 
-// runMigrations applies any pending goose migrations from the embedded
-// migrations/*.sql tree. State is tracked in <schema>.goose_db_version.
-// Goose acquires a session-level advisory lock so concurrent app instances
-// can't race the same migration.
+// migrationLockKey derives a stable pg_advisory_lock key from the schema
+// name. Advisory locks are per-database, so keying on the schema lets two
+// installs that share one database but use different schemas migrate
+// without serializing against (or blocking) each other.
+func migrationLockKey(schema string) int64 {
+	h := fnv.New64a()
+	_, _ = h.Write([]byte("manyrows:migrations:" + schema))
+	return int64(h.Sum64())
+}
+
+// runMigrations creates the schema and applies any pending goose migrations
+// from the embedded migrations/*.sql tree. State is tracked in
+// <schema>.goose_db_version.
+//
+// The whole critical section runs under a session-level advisory lock so
+// concurrent boots — multiple app replicas, or parallel `go test` binaries
+// against one database — can't race each other into duplicate-catalog
+// errors (two CREATE TYPEs colliding on pg_type, a half-created
+// goose_db_version, etc.). goose's package-level API does not lock on its
+// own, so we take the lock ourselves on a dedicated connection and hold it
+// across CREATE SCHEMA + goose Up. Whoever loses the race blocks here, then
+// finds the schema present and the migrations already applied.
 func (d *DB) runMigrations() error {
+	ctx := context.Background()
+
+	// Advisory locks are session-scoped, so the lock lives exactly as long
+	// as we hold this one connection; Release returns it to the pool.
+	lockConn, err := d.pool.Acquire(ctx)
+	if err != nil {
+		return fmt.Errorf("goose: acquire migration lock conn: %w", err)
+	}
+	defer lockConn.Release()
+
+	key := migrationLockKey(d.schema)
+
+	// Acquire the lock with statement_timeout disabled for the wait only.
+	// A configured statement_timeout would otherwise abort a long wait
+	// behind another boot's slow migration. SET LOCAL keeps the override
+	// scoped to this tx (so the pooled connection isn't left mutated after
+	// Release); the session-level lock persists past the commit.
+	if err := func() error {
+		tx, err := lockConn.Begin(ctx)
+		if err != nil {
+			return err
+		}
+		defer tx.Rollback(ctx)
+		if _, err := tx.Exec(ctx, "SET LOCAL statement_timeout = 0"); err != nil {
+			return err
+		}
+		if _, err := tx.Exec(ctx, "SELECT pg_advisory_lock($1)", key); err != nil {
+			return err
+		}
+		return tx.Commit(ctx)
+	}(); err != nil {
+		return fmt.Errorf("goose: acquire advisory lock: %w", err)
+	}
+	defer func() {
+		if _, err := lockConn.Exec(ctx, "SELECT pg_advisory_unlock($1)", key); err != nil {
+			log.Warn().Err(err).Msg("db: failed to release migration advisory lock")
+		}
+	}()
+
+	// Create the namespace now that we hold the lock. This is autocommitted
+	// on lockConn, so goose's connections (which run with search_path set
+	// to this schema) see it immediately.
+	if _, err := lockConn.Exec(ctx, fmt.Sprintf("CREATE SCHEMA IF NOT EXISTS %s", d.schema)); err != nil {
+		return fmt.Errorf("goose: create schema: %w", err)
+	}
+
 	sqlDB := stdlib.OpenDBFromPool(d.pool)
 	defer sqlDB.Close()
 
@@ -251,7 +312,7 @@ func (d *DB) runMigrations() error {
 	// goose-shaped table from "some app" and have to dig.
 	goose.SetTableName(d.schema + ".goose_db_version")
 
-	if err := goose.UpContext(context.Background(), sqlDB, "migrations"); err != nil {
+	if err := goose.UpContext(ctx, sqlDB, "migrations"); err != nil {
 		return fmt.Errorf("goose: up: %w", err)
 	}
 	return nil
