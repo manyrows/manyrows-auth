@@ -11,8 +11,18 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/rs/zerolog/log"
+)
+
+// SMTP network timeouts for the custom/system relay path. These sends run
+// inline on request paths (register / password reset), so a hung or
+// blackholed relay must never pin a goroutine: bound both the TCP connect
+// and the whole SMTP conversation (STARTTLS + AUTH + DATA).
+const (
+	smtpDialTimeout      = 10 * time.Second
+	smtpConversationTime = 30 * time.Second
 )
 
 // defaultFromEmail is the system-default sender address. Reads
@@ -185,10 +195,13 @@ func sendCustomSMTP(e *Email, cfg *SMTPConfig) error {
 	addr := net.JoinHostPort(cfg.Host, strconv.Itoa(cfg.Port))
 
 	// Connect
-	conn, err := net.Dial("tcp", addr)
+	conn, err := net.DialTimeout("tcp", addr, smtpDialTimeout)
 	if err != nil {
 		return fmt.Errorf("smtp dial: %w", err)
 	}
+	// Bound the rest of the conversation (STARTTLS / AUTH / DATA) so a relay
+	// that accepts the connection but then stalls can't hang the goroutine.
+	_ = conn.SetDeadline(time.Now().Add(smtpConversationTime))
 
 	c, err := smtp.NewClient(conn, cfg.Host)
 	if err != nil {
