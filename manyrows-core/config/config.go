@@ -7,10 +7,15 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/rs/zerolog/log"
 )
+
+// turnstileMisconfigWarnOnce ensures the "enabled but unconfigured" warning
+// in IsTurnstileEnabled is logged at most once, not on every call.
+var turnstileMisconfigWarnOnce sync.Once
 
 const devPort = 8080
 const ProfileLocalDev = "dev"
@@ -445,7 +450,19 @@ func (conf *Config) IsTurnstileEnabled() bool {
 	}
 	site := strings.TrimSpace(os.Getenv(conf.envPrefix + "TURNSTILE_SITE_KEY"))
 	secret := strings.TrimSpace(os.Getenv(conf.envPrefix + "TURNSTILE_SECRET_KEY"))
-	return site != "" && secret != ""
+	if site == "" || secret == "" {
+		// Fail loud, not silent: the operator asked for the bot challenge
+		// (TURNSTILE_ENABLED=true) but didn't supply both keys, so it's off.
+		// Silently returning false turns an intended security control into a
+		// no-op with no signal.
+		turnstileMisconfigWarnOnce.Do(func() {
+			log.Error().
+				Str("env", conf.envPrefix+"TURNSTILE_ENABLED").
+				Msg("turnstile enabled but TURNSTILE_SITE_KEY/TURNSTILE_SECRET_KEY are not both set — bot challenge is DISABLED; set both keys or unset TURNSTILE_ENABLED")
+		})
+		return false
+	}
+	return true
 }
 
 func (conf *Config) GetTurnstileSiteKey() string {
