@@ -9,8 +9,50 @@ permissions:
   contents: read
 
 jobs:
+  # The Go binary embeds the built UI bundles (manyrows-core/appkit/appkit
+  # and manyrows-core/web/* via //go:embed). Those bundles are build
+  # artifacts, not committed, so every Go job below — vet, build, test —
+  # would fail with "pattern ...: no matching files found" without them.
+  # Build the bundles once here (mirroring the Dockerfile's ui-build stage)
+  # and hand them to the Go jobs as an artifact.
+  ui-build:
+    name: Build UI bundles
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      # No root lockfile (each workspace manages its own deps), so cache
+      # ~/.npm keyed on the package manifests rather than using setup-node's
+      # lockfile-based cache.
+      - uses: actions/cache@v4
+        with:
+          path: ~/.npm
+          key: npm-${{ hashFiles('package.json', 'appkit-ui/package.json', 'manyrows-ui/package.json') }}
+          restore-keys: npm-
+
+      - name: Install workspace deps
+        run: npm install --workspaces --include-workspace-root --no-audit --no-fund
+
+      - name: Build bundles
+        run: |
+          npm run build --workspace=appkit-ui
+          npm run build --workspace=manyrows-ui
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ui-dist
+          path: |
+            appkit-ui/dist
+            manyrows-ui/dist
+          if-no-files-found: error
+          retention-days: 1
+
   go-static:
     name: Go static checks (gofmt / vet / build)
+    needs: ui-build
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -18,6 +60,16 @@ jobs:
         with:
           go-version-file: manyrows-core/go.mod
           cache-dependency-path: manyrows-core/go.sum
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: ui-dist
+      # Drop the built bundles into the locations the //go:embed directives
+      # expect (mirrors build-ui.sh / the Dockerfile go-build stage).
+      - name: Place embedded UI bundles
+        run: |
+          cp -r appkit-ui/dist/.  manyrows-core/appkit/
+          cp -r manyrows-ui/dist/. manyrows-core/web/
 
       - name: gofmt
         run: |
@@ -42,6 +94,7 @@ jobs:
 
   go-test:
     name: Go tests (Postgres)
+    needs: ui-build
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -68,6 +121,16 @@ jobs:
         with:
           go-version-file: manyrows-core/go.mod
           cache-dependency-path: manyrows-core/go.sum
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: ui-dist
+      # Same embed bundles the build needs: go test ./... compiles every
+      # package, including appkit and web.
+      - name: Place embedded UI bundles
+        run: |
+          cp -r appkit-ui/dist/.  manyrows-core/appkit/
+          cp -r manyrows-ui/dist/. manyrows-core/web/
 
       - name: test
         working-directory: manyrows-core
