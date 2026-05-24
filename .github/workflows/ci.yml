@@ -1,0 +1,74 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  go-static:
+    name: Go static checks (gofmt / vet / build)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: manyrows-core/go.mod
+          cache-dependency-path: manyrows-core/go.sum
+
+      - name: gofmt
+        run: |
+          unformatted=$(gofmt -l manyrows-core server-go)
+          if [ -n "$unformatted" ]; then
+            echo "::error::These files are not gofmt-clean. Run: gofmt -w manyrows-core server-go"
+            echo "$unformatted"
+            exit 1
+          fi
+
+      - name: vet + build (manyrows-core)
+        working-directory: manyrows-core
+        run: |
+          go vet ./...
+          go build ./...
+
+      - name: vet + build (server-go)
+        working-directory: server-go
+        run: |
+          go vet ./...
+          go build ./...
+
+  go-test:
+    name: Go tests (Postgres)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: manyrows
+          POSTGRES_PASSWORD: manyrows
+          POSTGRES_DB: manyrows_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U manyrows"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      # The suite refuses to run against DATABASE_URL; it requires a
+      # dedicated test DB. Migrations are applied automatically by db.New
+      # (embedded goose) on first connection.
+      TEST_DATABASE_URL: postgres://manyrows:manyrows@localhost:5432/manyrows_test?sslmode=disable
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: manyrows-core/go.mod
+          cache-dependency-path: manyrows-core/go.sum
+
+      - name: test
+        working-directory: manyrows-core
+        run: go test ./...
