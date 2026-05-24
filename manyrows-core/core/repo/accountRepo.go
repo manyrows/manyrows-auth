@@ -115,7 +115,7 @@ values ($1, $2, $3, $4, $5, null, $6, $7);
 		acc.CreatedAt,
 	)
 	if err != nil {
-		if validation.LooksLikeUniqueViolation(err) {
+		if IsUniqueViolation(err) {
 			vr := validation.NewIssue("email", "duplicate", "account already registered")
 			vr.Status = http.StatusConflict
 			return vr, nil
@@ -192,7 +192,7 @@ values ($1, $2, $3, null, $4, $5);
 		acc.CreatedAt,
 	)
 	if err != nil {
-		if validation.LooksLikeUniqueViolation(err) {
+		if IsUniqueViolation(err) {
 			vr := validation.NewIssue("email", "duplicate", "email already registered")
 			vr.Status = http.StatusConflict
 			return vr, nil

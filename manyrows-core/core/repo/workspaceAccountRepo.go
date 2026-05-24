@@ -55,7 +55,7 @@ values ($1, $2, $3, $4, $5, $6, $7, $8);
 		wa.UpdatedAt,
 	)
 	if err != nil {
-		if validation.LooksLikeUniqueViolation(err) {
+		if IsUniqueViolation(err) {
 			vr := validation.NewIssue("email", "duplicate", "email already registered in this workspace")
 			vr.Status = http.StatusConflict
 			return vr, nil
@@ -358,7 +358,7 @@ where id = $1 and workspace_id = $2;
 `
 	ct, err := r.db.Pool().Exec(ctx, q, id, workspaceID, newEmail, time.Now().UTC())
 	if err != nil {
-		if validation.LooksLikeUniqueViolation(err) {
+		if IsUniqueViolation(err) {
 			vr := validation.NewIssue("email", "duplicate", "email already registered in this workspace")
 			vr.Status = http.StatusConflict
 			return vr, nil
