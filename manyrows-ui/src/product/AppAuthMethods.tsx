@@ -834,55 +834,112 @@ function OAuthProvidersList({ app, cardURL, onSaved, onSuccess, onError }: CardP
 }
 
 // =====================================================================
-// Google - toggle + credentials together. Toggle gated on client_id.
+// OAuthCredentialCard — shared client-id + secret + enable-toggle +
+// redirect-URI card behind the Google, GitHub, Kakao, and Naver providers.
+// They were near-identical components; the only real differences (app field
+// names, the *-config endpoint, PUT body keys, i18n copy, an optional
+// prerequisites note, and whether the enable-gating distinguishes "missing
+// client id" from "missing secret") are captured in OAuthCredentialConfig.
 // =====================================================================
 
-function GoogleCard({ app, cardURL, onSaved, onSuccess, onError }: CardProps) {
+type OAuthCredentialConfig = {
+  // PUT target: `${cardURL}/${endpoint}`.
+  endpoint: string;
+  // Current persisted state, read from the app by the per-provider wrapper.
+  enabled: boolean;
+  clientId: string;
+  hasSecret: boolean;
+  redirectUri?: string | null;
+  // Maps the live form values to the provider-specific PUT body.
+  buildBody: (v: { enabled: boolean; clientId: string; secret?: string; clearSecret: boolean }) => Record<string, unknown>;
+  text: {
+    title: string;
+    desc: string;
+    enableLabel: string;
+    configRequired: string;
+    // Shown when the user tries to enable an incompletely-configured provider.
+    // Google distinguishes the two; the others pass the same message for both.
+    errClientId: string;
+    errSecret: string;
+    clientIdLabel: string;
+    clientIdHelp: string;
+    clientIdPlaceholder: string;
+    secretLabel: string;
+    secretHelp: string;
+    secretPlaceholder: string;
+    redirectLabel: string;
+    redirectHelp: string;
+    redirectCopyLabel: string;
+  };
+  // Optional "set this up on the provider's side first" note.
+  prereq?: { title: string; body: string };
+};
+
+function OAuthCredentialCard({
+  app,
+  cardURL,
+  onSaved,
+  onSuccess,
+  onError,
+  config,
+}: Pick<CardProps, "app" | "cardURL" | "onSaved" | "onSuccess" | "onError"> & { config: OAuthCredentialConfig }) {
   const { t } = useTranslation();
   const { enqueueSnackbar } = useSnackbar();
+  const { text } = config;
 
-  const [enabled, setEnabled] = React.useState(app.authMethodGoogle);
-  const [clientId, setClientId] = React.useState(app.googleOAuthClientId || "");
+  const [enabled, setEnabled] = React.useState(config.enabled);
+  const [clientId, setClientId] = React.useState(config.clientId);
   const [clientSecret, setClientSecret] = React.useState("");
   const [clearSecret, setClearSecret] = React.useState(false);
   const [saving, setSaving] = React.useState(false);
 
-  const resetFromApp = React.useCallback(() => {
-    setEnabled(app.authMethodGoogle);
-    setClientId(app.googleOAuthClientId || "");
+  function resetForm() {
+    setEnabled(config.enabled);
+    setClientId(config.clientId);
     setClientSecret("");
     setClearSecret(false);
-  }, [app]);
+  }
 
-  React.useEffect(() => { resetFromApp(); }, [resetFromApp]);
+  // Reset whenever the app prop changes: after any save the parent passes a
+  // fresh app object (updatedAt always changes), which clears the transient
+  // secret input and reflects the saved state. config is derived from app, so
+  // [app] is the right trigger (matches the per-provider cards this replaced).
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  React.useEffect(() => { resetForm(); }, [app]);
 
   const dirty =
-    enabled !== app.authMethodGoogle ||
-    clientId !== (app.googleOAuthClientId || "") ||
+    enabled !== config.enabled ||
+    clientId !== config.clientId ||
     clientSecret.trim().length > 0 ||
     clearSecret;
 
-  const secretAvailable = clientSecret.trim().length > 0 || (!!app.hasGoogleClientSecret && !clearSecret);
+  const secretAvailable = clientSecret.trim().length > 0 || (config.hasSecret && !clearSecret);
   const configComplete = clientId.trim().length > 0 && secretAvailable;
 
+  // Returns the gating message if enabling isn't allowed yet, else null.
+  function enableBlockedReason(): string | null {
+    if (clientId.trim().length === 0) return text.errClientId;
+    if (!secretAvailable) return text.errSecret;
+    return null;
+  }
+
   async function save() {
-    if (enabled && clientId.trim().length === 0) {
-      onError(new Error(t("apps.googleClientIdRequired", { defaultValue: "Enter a Client ID before enabling Google sign-in." })));
-      return;
-    }
-    if (enabled && !secretAvailable) {
-      onError(new Error(t("apps.googleClientSecretRequired", { defaultValue: "Enter a Client Secret before enabling Google sign-in." })));
-      return;
+    if (enabled) {
+      const blocked = enableBlockedReason();
+      if (blocked) {
+        onError(new Error(blocked));
+        return;
+      }
     }
     setSaving(true);
     try {
-      const body: Record<string, unknown> = {
-        authMethodGoogle: enabled,
-        googleOAuthClientId: clientId.trim(),
-      };
-      if (clientSecret.trim()) body.googleOAuthClientSecret = clientSecret.trim();
-      else if (clearSecret) body.googleOAuthClientSecret = "";
-      const res = await axios.put<App>(`${cardURL}/google-config`, body);
+      const body = config.buildBody({
+        enabled,
+        clientId: clientId.trim(),
+        secret: clientSecret.trim() || undefined,
+        clearSecret,
+      });
+      const res = await axios.put<App>(`${cardURL}/${config.endpoint}`, body);
       onSaved(res.data);
       onSuccess();
     } catch (e) {
@@ -892,31 +949,45 @@ function GoogleCard({ app, cardURL, onSaved, onSuccess, onError }: CardProps) {
     }
   }
 
-  async function copy(text: string, label: string) {
-    try { await navigator.clipboard.writeText(text); enqueueSnackbar(t("apps.copied", { label }), { variant: "success" }); }
-    catch { enqueueSnackbar(t("apps.copyFailed"), { variant: "error" }); }
+  async function copy(value: string, label: string) {
+    try {
+      await navigator.clipboard.writeText(value);
+      enqueueSnackbar(t("apps.copied", { label }), { variant: "success" });
+    } catch {
+      enqueueSnackbar(t("apps.copyFailed"), { variant: "error" });
+    }
   }
 
   return (
     <Stack spacing={3.5} sx={{ maxWidth: 680 }}>
       <Section
         overline={t("apps.sectionOverline.oauthProvider", { defaultValue: "OAuth provider" })}
-        title={t("apps.googleConfigTitle", { defaultValue: "Google Sign-In" })}
-        desc={t("apps.googleConfigDesc", { defaultValue: "Credentials from Google Cloud Console. Both Client ID and Client Secret are required - sign-in uses the OAuth Authorization Code Flow, which does a server-to-server token exchange." })}
+        title={text.title}
+        desc={text.desc}
       >
+        {config.prereq && (
+          <Alert severity="info" sx={{ fontSize: 13 }}>
+            <Typography variant="body2" sx={{ fontWeight: 500, mb: 0.5 }}>
+              {config.prereq.title}
+            </Typography>
+            <Typography variant="caption" color="text.secondary" component="div">
+              {config.prereq.body}
+            </Typography>
+          </Alert>
+        )}
+
         <FormControlLabel
           control={
             <Switch
               checked={enabled}
               onChange={(e) => {
                 const next = e.target.checked;
-                if (next && clientId.trim().length === 0) {
-                  enqueueSnackbar(t("apps.googleClientIdRequired", { defaultValue: "Enter a Client ID before enabling Google sign-in." }), { variant: "warning" });
-                  return;
-                }
-                if (next && !secretAvailable) {
-                  enqueueSnackbar(t("apps.googleClientSecretRequired", { defaultValue: "Enter a Client Secret before enabling Google sign-in." }), { variant: "warning" });
-                  return;
+                if (next) {
+                  const blocked = enableBlockedReason();
+                  if (blocked) {
+                    enqueueSnackbar(blocked, { variant: "warning" });
+                    return;
+                  }
                 }
                 setEnabled(next);
               }}
@@ -925,9 +996,9 @@ function GoogleCard({ app, cardURL, onSaved, onSuccess, onError }: CardProps) {
           }
           label={
             <Stack spacing={0}>
-              <Typography variant="body2" sx={{ fontWeight: 500 }}>{t("apps.dialog.authMethodGoogle", { defaultValue: "Enable Google Sign-In" })}</Typography>
+              <Typography variant="body2" sx={{ fontWeight: 500 }}>{text.enableLabel}</Typography>
               {!configComplete && (
-                <Typography variant="caption" color="text.secondary">{t("apps.googleConfigRequired", { defaultValue: "Configure the Client ID and Client Secret below first." })}</Typography>
+                <Typography variant="caption" color="text.secondary">{text.configRequired}</Typography>
               )}
             </Stack>
           }
@@ -937,12 +1008,12 @@ function GoogleCard({ app, cardURL, onSaved, onSuccess, onError }: CardProps) {
         <TextField
           size="small"
           fullWidth
-          label={t("apps.dialog.googleClientIdLabel", { defaultValue: "Client ID" })}
+          label={text.clientIdLabel}
           value={clientId}
           onChange={(e) => setClientId(e.target.value)}
           disabled={saving}
-          placeholder="123456789.apps.googleusercontent.com"
-          helperText={t("apps.dialog.googleClientIdHelp", { defaultValue: "From Google Cloud Console → Credentials → OAuth 2.0 Client ID" })}
+          placeholder={text.clientIdPlaceholder}
+          helperText={text.clientIdHelp}
         />
         <TextField
           size="small"
@@ -950,8 +1021,8 @@ function GoogleCard({ app, cardURL, onSaved, onSuccess, onError }: CardProps) {
           type="password"
           label={
             <Box component="span" sx={{ display: "inline-flex", alignItems: "center", gap: 1 }}>
-              <span>{t("apps.dialog.googleClientSecretLabel", { defaultValue: "Client Secret" })}</span>
-              {app.hasGoogleClientSecret && !clearSecret && (
+              <span>{text.secretLabel}</span>
+              {config.hasSecret && !clearSecret && (
                 <StatusChip size="xs" label={t("apps.dialog.secretSet", { defaultValue: "Configured" })} severity="success" />
               )}
               {clearSecret && (
@@ -962,11 +1033,11 @@ function GoogleCard({ app, cardURL, onSaved, onSuccess, onError }: CardProps) {
           value={clientSecret}
           onChange={(e) => { setClientSecret(e.target.value); setClearSecret(false); }}
           disabled={saving || clearSecret}
-          placeholder={app.hasGoogleClientSecret && !clearSecret ? t("apps.dialog.leaveBlankKeep", { defaultValue: "Leave blank to keep current" }) : t("apps.dialog.googleSecretPlaceholder", { defaultValue: "Required - paste from Google Cloud Console" })}
+          placeholder={config.hasSecret && !clearSecret ? t("apps.dialog.leaveBlankKeep", { defaultValue: "Leave blank to keep current" }) : text.secretPlaceholder}
           helperText={
             <Box component="span" sx={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-              <span>{t("apps.dialog.googleClientSecretHelp", { defaultValue: "Required. ManyRows exchanges the OAuth code server-to-server with this secret." })}</span>
-              {app.hasGoogleClientSecret && !clearSecret && (
+              <span>{text.secretHelp}</span>
+              {config.hasSecret && !clearSecret && (
                 <Button size="small" color="error" onClick={() => { setClearSecret(true); setClientSecret(""); }} sx={{ textTransform: "none", fontSize: 11, minWidth: 0, p: 0, ml: 1, whiteSpace: "nowrap" }}>{t("apps.dialog.clearSecret", { defaultValue: "Clear secret" })}</Button>
               )}
               {clearSecret && (
@@ -975,18 +1046,65 @@ function GoogleCard({ app, cardURL, onSaved, onSuccess, onError }: CardProps) {
             </Box>
           }
         />
-        {app.googleOAuthRedirectUri && (
+        {config.redirectUri && (
           <CopyableUri
-            label={t("apps.dialog.googleRedirectUriLabel", { defaultValue: "Authorized Redirect URI" })}
-            uri={app.googleOAuthRedirectUri}
-            onCopy={() => copy(app.googleOAuthRedirectUri!, "Redirect URI")}
-            help={t("apps.dialog.googleRedirectUriHelp", { defaultValue: "Add this to Google Cloud Console → Credentials → Authorized redirect URIs" })}
+            label={text.redirectLabel}
+            uri={config.redirectUri}
+            onCopy={() => copy(config.redirectUri!, text.redirectCopyLabel)}
+            help={text.redirectHelp}
             copyTitle={t("apps.copyRedirectUri", { defaultValue: "Copy redirect URI" })}
           />
         )}
       </Section>
-      <SaveBar dirty={dirty} saving={saving} onSave={save} onDiscard={resetFromApp} />
+      <SaveBar dirty={dirty} saving={saving} onSave={save} onDiscard={resetForm} />
     </Stack>
+  );
+}
+
+// =====================================================================
+// Google - toggle + credentials together. Toggle gated on client_id.
+// =====================================================================
+
+function GoogleCard({ app, cardURL, onSaved, onSuccess, onError }: CardProps) {
+  const { t } = useTranslation();
+  return (
+    <OAuthCredentialCard
+      app={app}
+      cardURL={cardURL}
+      onSaved={onSaved}
+      onSuccess={onSuccess}
+      onError={onError}
+      config={{
+        endpoint: "google-config",
+        enabled: !!app.authMethodGoogle,
+        clientId: app.googleOAuthClientId || "",
+        hasSecret: !!app.hasGoogleClientSecret,
+        redirectUri: app.googleOAuthRedirectUri,
+        buildBody: ({ enabled, clientId, secret, clearSecret }) => {
+          const body: Record<string, unknown> = { authMethodGoogle: enabled, googleOAuthClientId: clientId };
+          if (secret) body.googleOAuthClientSecret = secret;
+          else if (clearSecret) body.googleOAuthClientSecret = "";
+          return body;
+        },
+        text: {
+          title: t("apps.googleConfigTitle", { defaultValue: "Google Sign-In" }),
+          desc: t("apps.googleConfigDesc", { defaultValue: "Credentials from Google Cloud Console. Both Client ID and Client Secret are required - sign-in uses the OAuth Authorization Code Flow, which does a server-to-server token exchange." }),
+          enableLabel: t("apps.dialog.authMethodGoogle", { defaultValue: "Enable Google Sign-In" }),
+          configRequired: t("apps.googleConfigRequired", { defaultValue: "Configure the Client ID and Client Secret below first." }),
+          errClientId: t("apps.googleClientIdRequired", { defaultValue: "Enter a Client ID before enabling Google sign-in." }),
+          errSecret: t("apps.googleClientSecretRequired", { defaultValue: "Enter a Client Secret before enabling Google sign-in." }),
+          clientIdLabel: t("apps.dialog.googleClientIdLabel", { defaultValue: "Client ID" }),
+          clientIdHelp: t("apps.dialog.googleClientIdHelp", { defaultValue: "From Google Cloud Console → Credentials → OAuth 2.0 Client ID" }),
+          clientIdPlaceholder: "123456789.apps.googleusercontent.com",
+          secretLabel: t("apps.dialog.googleClientSecretLabel", { defaultValue: "Client Secret" }),
+          secretHelp: t("apps.dialog.googleClientSecretHelp", { defaultValue: "Required. ManyRows exchanges the OAuth code server-to-server with this secret." }),
+          secretPlaceholder: t("apps.dialog.googleSecretPlaceholder", { defaultValue: "Required - paste from Google Cloud Console" }),
+          redirectLabel: t("apps.dialog.googleRedirectUriLabel", { defaultValue: "Authorized Redirect URI" }),
+          redirectHelp: t("apps.dialog.googleRedirectUriHelp", { defaultValue: "Add this to Google Cloud Console → Credentials → Authorized redirect URIs" }),
+          redirectCopyLabel: "Redirect URI",
+        },
+      }}
+    />
   );
 }
 
@@ -1411,151 +1529,45 @@ function MicrosoftCard({ app, cardURL, onSaved, onSuccess, onError }: CardProps)
 
 function GithubCard({ app, cardURL, onSaved, onSuccess, onError }: CardProps) {
   const { t } = useTranslation();
-  const { enqueueSnackbar } = useSnackbar();
-
-  const [enabled, setEnabled] = React.useState(!!app.authMethodGithub);
-  const [clientId, setClientId] = React.useState(app.githubClientId || "");
-  const [clientSecret, setClientSecret] = React.useState("");
-  const [clearSecret, setClearSecret] = React.useState(false);
-  const [saving, setSaving] = React.useState(false);
-
-  React.useEffect(() => {
-    setEnabled(!!app.authMethodGithub);
-    setClientId(app.githubClientId || "");
-    setClientSecret("");
-    setClearSecret(false);
-  }, [app]);
-
-  const resetFromApp = React.useCallback(() => {
-    setEnabled(!!app.authMethodGithub);
-    setClientId(app.githubClientId || "");
-    setClientSecret("");
-    setClearSecret(false);
-  }, [app]);
-
-  const dirty =
-    enabled !== !!app.authMethodGithub ||
-    clientId !== (app.githubClientId || "") ||
-    clientSecret.trim().length > 0 ||
-    clearSecret;
-
-  const willHaveSecret = !clearSecret && (!!app.hasGithubClientSecret || clientSecret.trim().length > 0);
-  const configComplete = clientId.trim().length > 0 && willHaveSecret;
-
-  async function save() {
-    if (enabled && !configComplete) {
-      onError(new Error(t("apps.githubConfigIncomplete", { defaultValue: "Configure both Client ID and Client Secret before enabling GitHub sign-in." })));
-      return;
-    }
-    setSaving(true);
-    try {
-      const body: Record<string, unknown> = {
-        authMethodGithub: enabled,
-        githubClientId: clientId.trim(),
-      };
-      if (clientSecret.trim()) body.githubClientSecret = clientSecret.trim();
-      else if (clearSecret) body.githubClientSecret = "";
-      const res = await axios.put<App>(`${cardURL}/github-config`, body);
-      onSaved(res.data);
-      onSuccess();
-    } catch (e) {
-      onError(e);
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  async function copy(text: string, label: string) {
-    try { await navigator.clipboard.writeText(text); enqueueSnackbar(t("apps.copied", { label }), { variant: "success" }); }
-    catch { enqueueSnackbar(t("apps.copyFailed"), { variant: "error" }); }
-  }
-
+  const incomplete = t("apps.githubConfigIncomplete", { defaultValue: "Configure both Client ID and Client Secret before enabling GitHub sign-in." });
   return (
-    <Stack spacing={3.5} sx={{ maxWidth: 680 }}>
-      <Section
-        overline={t("apps.sectionOverline.oauthProvider", { defaultValue: "OAuth provider" })}
-        title={t("apps.githubConfigTitle", { defaultValue: "GitHub Sign-In" })}
-        desc={t("apps.githubConfigDesc", { defaultValue: "OAuth App credentials from GitHub Developer Settings. Users sign in with GitHub and we use their primary verified email as the account identifier." })}
-      >
-        <FormControlLabel
-          control={
-            <Switch
-              checked={enabled}
-              onChange={(e) => {
-                const next = e.target.checked;
-                if (next && !configComplete) {
-                  enqueueSnackbar(t("apps.githubConfigIncomplete", { defaultValue: "Configure both Client ID and Client Secret before enabling GitHub sign-in." }), { variant: "warning" });
-                  return;
-                }
-                setEnabled(next);
-              }}
-              disabled={saving}
-            />
-          }
-          label={
-            <Stack spacing={0}>
-              <Typography variant="body2" sx={{ fontWeight: 500 }}>{t("apps.dialog.authMethodGithub", { defaultValue: "Enable GitHub Sign-In" })}</Typography>
-              {!configComplete && (
-                <Typography variant="caption" color="text.secondary">{t("apps.githubConfigRequired", { defaultValue: "Configure Client ID + Client Secret below first." })}</Typography>
-              )}
-            </Stack>
-          }
-          sx={{ ml: 0 }}
-        />
-
-        <TextField
-          size="small"
-          fullWidth
-          label={t("apps.dialog.githubClientIdLabel", { defaultValue: "Client ID" })}
-          value={clientId}
-          onChange={(e) => setClientId(e.target.value)}
-          disabled={saving}
-          placeholder="Iv1.abc123def456"
-          helperText={t("apps.dialog.githubClientIdHelp", { defaultValue: "From GitHub → Settings → Developer settings → OAuth Apps → Client ID" })}
-        />
-        <TextField
-          size="small"
-          fullWidth
-          type="password"
-          label={
-            <Box component="span" sx={{ display: "inline-flex", alignItems: "center", gap: 1 }}>
-              <span>{t("apps.dialog.githubClientSecretLabel", { defaultValue: "Client Secret" })}</span>
-              {app.hasGithubClientSecret && !clearSecret && (
-                <StatusChip size="xs" label={t("apps.dialog.secretSet", { defaultValue: "Configured" })} severity="success" />
-              )}
-              {clearSecret && (
-                <StatusChip size="xs" label={t("apps.dialog.willBeCleared", { defaultValue: "Will be cleared on save" })} severity="warning" />
-              )}
-            </Box>
-          }
-          value={clientSecret}
-          onChange={(e) => { setClientSecret(e.target.value); setClearSecret(false); }}
-          disabled={saving || clearSecret}
-          placeholder={app.hasGithubClientSecret && !clearSecret ? t("apps.dialog.leaveBlankKeep", { defaultValue: "Leave blank to keep current" }) : t("apps.dialog.githubSecretPlaceholder", { defaultValue: "Generate a new secret in your OAuth App settings" })}
-          helperText={
-            <Box component="span" sx={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-              <span>{t("apps.dialog.githubClientSecretHelp", { defaultValue: "Encrypted at rest. GitHub only shows the secret once at generation time - copy it from the OAuth App settings page right after creating it." })}</span>
-              {app.hasGithubClientSecret && !clearSecret && (
-                <Button size="small" color="error" onClick={() => { setClearSecret(true); setClientSecret(""); }} sx={{ textTransform: "none", fontSize: 11, minWidth: 0, p: 0, ml: 1, whiteSpace: "nowrap" }}>{t("apps.dialog.clearSecret", { defaultValue: "Clear secret" })}</Button>
-              )}
-              {clearSecret && (
-                <Button size="small" onClick={() => setClearSecret(false)} sx={{ textTransform: "none", fontSize: 11, minWidth: 0, p: 0, ml: 1, whiteSpace: "nowrap" }}>{t("apps.dialog.undo", { defaultValue: "Undo" })}</Button>
-              )}
-            </Box>
-          }
-        />
-        {app.githubOAuthRedirectUri && (
-          <CopyableUri
-            label={t("apps.dialog.githubRedirectUriLabel", { defaultValue: "Authorization callback URL" })}
-            uri={app.githubOAuthRedirectUri}
-            onCopy={() => copy(app.githubOAuthRedirectUri!, "Callback URL")}
-            help={t("apps.dialog.githubRedirectUriHelp", { defaultValue: "Paste this into the OAuth App's \"Authorization callback URL\" field on GitHub." })}
-            copyTitle={t("apps.copyRedirectUri", { defaultValue: "Copy redirect URI" })}
-          />
-        )}
-      </Section>
-      <SaveBar dirty={dirty} saving={saving} onSave={save} onDiscard={resetFromApp} />
-    </Stack>
+    <OAuthCredentialCard
+      app={app}
+      cardURL={cardURL}
+      onSaved={onSaved}
+      onSuccess={onSuccess}
+      onError={onError}
+      config={{
+        endpoint: "github-config",
+        enabled: !!app.authMethodGithub,
+        clientId: app.githubClientId || "",
+        hasSecret: !!app.hasGithubClientSecret,
+        redirectUri: app.githubOAuthRedirectUri,
+        buildBody: ({ enabled, clientId, secret, clearSecret }) => {
+          const body: Record<string, unknown> = { authMethodGithub: enabled, githubClientId: clientId };
+          if (secret) body.githubClientSecret = secret;
+          else if (clearSecret) body.githubClientSecret = "";
+          return body;
+        },
+        text: {
+          title: t("apps.githubConfigTitle", { defaultValue: "GitHub Sign-In" }),
+          desc: t("apps.githubConfigDesc", { defaultValue: "OAuth App credentials from GitHub Developer Settings. Users sign in with GitHub and we use their primary verified email as the account identifier." }),
+          enableLabel: t("apps.dialog.authMethodGithub", { defaultValue: "Enable GitHub Sign-In" }),
+          configRequired: t("apps.githubConfigRequired", { defaultValue: "Configure Client ID + Client Secret below first." }),
+          errClientId: incomplete,
+          errSecret: incomplete,
+          clientIdLabel: t("apps.dialog.githubClientIdLabel", { defaultValue: "Client ID" }),
+          clientIdHelp: t("apps.dialog.githubClientIdHelp", { defaultValue: "From GitHub → Settings → Developer settings → OAuth Apps → Client ID" }),
+          clientIdPlaceholder: "Iv1.abc123def456",
+          secretLabel: t("apps.dialog.githubClientSecretLabel", { defaultValue: "Client Secret" }),
+          secretHelp: t("apps.dialog.githubClientSecretHelp", { defaultValue: "Encrypted at rest. GitHub only shows the secret once at generation time - copy it from the OAuth App settings page right after creating it." }),
+          secretPlaceholder: t("apps.dialog.githubSecretPlaceholder", { defaultValue: "Generate a new secret in your OAuth App settings" }),
+          redirectLabel: t("apps.dialog.githubRedirectUriLabel", { defaultValue: "Authorization callback URL" }),
+          redirectHelp: t("apps.dialog.githubRedirectUriHelp", { defaultValue: "Paste this into the OAuth App's \"Authorization callback URL\" field on GitHub." }),
+          redirectCopyLabel: "Callback URL",
+        },
+      }}
+    />
   );
 }
 
@@ -1570,166 +1582,52 @@ function GithubCard({ app, cardURL, onSaved, onSuccess, onError }: CardProps) {
 
 function KakaoCard({ app, cardURL, onSaved, onSuccess, onError }: CardProps) {
   const { t } = useTranslation();
-  const { enqueueSnackbar } = useSnackbar();
-
-  const [enabled, setEnabled] = React.useState(!!app.authMethodKakao);
-  const [clientId, setClientId] = React.useState(app.kakaoClientId || "");
-  const [clientSecret, setClientSecret] = React.useState("");
-  const [clearSecret, setClearSecret] = React.useState(false);
-  const [saving, setSaving] = React.useState(false);
-
-  React.useEffect(() => {
-    setEnabled(!!app.authMethodKakao);
-    setClientId(app.kakaoClientId || "");
-    setClientSecret("");
-    setClearSecret(false);
-  }, [app]);
-
-  const resetFromApp = React.useCallback(() => {
-    setEnabled(!!app.authMethodKakao);
-    setClientId(app.kakaoClientId || "");
-    setClientSecret("");
-    setClearSecret(false);
-  }, [app]);
-
-  const dirty =
-    enabled !== !!app.authMethodKakao ||
-    clientId !== (app.kakaoClientId || "") ||
-    clientSecret.trim().length > 0 ||
-    clearSecret;
-
-  const willHaveSecret = !clearSecret && (!!app.hasKakaoClientSecret || clientSecret.trim().length > 0);
-  const configComplete = clientId.trim().length > 0 && willHaveSecret;
-
-  async function save() {
-    if (enabled && !configComplete) {
-      onError(new Error(t("apps.kakaoConfigIncomplete", { defaultValue: "Configure both REST API key and Client Secret before enabling Kakao sign-in." })));
-      return;
-    }
-    setSaving(true);
-    try {
-      const body: Record<string, unknown> = {
-        authMethodKakao: enabled,
-        kakaoClientId: clientId.trim(),
-      };
-      if (clientSecret.trim()) body.kakaoClientSecret = clientSecret.trim();
-      else if (clearSecret) body.kakaoClientSecret = "";
-      const res = await axios.put<App>(`${cardURL}/kakao-config`, body);
-      onSaved(res.data);
-      onSuccess();
-    } catch (e) {
-      onError(e);
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  async function copy(text: string, label: string) {
-    try { await navigator.clipboard.writeText(text); enqueueSnackbar(t("apps.copied", { label }), { variant: "success" }); }
-    catch { enqueueSnackbar(t("apps.copyFailed"), { variant: "error" }); }
-  }
-
+  const incomplete = t("apps.kakaoConfigIncomplete", { defaultValue: "Configure both REST API key and Client Secret before enabling Kakao sign-in." });
   return (
-    <Stack spacing={3.5} sx={{ maxWidth: 680 }}>
-      <Section
-        overline={t("apps.sectionOverline.oauthProvider", { defaultValue: "OAuth provider" })}
-        title={t("apps.kakaoConfigTitle", { defaultValue: "Kakao Sign-In" })}
-        desc={t("apps.kakaoConfigDesc", { defaultValue: "Credentials from your Kakao Developers app. ManyRows verifies the Kakao OpenID Connect id_token and uses the account email as the identifier." })}
-      >
-        {/* Kakao-side setup the customer must complete on their own Kakao
-            app — surfaced here because sign-in fails (no email / no
-            id_token) if these are missing, and the cause isn't obvious. */}
-        <Alert severity="info" sx={{ fontSize: 13 }}>
-          <Typography variant="body2" sx={{ fontWeight: 500, mb: 0.5 }}>
-            {t("apps.kakaoPrereqTitle", { defaultValue: "Set up on the Kakao Developers side first" })}
-          </Typography>
-          <Typography variant="caption" color="text.secondary" component="div">
-            {t("apps.kakaoPrereqBody", {
-              defaultValue:
-                "1) The Client ID below is your Kakao app's REST API key. 2) Turn on \"Activate OpenID Connect\" (Kakao Login → product settings). 3) Enable the Client Secret (Security) and paste it below. 4) Add the account_email consent item and set it Required — Kakao requires Business verification (사업자등록) to release email. Kakao only shares an email once it is verified, and ManyRows refuses a Kakao sign-in with no email.",
-            })}
-          </Typography>
-        </Alert>
-
-        <FormControlLabel
-          control={
-            <Switch
-              checked={enabled}
-              onChange={(e) => {
-                const next = e.target.checked;
-                if (next && !configComplete) {
-                  enqueueSnackbar(t("apps.kakaoConfigIncomplete", { defaultValue: "Configure both REST API key and Client Secret before enabling Kakao sign-in." }), { variant: "warning" });
-                  return;
-                }
-                setEnabled(next);
-              }}
-              disabled={saving}
-            />
-          }
-          label={
-            <Stack spacing={0}>
-              <Typography variant="body2" sx={{ fontWeight: 500 }}>{t("apps.dialog.authMethodKakao", { defaultValue: "Enable Kakao Sign-In" })}</Typography>
-              {!configComplete && (
-                <Typography variant="caption" color="text.secondary">{t("apps.kakaoConfigRequired", { defaultValue: "Configure REST API key + Client Secret below first." })}</Typography>
-              )}
-            </Stack>
-          }
-          sx={{ ml: 0 }}
-        />
-
-        <TextField
-          size="small"
-          fullWidth
-          label={t("apps.dialog.kakaoClientIdLabel", { defaultValue: "REST API key (Client ID)" })}
-          value={clientId}
-          onChange={(e) => setClientId(e.target.value)}
-          disabled={saving}
-          placeholder="a1b2c3d4e5f6..."
-          helperText={t("apps.dialog.kakaoClientIdHelp", { defaultValue: "From Kakao Developers → My Application → App Keys → REST API key" })}
-        />
-        <TextField
-          size="small"
-          fullWidth
-          type="password"
-          label={
-            <Box component="span" sx={{ display: "inline-flex", alignItems: "center", gap: 1 }}>
-              <span>{t("apps.dialog.kakaoClientSecretLabel", { defaultValue: "Client Secret" })}</span>
-              {app.hasKakaoClientSecret && !clearSecret && (
-                <StatusChip size="xs" label={t("apps.dialog.secretSet", { defaultValue: "Configured" })} severity="success" />
-              )}
-              {clearSecret && (
-                <StatusChip size="xs" label={t("apps.dialog.willBeCleared", { defaultValue: "Will be cleared on save" })} severity="warning" />
-              )}
-            </Box>
-          }
-          value={clientSecret}
-          onChange={(e) => { setClientSecret(e.target.value); setClearSecret(false); }}
-          disabled={saving || clearSecret}
-          placeholder={app.hasKakaoClientSecret && !clearSecret ? t("apps.dialog.leaveBlankKeep", { defaultValue: "Leave blank to keep current" }) : t("apps.dialog.kakaoSecretPlaceholder", { defaultValue: "Kakao Login → Security → Client Secret" })}
-          helperText={
-            <Box component="span" sx={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-              <span>{t("apps.dialog.kakaoClientSecretHelp", { defaultValue: "Encrypted at rest. Generate and activate it under Kakao Login → Security → Client Secret on your Kakao app." })}</span>
-              {app.hasKakaoClientSecret && !clearSecret && (
-                <Button size="small" color="error" onClick={() => { setClearSecret(true); setClientSecret(""); }} sx={{ textTransform: "none", fontSize: 11, minWidth: 0, p: 0, ml: 1, whiteSpace: "nowrap" }}>{t("apps.dialog.clearSecret", { defaultValue: "Clear secret" })}</Button>
-              )}
-              {clearSecret && (
-                <Button size="small" onClick={() => setClearSecret(false)} sx={{ textTransform: "none", fontSize: 11, minWidth: 0, p: 0, ml: 1, whiteSpace: "nowrap" }}>{t("apps.dialog.undo", { defaultValue: "Undo" })}</Button>
-              )}
-            </Box>
-          }
-        />
-        {app.kakaoOAuthRedirectUri && (
-          <CopyableUri
-            label={t("apps.dialog.kakaoRedirectUriLabel", { defaultValue: "Redirect URI" })}
-            uri={app.kakaoOAuthRedirectUri}
-            onCopy={() => copy(app.kakaoOAuthRedirectUri!, "Redirect URI")}
-            help={t("apps.dialog.kakaoRedirectUriHelp", { defaultValue: "Register this under Kakao Login → Redirect URI on your Kakao app." })}
-            copyTitle={t("apps.copyRedirectUri", { defaultValue: "Copy redirect URI" })}
-          />
-        )}
-      </Section>
-      <SaveBar dirty={dirty} saving={saving} onSave={save} onDiscard={resetFromApp} />
-    </Stack>
+    <OAuthCredentialCard
+      app={app}
+      cardURL={cardURL}
+      onSaved={onSaved}
+      onSuccess={onSuccess}
+      onError={onError}
+      config={{
+        endpoint: "kakao-config",
+        enabled: !!app.authMethodKakao,
+        clientId: app.kakaoClientId || "",
+        hasSecret: !!app.hasKakaoClientSecret,
+        redirectUri: app.kakaoOAuthRedirectUri,
+        buildBody: ({ enabled, clientId, secret, clearSecret }) => {
+          const body: Record<string, unknown> = { authMethodKakao: enabled, kakaoClientId: clientId };
+          if (secret) body.kakaoClientSecret = secret;
+          else if (clearSecret) body.kakaoClientSecret = "";
+          return body;
+        },
+        prereq: {
+          title: t("apps.kakaoPrereqTitle", { defaultValue: "Set up on the Kakao Developers side first" }),
+          body: t("apps.kakaoPrereqBody", {
+            defaultValue:
+              "1) The Client ID below is your Kakao app's REST API key. 2) Turn on \"Activate OpenID Connect\" (Kakao Login → product settings). 3) Enable the Client Secret (Security) and paste it below. 4) Add the account_email consent item and set it Required — Kakao requires Business verification (사업자등록) to release email. Kakao only shares an email once it is verified, and ManyRows refuses a Kakao sign-in with no email.",
+          }),
+        },
+        text: {
+          title: t("apps.kakaoConfigTitle", { defaultValue: "Kakao Sign-In" }),
+          desc: t("apps.kakaoConfigDesc", { defaultValue: "Credentials from your Kakao Developers app. ManyRows verifies the Kakao OpenID Connect id_token and uses the account email as the identifier." }),
+          enableLabel: t("apps.dialog.authMethodKakao", { defaultValue: "Enable Kakao Sign-In" }),
+          configRequired: t("apps.kakaoConfigRequired", { defaultValue: "Configure REST API key + Client Secret below first." }),
+          errClientId: incomplete,
+          errSecret: incomplete,
+          clientIdLabel: t("apps.dialog.kakaoClientIdLabel", { defaultValue: "REST API key (Client ID)" }),
+          clientIdHelp: t("apps.dialog.kakaoClientIdHelp", { defaultValue: "From Kakao Developers → My Application → App Keys → REST API key" }),
+          clientIdPlaceholder: "a1b2c3d4e5f6...",
+          secretLabel: t("apps.dialog.kakaoClientSecretLabel", { defaultValue: "Client Secret" }),
+          secretHelp: t("apps.dialog.kakaoClientSecretHelp", { defaultValue: "Encrypted at rest. Generate and activate it under Kakao Login → Security → Client Secret on your Kakao app." }),
+          secretPlaceholder: t("apps.dialog.kakaoSecretPlaceholder", { defaultValue: "Kakao Login → Security → Client Secret" }),
+          redirectLabel: t("apps.dialog.kakaoRedirectUriLabel", { defaultValue: "Redirect URI" }),
+          redirectHelp: t("apps.dialog.kakaoRedirectUriHelp", { defaultValue: "Register this under Kakao Login → Redirect URI on your Kakao app." }),
+          redirectCopyLabel: "Redirect URI",
+        },
+      }}
+    />
   );
 }
 
@@ -1742,166 +1640,52 @@ function KakaoCard({ app, cardURL, onSaved, onSuccess, onError }: CardProps) {
 
 function NaverCard({ app, cardURL, onSaved, onSuccess, onError }: CardProps) {
   const { t } = useTranslation();
-  const { enqueueSnackbar } = useSnackbar();
-
-  const [enabled, setEnabled] = React.useState(!!app.authMethodNaver);
-  const [clientId, setClientId] = React.useState(app.naverClientId || "");
-  const [clientSecret, setClientSecret] = React.useState("");
-  const [clearSecret, setClearSecret] = React.useState(false);
-  const [saving, setSaving] = React.useState(false);
-
-  React.useEffect(() => {
-    setEnabled(!!app.authMethodNaver);
-    setClientId(app.naverClientId || "");
-    setClientSecret("");
-    setClearSecret(false);
-  }, [app]);
-
-  const resetFromApp = React.useCallback(() => {
-    setEnabled(!!app.authMethodNaver);
-    setClientId(app.naverClientId || "");
-    setClientSecret("");
-    setClearSecret(false);
-  }, [app]);
-
-  const dirty =
-    enabled !== !!app.authMethodNaver ||
-    clientId !== (app.naverClientId || "") ||
-    clientSecret.trim().length > 0 ||
-    clearSecret;
-
-  const willHaveSecret = !clearSecret && (!!app.hasNaverClientSecret || clientSecret.trim().length > 0);
-  const configComplete = clientId.trim().length > 0 && willHaveSecret;
-
-  async function save() {
-    if (enabled && !configComplete) {
-      onError(new Error(t("apps.naverConfigIncomplete", { defaultValue: "Configure both Client ID and Client Secret before enabling Naver sign-in." })));
-      return;
-    }
-    setSaving(true);
-    try {
-      const body: Record<string, unknown> = {
-        authMethodNaver: enabled,
-        naverClientId: clientId.trim(),
-      };
-      if (clientSecret.trim()) body.naverClientSecret = clientSecret.trim();
-      else if (clearSecret) body.naverClientSecret = "";
-      const res = await axios.put<App>(`${cardURL}/naver-config`, body);
-      onSaved(res.data);
-      onSuccess();
-    } catch (e) {
-      onError(e);
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  async function copy(text: string, label: string) {
-    try { await navigator.clipboard.writeText(text); enqueueSnackbar(t("apps.copied", { label }), { variant: "success" }); }
-    catch { enqueueSnackbar(t("apps.copyFailed"), { variant: "error" }); }
-  }
-
+  const incomplete = t("apps.naverConfigIncomplete", { defaultValue: "Configure both Client ID and Client Secret before enabling Naver sign-in." });
   return (
-    <Stack spacing={3.5} sx={{ maxWidth: 680 }}>
-      <Section
-        overline={t("apps.sectionOverline.oauthProvider", { defaultValue: "OAuth provider" })}
-        title={t("apps.naverConfigTitle", { defaultValue: "Naver Sign-In" })}
-        desc={t("apps.naverConfigDesc", { defaultValue: "Credentials from your Naver Developers application. Naver is OAuth2-only; ManyRows reads the account email from Naver's userinfo endpoint and uses it as the identifier." })}
-      >
-        {/* Naver-side setup the customer must complete on their own app —
-            surfaced here because sign-in fails (no email) if the email
-            consent isn't requested + marked required. */}
-        <Alert severity="info" sx={{ fontSize: 13 }}>
-          <Typography variant="body2" sx={{ fontWeight: 500, mb: 0.5 }}>
-            {t("apps.naverPrereqTitle", { defaultValue: "Set up on the Naver Developers side first" })}
-          </Typography>
-          <Typography variant="caption" color="text.secondary" component="div">
-            {t("apps.naverPrereqBody", {
-              defaultValue:
-                "1) Register a Naver Login application at developers.naver.com and paste its Client ID + Client Secret below. 2) Add the email consent item and mark it Required — Naver only returns an email the user agreed to share, and ManyRows refuses a Naver sign-in with no email. 3) Register the Callback URL below under the application's API settings.",
-            })}
-          </Typography>
-        </Alert>
-
-        <FormControlLabel
-          control={
-            <Switch
-              checked={enabled}
-              onChange={(e) => {
-                const next = e.target.checked;
-                if (next && !configComplete) {
-                  enqueueSnackbar(t("apps.naverConfigIncomplete", { defaultValue: "Configure both Client ID and Client Secret before enabling Naver sign-in." }), { variant: "warning" });
-                  return;
-                }
-                setEnabled(next);
-              }}
-              disabled={saving}
-            />
-          }
-          label={
-            <Stack spacing={0}>
-              <Typography variant="body2" sx={{ fontWeight: 500 }}>{t("apps.dialog.authMethodNaver", { defaultValue: "Enable Naver Sign-In" })}</Typography>
-              {!configComplete && (
-                <Typography variant="caption" color="text.secondary">{t("apps.naverConfigRequired", { defaultValue: "Configure Client ID + Client Secret below first." })}</Typography>
-              )}
-            </Stack>
-          }
-          sx={{ ml: 0 }}
-        />
-
-        <TextField
-          size="small"
-          fullWidth
-          label={t("apps.dialog.naverClientIdLabel", { defaultValue: "Client ID" })}
-          value={clientId}
-          onChange={(e) => setClientId(e.target.value)}
-          disabled={saving}
-          placeholder="jyvqXeaVOVmV"
-          helperText={t("apps.dialog.naverClientIdHelp", { defaultValue: "From Naver Developers → your application → Overview → Client ID" })}
-        />
-        <TextField
-          size="small"
-          fullWidth
-          type="password"
-          label={
-            <Box component="span" sx={{ display: "inline-flex", alignItems: "center", gap: 1 }}>
-              <span>{t("apps.dialog.naverClientSecretLabel", { defaultValue: "Client Secret" })}</span>
-              {app.hasNaverClientSecret && !clearSecret && (
-                <StatusChip size="xs" label={t("apps.dialog.secretSet", { defaultValue: "Configured" })} severity="success" />
-              )}
-              {clearSecret && (
-                <StatusChip size="xs" label={t("apps.dialog.willBeCleared", { defaultValue: "Will be cleared on save" })} severity="warning" />
-              )}
-            </Box>
-          }
-          value={clientSecret}
-          onChange={(e) => { setClientSecret(e.target.value); setClearSecret(false); }}
-          disabled={saving || clearSecret}
-          placeholder={app.hasNaverClientSecret && !clearSecret ? t("apps.dialog.leaveBlankKeep", { defaultValue: "Leave blank to keep current" }) : t("apps.dialog.naverSecretPlaceholder", { defaultValue: "From your Naver application overview" })}
-          helperText={
-            <Box component="span" sx={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-              <span>{t("apps.dialog.naverClientSecretHelp", { defaultValue: "Encrypted at rest. Shown next to the Client ID in your Naver application overview." })}</span>
-              {app.hasNaverClientSecret && !clearSecret && (
-                <Button size="small" color="error" onClick={() => { setClearSecret(true); setClientSecret(""); }} sx={{ textTransform: "none", fontSize: 11, minWidth: 0, p: 0, ml: 1, whiteSpace: "nowrap" }}>{t("apps.dialog.clearSecret", { defaultValue: "Clear secret" })}</Button>
-              )}
-              {clearSecret && (
-                <Button size="small" onClick={() => setClearSecret(false)} sx={{ textTransform: "none", fontSize: 11, minWidth: 0, p: 0, ml: 1, whiteSpace: "nowrap" }}>{t("apps.dialog.undo", { defaultValue: "Undo" })}</Button>
-              )}
-            </Box>
-          }
-        />
-        {app.naverOAuthRedirectUri && (
-          <CopyableUri
-            label={t("apps.dialog.naverRedirectUriLabel", { defaultValue: "Callback URL" })}
-            uri={app.naverOAuthRedirectUri}
-            onCopy={() => copy(app.naverOAuthRedirectUri!, "Callback URL")}
-            help={t("apps.dialog.naverRedirectUriHelp", { defaultValue: "Register this under your Naver application → API Settings → Callback URL." })}
-            copyTitle={t("apps.copyRedirectUri", { defaultValue: "Copy redirect URI" })}
-          />
-        )}
-      </Section>
-      <SaveBar dirty={dirty} saving={saving} onSave={save} onDiscard={resetFromApp} />
-    </Stack>
+    <OAuthCredentialCard
+      app={app}
+      cardURL={cardURL}
+      onSaved={onSaved}
+      onSuccess={onSuccess}
+      onError={onError}
+      config={{
+        endpoint: "naver-config",
+        enabled: !!app.authMethodNaver,
+        clientId: app.naverClientId || "",
+        hasSecret: !!app.hasNaverClientSecret,
+        redirectUri: app.naverOAuthRedirectUri,
+        buildBody: ({ enabled, clientId, secret, clearSecret }) => {
+          const body: Record<string, unknown> = { authMethodNaver: enabled, naverClientId: clientId };
+          if (secret) body.naverClientSecret = secret;
+          else if (clearSecret) body.naverClientSecret = "";
+          return body;
+        },
+        prereq: {
+          title: t("apps.naverPrereqTitle", { defaultValue: "Set up on the Naver Developers side first" }),
+          body: t("apps.naverPrereqBody", {
+            defaultValue:
+              "1) Register a Naver Login application at developers.naver.com and paste its Client ID + Client Secret below. 2) Add the email consent item and mark it Required — Naver only returns an email the user agreed to share, and ManyRows refuses a Naver sign-in with no email. 3) Register the Callback URL below under the application's API settings.",
+          }),
+        },
+        text: {
+          title: t("apps.naverConfigTitle", { defaultValue: "Naver Sign-In" }),
+          desc: t("apps.naverConfigDesc", { defaultValue: "Credentials from your Naver Developers application. Naver is OAuth2-only; ManyRows reads the account email from Naver's userinfo endpoint and uses it as the identifier." }),
+          enableLabel: t("apps.dialog.authMethodNaver", { defaultValue: "Enable Naver Sign-In" }),
+          configRequired: t("apps.naverConfigRequired", { defaultValue: "Configure Client ID + Client Secret below first." }),
+          errClientId: incomplete,
+          errSecret: incomplete,
+          clientIdLabel: t("apps.dialog.naverClientIdLabel", { defaultValue: "Client ID" }),
+          clientIdHelp: t("apps.dialog.naverClientIdHelp", { defaultValue: "From Naver Developers → your application → Overview → Client ID" }),
+          clientIdPlaceholder: "jyvqXeaVOVmV",
+          secretLabel: t("apps.dialog.naverClientSecretLabel", { defaultValue: "Client Secret" }),
+          secretHelp: t("apps.dialog.naverClientSecretHelp", { defaultValue: "Encrypted at rest. Shown next to the Client ID in your Naver application overview." }),
+          secretPlaceholder: t("apps.dialog.naverSecretPlaceholder", { defaultValue: "From your Naver application overview" }),
+          redirectLabel: t("apps.dialog.naverRedirectUriLabel", { defaultValue: "Callback URL" }),
+          redirectHelp: t("apps.dialog.naverRedirectUriHelp", { defaultValue: "Register this under your Naver application → API Settings → Callback URL." }),
+          redirectCopyLabel: "Callback URL",
+        },
+      }}
+    />
   );
 }
 
