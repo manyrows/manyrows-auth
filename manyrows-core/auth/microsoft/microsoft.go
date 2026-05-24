@@ -15,6 +15,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"math/big"
 	"net/http"
 	"net/url"
@@ -32,6 +33,9 @@ const (
 	// id_tokens with the same key set — so we use the 'common' segment
 	// regardless of which tenant the app is configured for.
 	jwksURL = "https://login.microsoftonline.com/common/discovery/v2.0/keys"
+	// maxResponseBytes caps every Microsoft response we decode so a hostile
+	// or buggy endpoint can't stream an unbounded body.
+	maxResponseBytes = 1 << 20
 	// Special tenant ID for personal Microsoft accounts (Outlook,
 	// Live, etc.). Used for the 'consumers' / 'organizations' rules.
 	consumersTenantID = "9188040d-6c67-4c5b-b112-36a304b66dad"
@@ -158,7 +162,7 @@ func ExchangeAuthCode(ctx context.Context, code, tenant, clientID, clientSecret,
 	defer resp.Body.Close()
 
 	var tokResp tokenExchangeResponse
-	if err := json.NewDecoder(resp.Body).Decode(&tokResp); err != nil {
+	if err := json.NewDecoder(io.LimitReader(resp.Body, maxResponseBytes)).Decode(&tokResp); err != nil {
 		return nil, fmt.Errorf("microsoft token exchange decode: %w", err)
 	}
 
@@ -234,6 +238,7 @@ func VerifyIDToken(ctx context.Context, idToken, expectedAud, configuredTenant s
 		jwt.WithValidMethods([]string{"RS256"}),
 		jwt.WithAudience(expectedAud),
 		jwt.WithExpirationRequired(),
+		jwt.WithLeeway(60*time.Second),
 		// Issuer is per-tenant; we validate it manually below using the
 		// `tid` claim instead of jwt.WithIssuer.
 	)
@@ -371,7 +376,7 @@ func refreshJWKS(ctx context.Context) error {
 	var doc struct {
 		Keys []json.RawMessage `json:"keys"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&doc); err != nil {
+	if err := json.NewDecoder(io.LimitReader(resp.Body, maxResponseBytes)).Decode(&doc); err != nil {
 		return err
 	}
 

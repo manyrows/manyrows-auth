@@ -17,6 +17,7 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
+	"io"
 	"math/big"
 	"net/http"
 	"net/url"
@@ -32,6 +33,10 @@ const (
 	tokenURL     = "https://appleid.apple.com/auth/token"
 	authorizeURL = "https://appleid.apple.com/auth/authorize"
 	jwksURL      = "https://appleid.apple.com/auth/keys"
+
+	// maxResponseBytes caps every Apple response we decode (a few KB in
+	// practice) so a hostile or buggy endpoint can't stream an unbounded body.
+	maxResponseBytes = 1 << 20
 )
 
 var (
@@ -159,7 +164,7 @@ func ExchangeAuthCode(ctx context.Context, code, servicesID, clientSecret, redir
 	defer resp.Body.Close()
 
 	var tokResp tokenExchangeResponse
-	if err := json.NewDecoder(resp.Body).Decode(&tokResp); err != nil {
+	if err := json.NewDecoder(io.LimitReader(resp.Body, maxResponseBytes)).Decode(&tokResp); err != nil {
 		return nil, fmt.Errorf("apple token exchange decode: %w", err)
 	}
 
@@ -232,6 +237,7 @@ func VerifyIDToken(ctx context.Context, idToken, expectedAud string) (*TokenInfo
 		jwt.WithIssuer(issuer),
 		jwt.WithAudience(expectedAud),
 		jwt.WithExpirationRequired(),
+		jwt.WithLeeway(60*time.Second),
 	)
 
 	var claims idTokenClaims
@@ -309,7 +315,7 @@ func refreshJWKS(ctx context.Context) error {
 	var doc struct {
 		Keys []json.RawMessage `json:"keys"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&doc); err != nil {
+	if err := json.NewDecoder(io.LimitReader(resp.Body, maxResponseBytes)).Decode(&doc); err != nil {
 		return err
 	}
 

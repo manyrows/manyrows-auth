@@ -13,6 +13,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -26,6 +27,10 @@ import (
 // view (very common; "Keep my email addresses private" is a
 // default GitHub setting).
 const requestedScopes = "read:user user:email"
+
+// maxResponseBytes caps every GitHub response we decode so a hostile or
+// buggy endpoint can't stream an unbounded body.
+const maxResponseBytes = 1 << 20
 
 // Endpoint URLs are vars (not const) so tests can swap them for an
 // httptest.Server. Runtime never mutates these.
@@ -113,7 +118,7 @@ func ExchangeAuthCode(ctx context.Context, code, clientID, clientSecret, redirec
 	defer resp.Body.Close()
 
 	var tokResp tokenExchangeResponse
-	if err := json.NewDecoder(resp.Body).Decode(&tokResp); err != nil {
+	if err := json.NewDecoder(io.LimitReader(resp.Body, maxResponseBytes)).Decode(&tokResp); err != nil {
 		return nil, fmt.Errorf("github token exchange decode: %w", err)
 	}
 	if tokResp.Error != "" {
@@ -164,7 +169,7 @@ func fetchUser(ctx context.Context, accessToken string) (*userResponse, error) {
 	}
 
 	var u userResponse
-	if err := json.NewDecoder(resp.Body).Decode(&u); err != nil {
+	if err := json.NewDecoder(io.LimitReader(resp.Body, maxResponseBytes)).Decode(&u); err != nil {
 		return nil, fmt.Errorf("%w: decode: %v", ErrUserFetch, err)
 	}
 	return &u, nil
@@ -205,7 +210,7 @@ func fetchPrimaryVerifiedEmail(ctx context.Context, accessToken string) (string,
 	}
 
 	var emails []emailEntry
-	if err := json.NewDecoder(resp.Body).Decode(&emails); err != nil {
+	if err := json.NewDecoder(io.LimitReader(resp.Body, maxResponseBytes)).Decode(&emails); err != nil {
 		return "", fmt.Errorf("%w: emails decode: %v", ErrUserFetch, err)
 	}
 

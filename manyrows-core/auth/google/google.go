@@ -5,11 +5,16 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"strings"
 	"time"
 )
+
+// maxResponseBytes caps every Google response we decode so a hostile or
+// buggy endpoint can't stream an unbounded body.
+const maxResponseBytes = 1 << 20
 
 var (
 	ErrInvalidToken     = errors.New("invalid google id token")
@@ -65,7 +70,7 @@ func VerifyIDToken(ctx context.Context, idToken string) (*TokenInfo, error) {
 	}
 
 	var info tokenInfoResponse
-	if err := json.NewDecoder(resp.Body).Decode(&info); err != nil {
+	if err := json.NewDecoder(io.LimitReader(resp.Body, maxResponseBytes)).Decode(&info); err != nil {
 		return nil, fmt.Errorf("google tokeninfo decode: %w", err)
 	}
 
@@ -138,7 +143,7 @@ func ExchangeAuthCode(ctx context.Context, code, clientID, clientSecret, redirec
 	defer resp.Body.Close()
 
 	var tokResp tokenExchangeResponse
-	if err := json.NewDecoder(resp.Body).Decode(&tokResp); err != nil {
+	if err := json.NewDecoder(io.LimitReader(resp.Body, maxResponseBytes)).Decode(&tokResp); err != nil {
 		return nil, fmt.Errorf("google token exchange decode: %w", err)
 	}
 
