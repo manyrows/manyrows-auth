@@ -19,10 +19,13 @@ import (
 )
 
 // TestAdminWorkspaceAccount_CrossTenantScoping is the regression test for the
-// cross-tenant IDOR fix: the flat /accounts/{accountId} admin handlers must
-// refuse to read or mutate a user who belongs to another workspace's pool
-// (users carry no workspace_id, so the handlers must scope via
-// user_pool_id -> user_pools.workspace_id).
+// cross-tenant IDOR fixes on the workspace-account admin handlers:
+//   - the flat /accounts/{accountId} handlers must refuse to read or mutate a
+//     user who belongs to another workspace's pool (users carry no
+//     workspace_id, so they scope via user_pool_id -> user_pools.workspace_id);
+//   - the collection POSTs (create, bulk-import) take appId from the request
+//     body, so they must scope that app to the caller's workspace rather than
+//     trusting workspace membership alone.
 func TestAdminWorkspaceAccount_CrossTenantScoping(t *testing.T) {
 	cfg := GetTestConfig()
 	adminAuthService, err := auth.NewAuthService(cfg, testEnv.Repo)
@@ -66,21 +69,27 @@ func TestAdminWorkspaceAccount_CrossTenantScoping(t *testing.T) {
 	}()
 
 	// Router: every request runs as an owner of workspace A.
+	wsCtx := func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+			c := core.WithWorkspace(req.Context(), wsA)
+			c = core.WithWorkspaceRole(c, "owner")
+			c = core.WithAdminAccount(c, accA)
+			next.ServeHTTP(w, req.WithContext(c))
+		})
+	}
 	r := chi.NewRouter()
 	r.Route("/admin/workspace/{workspaceId}/accounts", func(sub chi.Router) {
-		sub.Use(func(next http.Handler) http.Handler {
-			return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-				c := core.WithWorkspace(req.Context(), wsA)
-				c = core.WithWorkspaceRole(c, "owner")
-				c = core.WithAdminAccount(c, accA)
-				next.ServeHTTP(w, req.WithContext(c))
-			})
-		})
+		sub.Use(wsCtx)
 		sub.Get("/{accountId}", requestHandler.HandleGetWorkspaceAccount)
 		sub.Patch("/{accountId}/status", requestHandler.HandleSetWorkspaceAccountStatus)
 		sub.Delete("/{accountId}/password", requestHandler.HandleClearUserPassword)
 		sub.Delete("/{accountId}", requestHandler.HandleDeleteWorkspaceAccount)
 	})
+	// Collection-level POSTs take appId from the body. Register them at the
+	// exact collection path (flat, avoiding subrouter trailing-slash
+	// ambiguity) with the same workspace-A context.
+	r.With(wsCtx).Post("/admin/workspace/{workspaceId}/accounts", requestHandler.HandleCreateWorkspaceAccount)
+	r.With(wsCtx).Post("/admin/workspace/{workspaceId}/accounts/bulk-import", requestHandler.HandleBulkImportWorkspaceAccounts)
 
 	base := "/admin/workspace/" + wsA.ID.String() + "/accounts/"
 	send := func(method, path, body string) int {
@@ -110,6 +119,26 @@ func TestAdminWorkspaceAccount_CrossTenantScoping(t *testing.T) {
 		if code := send(tc.method, tc.path, tc.body); code != http.StatusNotFound {
 			t.Fatalf("cross-tenant %s on user B: want 404, got %d", tc.name, code)
 		}
+	}
+
+	// Cross-tenant via a body-supplied appId: create + bulk-import that name
+	// workspace B's app must be refused with 404 appNotFound. Before the fix
+	// these returned 201 and provisioned users/roles (and fired webhooks)
+	// into another tenant's app. The reject happens before any write, so
+	// there is nothing extra to clean up.
+	post := func(path, body string) (int, string) {
+		rr := httptest.NewRecorder()
+		r.ServeHTTP(rr, httptest.NewRequest(http.MethodPost, path, strings.NewReader(body)))
+		return rr.Code, rr.Body.String()
+	}
+	acctsA := "/admin/workspace/" + wsA.ID.String() + "/accounts"
+	createBody := `{"email":"idor-x-` + GenerateUniqueSlug("u") + `@example.com","appId":"` + appB.String() + `"}`
+	if code, body := post(acctsA, createBody); code != http.StatusNotFound || !strings.Contains(body, "appNotFound") {
+		t.Fatalf("cross-tenant create into workspace B app: want 404 appNotFound, got %d %s", code, body)
+	}
+	bulkBody := `{"appId":"` + appB.String() + `","accounts":[{"email":"idor-y-` + GenerateUniqueSlug("u") + `@example.com"}]}`
+	if code, body := post(acctsA+"/bulk-import", bulkBody); code != http.StatusNotFound || !strings.Contains(body, "appNotFound") {
+		t.Fatalf("cross-tenant bulk-import into workspace B app: want 404 appNotFound, got %d %s", code, body)
 	}
 
 	// User B must be untouched (not disabled, not deleted).

@@ -288,9 +288,17 @@ func (handler *RequestHandler) HandleCreateWorkspaceAccount(w http.ResponseWrite
 	// Check plan limits
 	// Load the app for scope-aware user lookup
 	loadedApp, err := handler.repo.GetAppByID(ctx, body.AppID)
-	if err != nil {
-		log.Error().Err(err).Msg("failed to load app")
-		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
+	// Scope the body-supplied appId to the caller's workspace. The
+	// workspace middleware only proves membership in the path workspace,
+	// not that this app belongs to it; without this an admin of one
+	// workspace could provision users/roles into — and fire webhooks for
+	// — another workspace's app. Collapse not-found and cross-workspace
+	// into a single 404 so we don't reveal apps in other workspaces.
+	if err != nil || loadedApp.WorkspaceID != ws.ID {
+		if err != nil && !errors.Is(err, repo.ErrNotFound) {
+			log.Error().Err(err).Msg("failed to load app")
+		}
+		WriteError(w, r, "error.appNotFound", http.StatusNotFound)
 		return
 	}
 
@@ -376,7 +384,7 @@ func (handler *RequestHandler) HandleCreateWorkspaceAccount(w http.ResponseWrite
 // HandleBulkImportWorkspaceAccounts imports multiple users at once.
 // POST /admin/workspace/{workspaceId}/accounts/bulk-import
 func (handler *RequestHandler) HandleBulkImportWorkspaceAccounts(w http.ResponseWriter, r *http.Request) {
-	_, _, ok := handler.adminAndWorkspace(w, r)
+	_, ws, ok := handler.adminAndWorkspace(w, r)
 	if !ok {
 		return
 	}
@@ -414,9 +422,14 @@ func (handler *RequestHandler) HandleBulkImportWorkspaceAccounts(w http.Response
 
 	// Load the app for scope-aware user lookup
 	bulkApp, err := handler.repo.GetAppByID(ctx, body.AppID)
-	if err != nil {
-		log.Error().Err(err).Msg("failed to load app for bulk import")
-		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
+	// Scope the body-supplied appId to the caller's workspace — see
+	// HandleCreateWorkspaceAccount. Blocks cross-workspace bulk
+	// provisioning (up to 1000 users/roles + webhook fan-out per call).
+	if err != nil || bulkApp.WorkspaceID != ws.ID {
+		if err != nil && !errors.Is(err, repo.ErrNotFound) {
+			log.Error().Err(err).Msg("failed to load app for bulk import")
+		}
+		WriteError(w, r, "error.appNotFound", http.StatusNotFound)
 		return
 	}
 
