@@ -382,7 +382,15 @@ func createBaseRouter(getBaseURL func() string, useHTTPSOnly bool) *chi.Mux {
 	r.Use(commonSecurityHeaders(useHTTPSOnly))
 	r.Use(middleware.StripSlashes)
 	r.Use(middleware.RequestID)
-	r.Use(middleware.RealIP)
+	// NOTE: do NOT add chi's middleware.RealIP here. It overwrites
+	// r.RemoteAddr from client-supplied headers (True-Client-IP /
+	// X-Real-IP / X-Forwarded-For) BEFORE any trusted-proxy check runs,
+	// which lets a direct caller spoof the client IP and defeat the
+	// per-app IP allowlist, per-IP rate limiting, and audit-log IPs.
+	// Client-IP resolution is owned by auth.ClientIP, which only honours
+	// forwarding headers when the real kernel-set peer (r.RemoteAddr) is
+	// in the operator's MANYROWS_TRUSTED_PROXIES allow-list. Leaving
+	// RemoteAddr untouched is exactly what that logic requires.
 	r.Use(middleware.GetHead)
 	r.Use(middleware.Heartbeat("/ping"))
 	r.Use(smartCache)
