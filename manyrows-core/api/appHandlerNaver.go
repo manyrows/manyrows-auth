@@ -1,13 +1,10 @@
 package api
 
 import (
-	"encoding/json"
 	"errors"
 	"net/http"
-	"strings"
 
 	"manyrows-core/core/repo"
-	"manyrows-core/crypto"
 	"manyrows-core/utils"
 
 	"github.com/rs/zerolog/log"
@@ -27,67 +24,19 @@ type updateAppNaverConfigRequest struct {
 // disabling when the primary email mode is "none" and no other OAuth provider
 // is on leaves the app unusable and is rejected.
 func (handler *RequestHandler) HandleUpdateAppNaverConfig(w http.ResponseWriter, r *http.Request) {
-	acc, ws, ok := handler.adminAndWorkspace(w, r)
-	if !ok {
-		return
-	}
-	if !handler.requireOwner(w, r) {
-		return
-	}
-	productID, appID, ok := handler.resolvePathIDs(w, r)
-	if !ok {
-		return
-	}
-
 	var req updateAppNaverConfigRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		log.Err(err).Msg("failed to decode json")
-		WriteError(w, r, "error.invalidJson", http.StatusBadRequest)
+	c, ok := handler.beginOAuthConfigUpdate(w, r, "naver", &req)
+	if !ok {
 		return
 	}
+	curApp := c.curApp
 
-	curApp, curAppErr := handler.repo.GetAppByIDForProduct(r.Context(), ws.ID, productID, appID)
-	if curAppErr != nil {
-		if errors.Is(curAppErr, repo.ErrNotFound) {
-			WriteError(w, r, "error.appNotFound", http.StatusNotFound)
-			return
-		}
-		log.Err(curAppErr).Msg("failed to load app for naver-config update")
-		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
+	clientID := mergeOptionalString(req.NaverClientID, curApp.NaverClientID)
+
+	clientSecretEncrypted, postSaveHasSecret, ok := handler.encryptOptionalSecret(
+		w, r, req.NaverClientSecret, curApp.NaverClientSecretEncrypted, "naver_client_secret_encrypted", c.appID)
+	if !ok {
 		return
-	}
-
-	clientID := curApp.NaverClientID
-	if req.NaverClientID != nil {
-		trimmed := strings.TrimSpace(*req.NaverClientID)
-		if trimmed == "" {
-			clientID = nil
-		} else {
-			clientID = &trimmed
-		}
-	}
-
-	// nil = keep existing; []byte{} = clear; non-empty = encrypt+set.
-	var clientSecretEncrypted []byte
-	postSaveHasSecret := len(curApp.NaverClientSecretEncrypted) > 0
-	if req.NaverClientSecret != nil {
-		trimmed := strings.TrimSpace(*req.NaverClientSecret)
-		if trimmed == "" {
-			clientSecretEncrypted = []byte{}
-			postSaveHasSecret = false
-		} else {
-			encrypted, encErr := handler.encryptor.EncryptToBytesWithAAD(
-				[]byte(trimmed),
-				crypto.AAD("apps", "naver_client_secret_encrypted", appID),
-			)
-			if encErr != nil {
-				log.Err(encErr).Msg("failed to encrypt naver client secret")
-				WriteError(w, r, "error.internalError", http.StatusInternalServerError)
-				return
-			}
-			clientSecretEncrypted = encrypted
-			postSaveHasSecret = true
-		}
 	}
 
 	authMethodNaver := curApp.AuthMethodNaver
@@ -98,12 +47,12 @@ func (handler *RequestHandler) HandleUpdateAppNaverConfig(w http.ResponseWriter,
 		WriteError(w, r, "error.naverConfigIncomplete", http.StatusBadRequest)
 		return
 	}
-	if !handler.requireAtLeastOneSignInMethod(r.Context(), ws, acc.IsSuper(), curApp.PrimaryAuthMethod, curApp.AuthMethodGoogle, curApp.AuthMethodApple, curApp.AuthMethodMicrosoft, curApp.AuthMethodGithub, curApp.AuthMethodKakao, authMethodNaver) {
+	if !handler.requireAtLeastOneSignInMethod(r.Context(), c.ws, c.acc.IsSuper(), curApp.PrimaryAuthMethod, curApp.AuthMethodGoogle, curApp.AuthMethodApple, curApp.AuthMethodMicrosoft, curApp.AuthMethodGithub, curApp.AuthMethodKakao, authMethodNaver) {
 		WriteError(w, r, "error.noSignInMethodEnabled", http.StatusBadRequest)
 		return
 	}
 
-	out, err := handler.repo.UpdateAppNaverConfig(r.Context(), ws.ID, productID, appID, repo.AppNaverConfigUpdate{
+	out, err := handler.repo.UpdateAppNaverConfig(r.Context(), c.ws.ID, c.productID, c.appID, repo.AppNaverConfigUpdate{
 		AuthMethodNaver:       authMethodNaver,
 		ClientID:              clientID,
 		ClientSecretEncrypted: clientSecretEncrypted,
@@ -118,5 +67,5 @@ func (handler *RequestHandler) HandleUpdateAppNaverConfig(w http.ResponseWriter,
 		return
 	}
 
-	utils.WriteJsonWithStatusCode(w, handler.toAdminAppResponse(out, ws), http.StatusOK)
+	utils.WriteJsonWithStatusCode(w, handler.toAdminAppResponse(out, c.ws), http.StatusOK)
 }

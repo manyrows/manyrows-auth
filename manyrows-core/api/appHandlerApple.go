@@ -1,7 +1,6 @@
 package api
 
 import (
-	"encoding/json"
 	"errors"
 	"net/http"
 	"strings"
@@ -30,52 +29,20 @@ type updateAppAppleConfigRequest struct {
 // email mode is "none" and no other OAuth provider is on leaves the
 // app unusable and is rejected.
 func (handler *RequestHandler) HandleUpdateAppAppleConfig(w http.ResponseWriter, r *http.Request) {
-	acc, ws, ok := handler.adminAndWorkspace(w, r)
-	if !ok {
-		return
-	}
-	if !handler.requireOwner(w, r) {
-		return
-	}
-	productID, appID, ok := handler.resolvePathIDs(w, r)
-	if !ok {
-		return
-	}
-
 	var req updateAppAppleConfigRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		log.Err(err).Msg("failed to decode json")
-		WriteError(w, r, "error.invalidJson", http.StatusBadRequest)
+	c, ok := handler.beginOAuthConfigUpdate(w, r, "apple", &req)
+	if !ok {
 		return
 	}
+	curApp := c.curApp
 
-	curApp, curAppErr := handler.repo.GetAppByIDForProduct(r.Context(), ws.ID, productID, appID)
-	if curAppErr != nil {
-		if errors.Is(curAppErr, repo.ErrNotFound) {
-			WriteError(w, r, "error.appNotFound", http.StatusNotFound)
-			return
-		}
-		log.Err(curAppErr).Msg("failed to load app for apple-config update")
-		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
-		return
-	}
+	servicesID := mergeOptionalString(req.AppleServicesID, curApp.AppleServicesID)
+	teamID := mergeOptionalString(req.AppleTeamID, curApp.AppleTeamID)
+	keyID := mergeOptionalString(req.AppleKeyID, curApp.AppleKeyID)
 
-	resolveOptStr := func(field *string, current *string) *string {
-		if field == nil {
-			return current
-		}
-		trimmed := strings.TrimSpace(*field)
-		if trimmed == "" {
-			return nil
-		}
-		return &trimmed
-	}
-	servicesID := resolveOptStr(req.AppleServicesID, curApp.AppleServicesID)
-	teamID := resolveOptStr(req.AppleTeamID, curApp.AppleTeamID)
-	keyID := resolveOptStr(req.AppleKeyID, curApp.AppleKeyID)
-
+	// The .p8 private key is its own merge: unlike the other providers the
+	// inbound value is validated before encryption, so it stays inline here.
 	// nil = keep existing (COALESCE); []byte{} = clear; non-empty = set.
-	// "post-save" private-key state for the toggle-validation below.
 	var privateKeyEncrypted []byte
 	postSaveHasKey := len(curApp.ApplePrivateKeyEncrypted) > 0
 	if req.ApplePrivateKey != nil {
@@ -90,7 +57,7 @@ func (handler *RequestHandler) HandleUpdateAppAppleConfig(w http.ResponseWriter,
 			}
 			encrypted, encErr := handler.encryptor.EncryptToBytesWithAAD(
 				[]byte(trimmed),
-				crypto.AAD("apps", "apple_private_key_encrypted", appID),
+				crypto.AAD("apps", "apple_private_key_encrypted", c.appID),
 			)
 			if encErr != nil {
 				log.Err(encErr).Msg("failed to encrypt apple private key")
@@ -116,12 +83,12 @@ func (handler *RequestHandler) HandleUpdateAppAppleConfig(w http.ResponseWriter,
 			return
 		}
 	}
-	if !handler.requireAtLeastOneSignInMethod(r.Context(), ws, acc.IsSuper(), curApp.PrimaryAuthMethod, curApp.AuthMethodGoogle, authMethodApple, curApp.AuthMethodMicrosoft, curApp.AuthMethodGithub, curApp.AuthMethodKakao, curApp.AuthMethodNaver) {
+	if !handler.requireAtLeastOneSignInMethod(r.Context(), c.ws, c.acc.IsSuper(), curApp.PrimaryAuthMethod, curApp.AuthMethodGoogle, authMethodApple, curApp.AuthMethodMicrosoft, curApp.AuthMethodGithub, curApp.AuthMethodKakao, curApp.AuthMethodNaver) {
 		WriteError(w, r, "error.noSignInMethodEnabled", http.StatusBadRequest)
 		return
 	}
 
-	out, err := handler.repo.UpdateAppAppleConfig(r.Context(), ws.ID, productID, appID, repo.AppAppleConfigUpdate{
+	out, err := handler.repo.UpdateAppAppleConfig(r.Context(), c.ws.ID, c.productID, c.appID, repo.AppAppleConfigUpdate{
 		AuthMethodApple:     authMethodApple,
 		ServicesID:          servicesID,
 		TeamID:              teamID,
@@ -138,5 +105,5 @@ func (handler *RequestHandler) HandleUpdateAppAppleConfig(w http.ResponseWriter,
 		return
 	}
 
-	utils.WriteJsonWithStatusCode(w, handler.toAdminAppResponse(out, ws), http.StatusOK)
+	utils.WriteJsonWithStatusCode(w, handler.toAdminAppResponse(out, c.ws), http.StatusOK)
 }

@@ -1,14 +1,12 @@
 package api
 
 import (
-	"encoding/json"
 	"errors"
 	"net/http"
 	"strings"
 
 	microsoftauth "manyrows-core/auth/microsoft"
 	"manyrows-core/core/repo"
-	"manyrows-core/crypto"
 	"manyrows-core/utils"
 
 	"github.com/rs/zerolog/log"
@@ -30,67 +28,19 @@ type updateAppMicrosoftConfigRequest struct {
 // and no other OAuth provider is on leaves the app unusable and is
 // rejected. Tenant must be one of the four allowed values.
 func (handler *RequestHandler) HandleUpdateAppMicrosoftConfig(w http.ResponseWriter, r *http.Request) {
-	acc, ws, ok := handler.adminAndWorkspace(w, r)
-	if !ok {
-		return
-	}
-	if !handler.requireOwner(w, r) {
-		return
-	}
-	productID, appID, ok := handler.resolvePathIDs(w, r)
-	if !ok {
-		return
-	}
-
 	var req updateAppMicrosoftConfigRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		log.Err(err).Msg("failed to decode json")
-		WriteError(w, r, "error.invalidJson", http.StatusBadRequest)
+	c, ok := handler.beginOAuthConfigUpdate(w, r, "microsoft", &req)
+	if !ok {
 		return
 	}
+	curApp := c.curApp
 
-	curApp, curAppErr := handler.repo.GetAppByIDForProduct(r.Context(), ws.ID, productID, appID)
-	if curAppErr != nil {
-		if errors.Is(curAppErr, repo.ErrNotFound) {
-			WriteError(w, r, "error.appNotFound", http.StatusNotFound)
-			return
-		}
-		log.Err(curAppErr).Msg("failed to load app for microsoft-config update")
-		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
+	clientID := mergeOptionalString(req.MicrosoftClientID, curApp.MicrosoftClientID)
+
+	clientSecretEncrypted, postSaveHasSecret, ok := handler.encryptOptionalSecret(
+		w, r, req.MicrosoftClientSecret, curApp.MicrosoftClientSecretEncrypted, "microsoft_client_secret_encrypted", c.appID)
+	if !ok {
 		return
-	}
-
-	clientID := curApp.MicrosoftClientID
-	if req.MicrosoftClientID != nil {
-		trimmed := strings.TrimSpace(*req.MicrosoftClientID)
-		if trimmed == "" {
-			clientID = nil
-		} else {
-			clientID = &trimmed
-		}
-	}
-
-	// nil = keep existing; []byte{} = clear; non-empty = encrypt+set.
-	var clientSecretEncrypted []byte
-	postSaveHasSecret := len(curApp.MicrosoftClientSecretEncrypted) > 0
-	if req.MicrosoftClientSecret != nil {
-		trimmed := strings.TrimSpace(*req.MicrosoftClientSecret)
-		if trimmed == "" {
-			clientSecretEncrypted = []byte{}
-			postSaveHasSecret = false
-		} else {
-			encrypted, encErr := handler.encryptor.EncryptToBytesWithAAD(
-				[]byte(trimmed),
-				crypto.AAD("apps", "microsoft_client_secret_encrypted", appID),
-			)
-			if encErr != nil {
-				log.Err(encErr).Msg("failed to encrypt microsoft client secret")
-				WriteError(w, r, "error.internalError", http.StatusInternalServerError)
-				return
-			}
-			clientSecretEncrypted = encrypted
-			postSaveHasSecret = true
-		}
 	}
 
 	tenant := curApp.MicrosoftTenant
@@ -125,12 +75,12 @@ func (handler *RequestHandler) HandleUpdateAppMicrosoftConfig(w http.ResponseWri
 		WriteError(w, r, "error.microsoftConfigIncomplete", http.StatusBadRequest)
 		return
 	}
-	if !handler.requireAtLeastOneSignInMethod(r.Context(), ws, acc.IsSuper(), curApp.PrimaryAuthMethod, curApp.AuthMethodGoogle, curApp.AuthMethodApple, authMethodMicrosoft, curApp.AuthMethodGithub, curApp.AuthMethodKakao, curApp.AuthMethodNaver) {
+	if !handler.requireAtLeastOneSignInMethod(r.Context(), c.ws, c.acc.IsSuper(), curApp.PrimaryAuthMethod, curApp.AuthMethodGoogle, curApp.AuthMethodApple, authMethodMicrosoft, curApp.AuthMethodGithub, curApp.AuthMethodKakao, curApp.AuthMethodNaver) {
 		WriteError(w, r, "error.noSignInMethodEnabled", http.StatusBadRequest)
 		return
 	}
 
-	out, err := handler.repo.UpdateAppMicrosoftConfig(r.Context(), ws.ID, productID, appID, repo.AppMicrosoftConfigUpdate{
+	out, err := handler.repo.UpdateAppMicrosoftConfig(r.Context(), c.ws.ID, c.productID, c.appID, repo.AppMicrosoftConfigUpdate{
 		AuthMethodMicrosoft:   authMethodMicrosoft,
 		ClientID:              clientID,
 		ClientSecretEncrypted: clientSecretEncrypted,
@@ -146,5 +96,5 @@ func (handler *RequestHandler) HandleUpdateAppMicrosoftConfig(w http.ResponseWri
 		return
 	}
 
-	utils.WriteJsonWithStatusCode(w, handler.toAdminAppResponse(out, ws), http.StatusOK)
+	utils.WriteJsonWithStatusCode(w, handler.toAdminAppResponse(out, c.ws), http.StatusOK)
 }

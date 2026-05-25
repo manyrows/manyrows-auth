@@ -1,13 +1,10 @@
 package api
 
 import (
-	"encoding/json"
 	"errors"
 	"net/http"
-	"strings"
 
 	"manyrows-core/core/repo"
-	"manyrows-core/crypto"
 	"manyrows-core/utils"
 
 	"github.com/rs/zerolog/log"
@@ -27,64 +24,19 @@ type updateAppGoogleConfigRequest struct {
 // disabling Google when the primary email mode is "none" and no other
 // OAuth provider is on leaves the app unusable and is rejected.
 func (handler *RequestHandler) HandleUpdateAppGoogleConfig(w http.ResponseWriter, r *http.Request) {
-	acc, ws, ok := handler.adminAndWorkspace(w, r)
-	if !ok {
-		return
-	}
-	if !handler.requireOwner(w, r) {
-		return
-	}
-	productID, appID, ok := handler.resolvePathIDs(w, r)
-	if !ok {
-		return
-	}
-
 	var req updateAppGoogleConfigRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		log.Err(err).Msg("failed to decode json")
-		WriteError(w, r, "error.invalidJson", http.StatusBadRequest)
+	c, ok := handler.beginOAuthConfigUpdate(w, r, "google", &req)
+	if !ok {
 		return
 	}
+	curApp := c.curApp
 
-	curApp, curAppErr := handler.repo.GetAppByIDForProduct(r.Context(), ws.ID, productID, appID)
-	if curAppErr != nil {
-		if errors.Is(curAppErr, repo.ErrNotFound) {
-			WriteError(w, r, "error.appNotFound", http.StatusNotFound)
-			return
-		}
-		log.Err(curAppErr).Msg("failed to load app for google-config update")
-		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
+	clientID := mergeOptionalString(req.GoogleOAuthClientID, curApp.GoogleOAuthClientID)
+
+	clientSecretEncrypted, secretWillExist, ok := handler.encryptOptionalSecret(
+		w, r, req.GoogleOAuthClientSecret, curApp.GoogleOAuthClientSecretEncrypted, "google_oauth_client_secret_encrypted", c.appID)
+	if !ok {
 		return
-	}
-
-	clientID := curApp.GoogleOAuthClientID
-	if req.GoogleOAuthClientID != nil {
-		trimmed := strings.TrimSpace(*req.GoogleOAuthClientID)
-		if trimmed == "" {
-			clientID = nil
-		} else {
-			clientID = &trimmed
-		}
-	}
-
-	// nil = keep existing (COALESCE in SQL); []byte{} = clear; non-empty = set.
-	var clientSecretEncrypted []byte
-	if req.GoogleOAuthClientSecret != nil {
-		trimmed := strings.TrimSpace(*req.GoogleOAuthClientSecret)
-		if trimmed == "" {
-			clientSecretEncrypted = []byte{}
-		} else {
-			encrypted, encErr := handler.encryptor.EncryptToBytesWithAAD(
-				[]byte(trimmed),
-				crypto.AAD("apps", "google_oauth_client_secret_encrypted", appID),
-			)
-			if encErr != nil {
-				log.Err(encErr).Msg("failed to encrypt google oauth client secret")
-				WriteError(w, r, "error.internalError", http.StatusInternalServerError)
-				return
-			}
-			clientSecretEncrypted = encrypted
-		}
 	}
 
 	authMethodGoogle := curApp.AuthMethodGoogle
@@ -100,23 +52,17 @@ func (handler *RequestHandler) HandleUpdateAppGoogleConfig(w http.ResponseWriter
 	}
 	// The OAuth Authorization Code flow needs the client secret for the
 	// server-to-server token exchange, so the secret is required whenever
-	// Google is enabled. Compute the secret state that will result after
-	// this update — keep current if not in the request, set/cleared per
-	// the encrypted bytes below.
-	secretWillExist := len(curApp.GoogleOAuthClientSecretEncrypted) > 0
-	if req.GoogleOAuthClientSecret != nil {
-		secretWillExist = len(clientSecretEncrypted) > 0
-	}
+	// Google is enabled.
 	if authMethodGoogle && !secretWillExist {
 		WriteError(w, r, "error.googleClientSecretRequired", http.StatusBadRequest)
 		return
 	}
-	if !handler.requireAtLeastOneSignInMethod(r.Context(), ws, acc.IsSuper(), curApp.PrimaryAuthMethod, authMethodGoogle, curApp.AuthMethodApple, curApp.AuthMethodMicrosoft, curApp.AuthMethodGithub, curApp.AuthMethodKakao, curApp.AuthMethodNaver) {
+	if !handler.requireAtLeastOneSignInMethod(r.Context(), c.ws, c.acc.IsSuper(), curApp.PrimaryAuthMethod, authMethodGoogle, curApp.AuthMethodApple, curApp.AuthMethodMicrosoft, curApp.AuthMethodGithub, curApp.AuthMethodKakao, curApp.AuthMethodNaver) {
 		WriteError(w, r, "error.noSignInMethodEnabled", http.StatusBadRequest)
 		return
 	}
 
-	out, err := handler.repo.UpdateAppGoogleConfig(r.Context(), ws.ID, productID, appID, repo.AppGoogleConfigUpdate{
+	out, err := handler.repo.UpdateAppGoogleConfig(r.Context(), c.ws.ID, c.productID, c.appID, repo.AppGoogleConfigUpdate{
 		AuthMethodGoogle:      authMethodGoogle,
 		ClientID:              clientID,
 		ClientSecretEncrypted: clientSecretEncrypted,
@@ -131,5 +77,5 @@ func (handler *RequestHandler) HandleUpdateAppGoogleConfig(w http.ResponseWriter
 		return
 	}
 
-	utils.WriteJsonWithStatusCode(w, handler.toAdminAppResponse(out, ws), http.StatusOK)
+	utils.WriteJsonWithStatusCode(w, handler.toAdminAppResponse(out, c.ws), http.StatusOK)
 }
