@@ -135,9 +135,18 @@ func TestBuildAuthorizeURL(t *testing.T) {
 	}
 }
 
-func TestExchangeAuthCode_HappyPath_EmailFromIDToken(t *testing.T) {
+func TestExchangeAuthCode_HappyPath_UserinfoVerified(t *testing.T) {
 	m := newMockKakao(t)
-	m.idClaims = baseClaims(issuer, "rest-key-1")
+	m.idClaims = baseClaims(issuer, "rest-key-1") // id_token carries email + sub
+	// Verification is established by userinfo's flags, not the id_token.
+	m.userinfo = map[string]any{
+		"kakao_account": map[string]any{
+			"email":             "User@Example.com",
+			"is_email_valid":    true,
+			"is_email_verified": true,
+			"profile":           map[string]any{"nickname": "Kim"},
+		},
+	}
 
 	info, err := ExchangeAuthCode(context.Background(), "code", "rest-key-1", "secret", "https://app/cb")
 	if err != nil {
@@ -150,11 +159,51 @@ func TestExchangeAuthCode_HappyPath_EmailFromIDToken(t *testing.T) {
 		t.Errorf("email = %q, want lowercased", info.Email)
 	}
 	if !info.EmailVerified {
-		t.Error("an email present in the id_token should count as verified")
+		t.Error("a userinfo-confirmed valid+verified email should count as verified")
 	}
 	if info.Aud != "rest-key-1" {
 		t.Errorf("aud = %q", info.Aud)
 	}
+}
+
+// Regression for the account-link takeover vector: Kakao's id_token has no
+// email_verified claim, so an email present in the token must NOT be treated as
+// verified on its own. Verification comes only from userinfo's
+// is_email_valid && is_email_verified.
+func TestExchangeAuthCode_IDTokenEmailNotTrustedWithoutVerification(t *testing.T) {
+	// (a) userinfo reports the token's address unverified → not verified.
+	t.Run("userinfo says unverified", func(t *testing.T) {
+		m := newMockKakao(t)
+		m.idClaims = baseClaims(issuer, "rest-key-1") // id_token DOES carry an email
+		m.userinfo = map[string]any{
+			"kakao_account": map[string]any{
+				"email":             "user@example.com",
+				"is_email_valid":    true,
+				"is_email_verified": false,
+			},
+		}
+		info, err := ExchangeAuthCode(context.Background(), "code", "rest-key-1", "s", "https://app/cb")
+		if err != nil {
+			t.Fatalf("exchange: %v", err)
+		}
+		if info.EmailVerified {
+			t.Error("id_token email must not be verified when userinfo says is_email_verified=false")
+		}
+	})
+
+	// (b) userinfo can't confirm (absent response) → fail closed, not verified.
+	t.Run("no userinfo confirmation", func(t *testing.T) {
+		m := newMockKakao(t)
+		m.idClaims = baseClaims(issuer, "rest-key-1")
+		// m.userinfo left nil → /v2/user/me returns "null"; no verified flag.
+		info, err := ExchangeAuthCode(context.Background(), "code", "rest-key-1", "s", "https://app/cb")
+		if err != nil {
+			t.Fatalf("exchange: %v", err)
+		}
+		if info.EmailVerified {
+			t.Error("id_token email must not be verified without userinfo confirmation")
+		}
+	})
 }
 
 func TestExchangeAuthCode_WrongAudience(t *testing.T) {

@@ -142,9 +142,11 @@ func (handler *RequestHandler) processKakaoCallback(w http.ResponseWriter, r *ht
 		return
 	}
 
-	// Kakao only releases an email once it's verified+valid; an app that
-	// wants Kakao sign-in must request account_email as required consent
-	// (see the admin prerequisites note). No email → can't key a user.
+	// account_email must be a required consent item for Kakao sign-in (see
+	// the admin prerequisites note). No email → can't key a user. The
+	// verified-email guarantee is enforced just below via EmailVerified,
+	// which the kakao client derives from userinfo's is_email_valid &&
+	// is_email_verified (Kakao's id_token has no email_verified claim).
 	if tokenInfo.Email == "" {
 		handler.writeAuthLogFromRequest(r, AuthLogInput{
 			WorkspaceID:   ws.ID,

@@ -8,13 +8,15 @@
 // OAuth client_id), sub, exp, and — with the account_email scope plus the user's
 // consent — email.
 //
-// Email handling: Kakao only releases an address once it is verified and valid
-// on the user's Kakao account, so an email present in the id_token is treated as
-// verified. Some app/consent configurations omit email from the id_token even
-// when the scope is granted; in that case we fall back to the userinfo endpoint
-// (kapi.kakao.com/v2/user/me), where the address and its verification flags live
-// nested under kakao_account.*. The userinfo path trusts the address only when
-// Kakao reports it both is_email_valid and is_email_verified.
+// Email handling: Kakao's OIDC id_token has NO email_verified claim — its
+// published claims_supported is iss/aud/sub/auth_time/exp/iat/nonce/nickname/
+// picture/email — so the presence of an email in the token does NOT prove the
+// user verified ownership. We therefore confirm every sign-in's email against
+// the userinfo endpoint (kapi.kakao.com/v2/user/me), where the address and its
+// verification flags live nested under kakao_account.*, and trust the address
+// only when Kakao reports it both is_email_valid and is_email_verified. The
+// id_token stays authoritative for the subject (sub); its email is kept only
+// for audit/fallback when userinfo can't confirm a verified address.
 package kakao
 
 import (
@@ -143,12 +145,18 @@ func ExchangeAuthCode(ctx context.Context, code, clientID, clientSecret, redirec
 		return nil, err
 	}
 
-	// Kakao sometimes omits email from the id_token even when account_email is
-	// granted; recover it from userinfo without disturbing the id_token's
-	// authoritative subject. The userinfo path carries its own verified flags.
-	if info.Email == "" && tok.AccessToken != "" {
+	// Kakao's id_token carries no email_verified claim, so a token email is NOT
+	// proof of verification. Confirm the address + its verification flags against
+	// userinfo (kakao_account.is_email_valid && is_email_verified), which is
+	// authoritative for both — on every sign-in, not just when the id_token omits
+	// the email. If userinfo can't confirm a verified address, EmailVerified
+	// stays false and the caller rejects the login (fail closed) rather than
+	// linking on an unverified address.
+	if tok.AccessToken != "" {
 		if email, verified, name, uiErr := fetchUserinfo(ctx, tok.AccessToken); uiErr == nil {
-			info.Email = email
+			if email != "" {
+				info.Email = email
+			}
 			info.EmailVerified = verified
 			if info.Name == "" {
 				info.Name = name
@@ -195,9 +203,10 @@ func (c idTokenClaims) GetAudience() (jwt.ClaimStrings, error) { return jwt.Clai
 
 // VerifyIDToken validates the signature (against Kakao's JWKS), issuer,
 // audience (== the app's REST API key), and expiry of a Kakao id_token, then
-// returns the identity. An email present in the token is treated as verified —
-// Kakao only releases an address that is verified and valid on the user's
-// account.
+// returns the identity. EmailVerified is always false here: the id_token carries
+// no email_verified claim, so verification is established separately from
+// userinfo (see ExchangeAuthCode). The returned Email is the token's address,
+// kept for audit/fallback.
 func VerifyIDToken(ctx context.Context, idToken, expectedAud string) (*TokenInfo, error) {
 	idToken = strings.TrimSpace(idToken)
 	if idToken == "" {
@@ -233,7 +242,7 @@ func VerifyIDToken(ctx context.Context, idToken, expectedAud string) (*TokenInfo
 	return &TokenInfo{
 		Sub:           claims.Sub,
 		Email:         email,
-		EmailVerified: email != "", // Kakao emits an email only when verified+valid
+		EmailVerified: false, // id_token has no email_verified claim; confirmed via userinfo in ExchangeAuthCode
 		Name:          strings.TrimSpace(claims.Nickname),
 		Aud:           claims.Aud,
 	}, nil
