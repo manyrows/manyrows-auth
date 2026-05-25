@@ -1,6 +1,4 @@
 import * as React from "react";
-import axios from "axios";
-import { useDebouncedValue } from "../hooks/useDebouncedValue.ts";
 import {
   Alert,
   Box,
@@ -33,6 +31,14 @@ import EmptyState from "../components/EmptyState.tsx";
 import { Monitor, Smartphone, Tablet, Laptop, Trash2, Search, X, RefreshCw, Sparkles, TriangleAlert } from "lucide-react";
 import { useSnackbar } from "notistack";
 import { useTranslation } from "react-i18next";
+import {
+  type SessionResource,
+  getErrMessage,
+  deleteSession,
+  deleteSessionsByAccount,
+  pruneExpiredSessions,
+  useSessions,
+} from "./useSessions.ts";
 
 interface Props {
   workspaceId: string;
@@ -40,28 +46,6 @@ interface Props {
   appId?: string;
   initialEmail?: string;
 }
-
-type SessionApp = {
-  id: string;
-  name: string;
-};
-
-type SessionResource = {
-  id: string;
-  userId: string;
-  createdAt: string;
-  expiresAt: string;
-  lastSeenAt: string;
-  userAgent: string;
-  ip: string;
-  user?: { id: string; email: string } | null;
-  app?: SessionApp | null;
-};
-
-type SessionsResponse = {
-  sessions: SessionResource[];
-  total: number;
-};
 
 function fmtDateTime(d: string | number | Date | null | undefined): string {
   if (!d) return "-";
@@ -186,47 +170,6 @@ function safeText(v: unknown): string {
   return "-";
 }
 
-function getErrMessage(err: unknown, t: (key: string) => string): string {
-  const errObj = (err ?? {}) as { response?: { status?: number; data?: unknown } };
-  const status = errObj.response?.status;
-  const data = errObj.response?.data;
-
-  if (typeof data === "string" && data.trim().length > 0) return data;
-  if (status === 400) return t("error.badRequest");
-  if (status === 401) return t("error.notSignedIn");
-  if (status === 403) return t("error.noPermission");
-  if (status === 404) return t("error.workspaceNotFound");
-  return t("error.generic");
-}
-
-async function fetchSessions(
-  workspaceId: string,
-  limit: number,
-  offset: number,
-  email?: string,
-  appId?: string,
-): Promise<SessionsResponse> {
-  const r = await axios.get(`/admin/workspace/${workspaceId}/sessions`, {
-    params: { limit, offset, email: email?.trim() || undefined, appId: appId || undefined },
-  });
-  return r.data;
-}
-
-async function deleteSession(workspaceId: string, sessionId: string): Promise<void> {
-  await axios.delete(`/admin/workspace/${workspaceId}/sessions/${sessionId}`);
-}
-
-async function deleteSessionsByAccount(workspaceId: string, accountId: string, excludeSessionId?: string): Promise<void> {
-  await axios.delete(`/admin/workspace/${workspaceId}/sessions`, {
-    params: { accountId, exclude: excludeSessionId || undefined },
-  });
-}
-
-async function pruneExpiredSessions(workspaceId: string): Promise<{ deleted: number }> {
-  const r = await axios.post(`/admin/workspace/${workspaceId}/sessions/prune`);
-  return r.data;
-}
-
 function DeviceIcon({ device }: { device: "mobile" | "tablet" | "desktop" }) {
   const Icon = device === "mobile" ? Smartphone : device === "tablet" ? Tablet : Laptop;
   return <Box component="span" sx={{ color: "primary.main", display: "inline-flex" }}><Icon size={18} strokeWidth={1.5} /></Box>;
@@ -237,18 +180,21 @@ export default function Sessions(props: Props) {
   const { enqueueSnackbar } = useSnackbar();
   const { t } = useTranslation();
 
-  const [sessions, setSessions] = React.useState<SessionResource[]>([]);
-  const [total, setTotal] = React.useState(0);
-
-  const [page, setPage] = React.useState(0);
-  const [rowsPerPage, setRowsPerPage] = React.useState(25);
-
-  const [loading, setLoading] = React.useState(false);
-  const [errorText, setErrorText] = React.useState<string | null>(null);
-
-  // email search (debounced)
-  const [emailInput, setEmailInput] = React.useState(props.initialEmail || "");
-  const email = useDebouncedValue(emailInput.trim(), 350);
+  const {
+    sessions,
+    total,
+    page,
+    setPage,
+    rowsPerPage,
+    loading,
+    errorText,
+    emailInput,
+    setEmailInput,
+    email,
+    load,
+    onChangePage,
+    onChangeRowsPerPage,
+  } = useSessions(workspaceId, appId, props.initialEmail);
 
   // detail dialog
   const [selectedSession, setSelectedSession] = React.useState<SessionResource | null>(null);
@@ -266,44 +212,6 @@ export default function Sessions(props: Props) {
   // prune expired dialog state
   const [pruneOpen, setPruneOpen] = React.useState(false);
   const [pruning, setPruning] = React.useState(false);
-
-  const offset = page * rowsPerPage;
-
-  const load = React.useCallback(async () => {
-    if (!workspaceId) return;
-
-    setLoading(true);
-    setErrorText(null);
-    try {
-      const data = await fetchSessions(workspaceId, rowsPerPage, offset, email, appId);
-      setSessions(Array.isArray(data.sessions) ? data.sessions : []);
-      setTotal(typeof data.total === "number" ? data.total : 0);
-    } catch (err) {
-      const msg = getErrMessage(err, t);
-      setErrorText(msg);
-      enqueueSnackbar(msg, { variant: "error" });
-      setSessions([]);
-      setTotal(0);
-    } finally {
-      setLoading(false);
-    }
-  }, [workspaceId, rowsPerPage, offset, email, appId, enqueueSnackbar]);
-
-  React.useEffect(() => {
-    load();
-  }, [load]);
-
-  React.useEffect(() => {
-    setPage(0);
-  }, [workspaceId]);
-
-  const onChangePage = (_: unknown, nextPage: number) => setPage(nextPage);
-
-  const onChangeRowsPerPage = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const next = parseInt(e.target.value, 10);
-    setRowsPerPage(Number.isFinite(next) ? next : 25);
-    setPage(0);
-  };
 
   const displayAccount = (s: SessionResource) =>
     s.user?.email?.trim() || s.userId;
@@ -398,11 +306,6 @@ export default function Sessions(props: Props) {
     setEmailInput("");
     setPage(0);
   };
-
-  // Reset to first page when search changes
-  React.useEffect(() => {
-    setPage(0);
-  }, [email]);
 
   return (
     <Box>
