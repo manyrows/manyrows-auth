@@ -264,14 +264,7 @@ UPDATE users
 SET password_hash = $2, password_set_at = $3, updated_at = $4
 WHERE id = $1;
 `
-	ct, err := r.db.Pool().Exec(ctx, q, userID, passwordHash, passwordSetAt, time.Now().UTC())
-	if err != nil {
-		return err
-	}
-	if ct.RowsAffected() == 0 {
-		return ErrNotFound
-	}
-	return nil
+	return r.execAffectingOne(ctx, ErrNotFound, q, userID, passwordHash, passwordSetAt, time.Now().UTC())
 }
 
 // ClearUserPassword unsets the user's password — sets password_hash and
@@ -285,14 +278,7 @@ UPDATE users
 SET password_hash = NULL, password_set_at = NULL, updated_at = $2
 WHERE id = $1;
 `
-	ct, err := r.db.Pool().Exec(ctx, q, userID, time.Now().UTC())
-	if err != nil {
-		return err
-	}
-	if ct.RowsAffected() == 0 {
-		return ErrNotFound
-	}
-	return nil
+	return r.execAffectingOne(ctx, ErrNotFound, q, userID, time.Now().UTC())
 }
 
 /* -------------------------------------------------------------------------- */
@@ -304,14 +290,7 @@ func (r *Repo) SetUserEmailVerified(ctx context.Context, id uuid.UUID, verifiedA
 	const q = `
 UPDATE users SET email_verified_at = $2, updated_at = $3 WHERE id = $1;
 `
-	ct, err := r.db.Pool().Exec(ctx, q, id, verifiedAt, time.Now().UTC())
-	if err != nil {
-		return err
-	}
-	if ct.RowsAffected() == 0 {
-		return ErrNotFound
-	}
-	return nil
+	return r.execAffectingOne(ctx, ErrNotFound, q, id, verifiedAt, time.Now().UTC())
 }
 
 // ClearUserEmailVerified marks the user's email as unverified (NULLs the
@@ -320,14 +299,7 @@ func (r *Repo) ClearUserEmailVerified(ctx context.Context, id uuid.UUID) error {
 	const q = `
 UPDATE users SET email_verified_at = NULL, updated_at = $2 WHERE id = $1;
 `
-	ct, err := r.db.Pool().Exec(ctx, q, id, time.Now().UTC())
-	if err != nil {
-		return err
-	}
-	if ct.RowsAffected() == 0 {
-		return ErrNotFound
-	}
-	return nil
+	return r.execAffectingOne(ctx, ErrNotFound, q, id, time.Now().UTC())
 }
 
 /* -------------------------------------------------------------------------- */
@@ -348,14 +320,7 @@ func (r *Repo) UpdateUserLastLogin(ctx context.Context, id uuid.UUID, loginAt ti
 // SetUserTOTPSecret stores an encrypted TOTP secret (pre-enable).
 func (r *Repo) SetUserTOTPSecret(ctx context.Context, id uuid.UUID, encryptedSecret []byte) error {
 	const q = `UPDATE users SET totp_secret_encrypted = $2, updated_at = now() WHERE id = $1;`
-	ct, err := r.db.Pool().Exec(ctx, q, id, encryptedSecret)
-	if err != nil {
-		return err
-	}
-	if ct.RowsAffected() == 0 {
-		return ErrNotFound
-	}
-	return nil
+	return r.execAffectingOne(ctx, ErrNotFound, q, id, encryptedSecret)
 }
 
 // EnableUserTOTP marks TOTP as enabled and stores encrypted backup codes.
@@ -365,14 +330,7 @@ UPDATE users
 SET totp_enabled_at = $2, totp_backup_codes_encrypted = $3, updated_at = now()
 WHERE id = $1;
 `
-	ct, err := r.db.Pool().Exec(ctx, q, id, enabledAt, encryptedBackupCodes)
-	if err != nil {
-		return err
-	}
-	if ct.RowsAffected() == 0 {
-		return ErrNotFound
-	}
-	return nil
+	return r.execAffectingOne(ctx, ErrNotFound, q, id, enabledAt, encryptedBackupCodes)
 }
 
 // DisableUserTOTP clears all TOTP columns.
@@ -382,27 +340,13 @@ UPDATE users
 SET totp_secret_encrypted = NULL, totp_enabled_at = NULL, totp_backup_codes_encrypted = NULL, updated_at = now()
 WHERE id = $1;
 `
-	ct, err := r.db.Pool().Exec(ctx, q, id)
-	if err != nil {
-		return err
-	}
-	if ct.RowsAffected() == 0 {
-		return ErrNotFound
-	}
-	return nil
+	return r.execAffectingOne(ctx, ErrNotFound, q, id)
 }
 
 // UpdateUserTOTPBackupCodes replaces the encrypted backup codes.
 func (r *Repo) UpdateUserTOTPBackupCodes(ctx context.Context, id uuid.UUID, encryptedCodes []byte) error {
 	const q = `UPDATE users SET totp_backup_codes_encrypted = $2, updated_at = now() WHERE id = $1;`
-	ct, err := r.db.Pool().Exec(ctx, q, id, encryptedCodes)
-	if err != nil {
-		return err
-	}
-	if ct.RowsAffected() == 0 {
-		return ErrNotFound
-	}
-	return nil
+	return r.execAffectingOne(ctx, ErrNotFound, q, id, encryptedCodes)
 }
 
 // AdvanceUserTOTPStep atomically writes the supplied step number iff it's
@@ -472,14 +416,7 @@ LIMIT 1;
 // SetUserEnabled enables or disables a user.
 func (r *Repo) SetUserEnabled(ctx context.Context, userID uuid.UUID, enabled bool) error {
 	const q = `UPDATE users SET enabled = $2, updated_at = now() WHERE id = $1;`
-	ct, err := r.db.Pool().Exec(ctx, q, userID, enabled)
-	if err != nil {
-		return err
-	}
-	if ct.RowsAffected() == 0 {
-		return ErrNotFound
-	}
-	return nil
+	return r.execAffectingOne(ctx, ErrNotFound, q, userID, enabled)
 }
 
 /* -------------------------------------------------------------------------- */
@@ -518,11 +455,7 @@ SELECT COUNT(*)
 FROM users u
 WHERE u.user_pool_id IN (SELECT id FROM user_pools WHERE workspace_id = $1);
 `
-	var n int
-	if err := r.db.Pool().QueryRow(ctx, q, workspaceID).Scan(&n); err != nil {
-		return 0, err
-	}
-	return n, nil
+	return r.scalarCount(ctx, q, workspaceID)
 }
 
 // CountRegisteredUsersByWorkspace counts self-registered users (registered + google) in a workspace.
@@ -533,11 +466,7 @@ FROM users u
 WHERE u.source IN ('registered', 'google')
   AND u.user_pool_id IN (SELECT id FROM user_pools WHERE workspace_id = $1);
 `
-	var n int
-	if err := r.db.Pool().QueryRow(ctx, q, workspaceID).Scan(&n); err != nil {
-		return 0, err
-	}
-	return n, nil
+	return r.scalarCount(ctx, q, workspaceID)
 }
 
 // emailILIKEArg builds the bound argument for a case-insensitive email
@@ -595,11 +524,7 @@ func (r *Repo) CountUsersInPool(ctx context.Context, poolID uuid.UUID, emailQuer
 		q += ` AND u.email ILIKE $2 ESCAPE '\'`
 		args = append(args, emailILIKEArg(emailQuery))
 	}
-	var n int
-	if err := r.db.Pool().QueryRow(ctx, q, args...).Scan(&n); err != nil {
-		return 0, err
-	}
-	return n, nil
+	return r.scalarCount(ctx, q, args...)
 }
 
 // ListUsersInWorkspace returns users in pools belonging to the
@@ -649,11 +574,7 @@ WHERE u.user_pool_id IN (SELECT id FROM user_pools WHERE workspace_id = $1)`
 		q += ` AND u.email ILIKE $2 ESCAPE '\'`
 		args = append(args, emailILIKEArg(emailQuery))
 	}
-	var n int
-	if err := r.db.Pool().QueryRow(ctx, q, args...).Scan(&n); err != nil {
-		return 0, err
-	}
-	return n, nil
+	return r.scalarCount(ctx, q, args...)
 }
 
 // ListUsersInProduct returns all users who are members of any app in
@@ -708,11 +629,7 @@ WHERE a.product_id = $1`
 		q += ` AND u.email ILIKE $2 ESCAPE '\'`
 		args = append(args, emailILIKEArg(emailQuery))
 	}
-	var n int
-	if err := r.db.Pool().QueryRow(ctx, q, args...).Scan(&n); err != nil {
-		return 0, err
-	}
-	return n, nil
+	return r.scalarCount(ctx, q, args...)
 }
 
 /* -------------------------------------------------------------------------- */
@@ -770,14 +687,7 @@ ORDER BY p.name ASC, a.type ASC;
 // DeleteUser deletes a user by ID.
 func (r *Repo) DeleteUser(ctx context.Context, id uuid.UUID) error {
 	const q = `DELETE FROM users WHERE id = $1;`
-	ct, err := r.db.Pool().Exec(ctx, q, id)
-	if err != nil {
-		return err
-	}
-	if ct.RowsAffected() == 0 {
-		return ErrNotFound
-	}
-	return nil
+	return r.execAffectingOne(ctx, ErrNotFound, q, id)
 }
 
 // DeleteOrphanPoolUsers deletes every user in the pool that belongs to

@@ -169,9 +169,5 @@ SELECT COUNT(*)
 FROM products
 WHERE workspace_id = $1
 `
-	var n int
-	if err := r.db.Pool().QueryRow(ctx, q, workspaceID).Scan(&n); err != nil {
-		return 0, err
-	}
-	return n, nil
+	return r.scalarCount(ctx, q, workspaceID)
 }

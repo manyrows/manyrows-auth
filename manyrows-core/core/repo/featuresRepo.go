@@ -331,14 +331,7 @@ func (r *Repo) DeleteFeatureFlag(ctx context.Context, productID uuid.UUID, featu
 		delete from feature_flags
 		where product_id = $1 and id = $2
 	`
-	ct, err := r.db.Pool().Exec(ctx, q, productID, featureFlagID)
-	if err != nil {
-		return err
-	}
-	if ct.RowsAffected() == 0 {
-		return ErrNotFound
-	}
-	return nil
+	return r.execAffectingOne(ctx, ErrNotFound, q, productID, featureFlagID)
 }
 
 // --------------------------------------
@@ -542,14 +535,7 @@ func (r *Repo) DeleteFeatureFlagOverride(ctx context.Context, productID uuid.UUI
 		delete from feature_flag_overrides
 		where product_id = $1 and feature_flag_id = $2 and app_id = $3
 	`
-	ct, err := r.db.Pool().Exec(ctx, q, productID, featureFlagID, appID)
-	if err != nil {
-		return err
-	}
-	if ct.RowsAffected() == 0 {
-		return ErrNotFound
-	}
-	return nil
+	return r.execAffectingOne(ctx, ErrNotFound, q, productID, featureFlagID, appID)
 }
 
 // ----------------------
@@ -621,9 +607,5 @@ order by ff.key asc;
 // CountFeatureFlagsByProductID returns the number of feature flags in a project (excludes archived).
 func (r *Repo) CountFeatureFlagsByProductID(ctx context.Context, productID uuid.UUID) (int, error) {
 	const q = `SELECT COUNT(*) FROM feature_flags WHERE product_id = $1 AND status != 'archived'`
-	var n int
-	if err := r.db.Pool().QueryRow(ctx, q, productID).Scan(&n); err != nil {
-		return 0, err
-	}
-	return n, nil
+	return r.scalarCount(ctx, q, productID)
 }

@@ -179,9 +179,5 @@ func (r *Repo) DeletePermission(ctx context.Context, permissionId uuid.UUID, pro
 // CountPermissionsByProductID returns the number of permissions in a project.
 func (r *Repo) CountPermissionsByProductID(ctx context.Context, productID uuid.UUID) (int, error) {
 	const q = `SELECT COUNT(*) FROM permissions WHERE product_id = $1`
-	var n int
-	if err := r.db.Pool().QueryRow(ctx, q, productID).Scan(&n); err != nil {
-		return 0, err
-	}
-	return n, nil
+	return r.scalarCount(ctx, q, productID)
 }

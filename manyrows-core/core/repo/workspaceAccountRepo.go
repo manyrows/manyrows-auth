@@ -290,14 +290,7 @@ set email_verified_at = $2,
     updated_at = $3
 where id = $1;
 `
-	ct, err := r.db.Pool().Exec(ctx, q, id, verifiedAt, time.Now().UTC())
-	if err != nil {
-		return err
-	}
-	if ct.RowsAffected() == 0 {
-		return ErrNotFound
-	}
-	return nil
+	return r.execAffectingOne(ctx, ErrNotFound, q, id, verifiedAt, time.Now().UTC())
 }
 
 // UpdateWorkspaceAccountLastLogin sets the last_login_at timestamp.
@@ -327,14 +320,7 @@ set display_name = $2,
     updated_at = $3
 where id = $1;
 `
-	ct, err := r.db.Pool().Exec(ctx, q, id, displayName, time.Now().UTC())
-	if err != nil {
-		return err
-	}
-	if ct.RowsAffected() == 0 {
-		return ErrNotFound
-	}
-	return nil
+	return r.execAffectingOne(ctx, ErrNotFound, q, id, displayName, time.Now().UTC())
 }
 
 // UpdateWorkspaceAccountEmail updates the email and resets verification status.
@@ -446,11 +432,7 @@ select count(*)
 from workspace_accounts
 where workspace_id = $1;
 `
-	var n int
-	if err := r.db.Pool().QueryRow(ctx, q, workspaceID).Scan(&n); err != nil {
-		return 0, err
-	}
-	return n, nil
+	return r.scalarCount(ctx, q, workspaceID)
 }
 
 // CountInvitedMembers returns the number of admin-invited workspace accounts.
@@ -461,11 +443,7 @@ from workspace_accounts
 where workspace_id = $1
   and (source = 'invited' or source is null);
 `
-	var n int
-	if err := r.db.Pool().QueryRow(ctx, q, workspaceID).Scan(&n); err != nil {
-		return 0, err
-	}
-	return n, nil
+	return r.scalarCount(ctx, q, workspaceID)
 }
 
 // CountRegisteredUsers returns the number of self-registered workspace accounts (registered + google).
@@ -476,11 +454,7 @@ from workspace_accounts
 where workspace_id = $1
   and source in ('registered', 'google');
 `
-	var n int
-	if err := r.db.Pool().QueryRow(ctx, q, workspaceID).Scan(&n); err != nil {
-		return 0, err
-	}
-	return n, nil
+	return r.scalarCount(ctx, q, workspaceID)
 }
 
 // ListWorkspaceAccountsParams defines parameters for listing workspace accounts.
@@ -618,14 +592,7 @@ func (r *Repo) DeleteWorkspaceAccount(
 delete from workspace_accounts
 where id = $1 and workspace_id = $2;
 `
-	ct, err := r.db.Pool().Exec(ctx, q, id, workspaceID)
-	if err != nil {
-		return err
-	}
-	if ct.RowsAffected() == 0 {
-		return ErrNotFound
-	}
-	return nil
+	return r.execAffectingOne(ctx, ErrNotFound, q, id, workspaceID)
 }
 
 /* -------------------------------------------------------------------------- */
@@ -776,14 +743,7 @@ set password_hash = $3,
     updated_at = $5
 where id = $1 and workspace_id = $2;
 `
-	ct, err := r.db.Pool().Exec(ctx, q, accountID, workspaceID, passwordHash, passwordSetAt, time.Now().UTC())
-	if err != nil {
-		return err
-	}
-	if ct.RowsAffected() == 0 {
-		return ErrNotFound
-	}
-	return nil
+	return r.execAffectingOne(ctx, ErrNotFound, q, accountID, workspaceID, passwordHash, passwordSetAt, time.Now().UTC())
 }
 
 // UpdateWorkspaceAccountPasswordTx sets or updates the password for a workspace account within a transaction.
@@ -822,14 +782,7 @@ UPDATE workspace_accounts
 SET totp_secret_encrypted = $2, updated_at = now()
 WHERE id = $1;
 `
-	ct, err := r.db.Pool().Exec(ctx, q, id, encryptedSecret)
-	if err != nil {
-		return err
-	}
-	if ct.RowsAffected() == 0 {
-		return ErrNotFound
-	}
-	return nil
+	return r.execAffectingOne(ctx, ErrNotFound, q, id, encryptedSecret)
 }
 
 // EnableWorkspaceAccountTOTP marks TOTP as enabled and stores encrypted backup codes.
@@ -841,14 +794,7 @@ SET totp_enabled_at = $2,
     updated_at = now()
 WHERE id = $1;
 `
-	ct, err := r.db.Pool().Exec(ctx, q, id, enabledAt, encryptedBackupCodes)
-	if err != nil {
-		return err
-	}
-	if ct.RowsAffected() == 0 {
-		return ErrNotFound
-	}
-	return nil
+	return r.execAffectingOne(ctx, ErrNotFound, q, id, enabledAt, encryptedBackupCodes)
 }
 
 // DisableWorkspaceAccountTOTP clears all TOTP columns.
@@ -861,14 +807,7 @@ SET totp_secret_encrypted = NULL,
     updated_at = now()
 WHERE id = $1;
 `
-	ct, err := r.db.Pool().Exec(ctx, q, id)
-	if err != nil {
-		return err
-	}
-	if ct.RowsAffected() == 0 {
-		return ErrNotFound
-	}
-	return nil
+	return r.execAffectingOne(ctx, ErrNotFound, q, id)
 }
 
 // UpdateWorkspaceAccountTOTPBackupCodes replaces the encrypted backup codes.
@@ -878,14 +817,7 @@ UPDATE workspace_accounts
 SET totp_backup_codes_encrypted = $2, updated_at = now()
 WHERE id = $1;
 `
-	ct, err := r.db.Pool().Exec(ctx, q, id, encryptedCodes)
-	if err != nil {
-		return err
-	}
-	if ct.RowsAffected() == 0 {
-		return ErrNotFound
-	}
-	return nil
+	return r.execAffectingOne(ctx, ErrNotFound, q, id, encryptedCodes)
 }
 
 // GetWorkspaceAccountByIDWithTOTP returns a workspace account including TOTP columns.

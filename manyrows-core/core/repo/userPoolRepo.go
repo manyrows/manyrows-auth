@@ -277,11 +277,7 @@ func (r *Repo) DeleteUserPool(ctx context.Context, workspaceID, id uuid.UUID) er
 // "<n> apps" column.
 func (r *Repo) CountAppsByUserPool(ctx context.Context, poolID uuid.UUID) (int, error) {
 	const q = `SELECT count(*) FROM apps WHERE user_pool_id = $1;`
-	var n int
-	if err := r.db.Pool().QueryRow(ctx, q, poolID).Scan(&n); err != nil {
-		return 0, err
-	}
-	return n, nil
+	return r.scalarCount(ctx, q, poolID)
 }
 
 // CountAppMembers returns the number of app_users rows for an app.
@@ -290,11 +286,7 @@ func (r *Repo) CountAppsByUserPool(ctx context.Context, poolID uuid.UUID) (int, 
 // user rows live in the old pool.
 func (r *Repo) CountAppMembers(ctx context.Context, appID uuid.UUID) (int, error) {
 	const q = `SELECT count(*) FROM app_users WHERE app_id = $1;`
-	var n int
-	if err := r.db.Pool().QueryRow(ctx, q, appID).Scan(&n); err != nil {
-		return 0, err
-	}
-	return n, nil
+	return r.scalarCount(ctx, q, appID)
 }
 
 // UpdateAppUserPool repoints an app at a different pool. Caller is
@@ -308,12 +300,5 @@ UPDATE apps
    SET user_pool_id = $3, updated_at = now()
  WHERE id = $1 AND workspace_id = $2;
 `
-	ct, err := r.db.Pool().Exec(ctx, q, appID, workspaceID, newPoolID)
-	if err != nil {
-		return err
-	}
-	if ct.RowsAffected() == 0 {
-		return ErrNotFound
-	}
-	return nil
+	return r.execAffectingOne(ctx, ErrNotFound, q, appID, workspaceID, newPoolID)
 }

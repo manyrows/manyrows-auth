@@ -318,14 +318,7 @@ update accounts
 set name = $2
 where id = $1;
 `
-	ct, err := r.db.Pool().Exec(ctx, q, id, name)
-	if err != nil {
-		return err
-	}
-	if ct.RowsAffected() == 0 {
-		return core.ErrAccountNotFound
-	}
-	return nil
+	return r.execAffectingOne(ctx, core.ErrAccountNotFound, q, id, name)
 }
 
 func (r *Repo) UpdateAccountLanguage(ctx context.Context, id uuid.UUID, language string) error {
@@ -334,14 +327,7 @@ update accounts
 set language = $2
 where id = $1;
 `
-	ct, err := r.db.Pool().Exec(ctx, q, id, language)
-	if err != nil {
-		return err
-	}
-	if ct.RowsAffected() == 0 {
-		return core.ErrAccountNotFound
-	}
-	return nil
+	return r.execAffectingOne(ctx, core.ErrAccountNotFound, q, id, language)
 }
 
 /* -------------------------------------------------------------------------- */
@@ -354,14 +340,7 @@ update accounts
 set totp_secret_encrypted = $2
 where id = $1;
 `
-	ct, err := r.db.Pool().Exec(ctx, q, accountID, encryptedSecret)
-	if err != nil {
-		return err
-	}
-	if ct.RowsAffected() == 0 {
-		return core.ErrAccountNotFound
-	}
-	return nil
+	return r.execAffectingOne(ctx, core.ErrAccountNotFound, q, accountID, encryptedSecret)
 }
 
 func (r *Repo) EnableTOTP(ctx context.Context, accountID uuid.UUID, enabledAt time.Time, encryptedBackupCodes []byte) error {
@@ -371,14 +350,7 @@ set totp_enabled_at = $2,
     totp_backup_codes_encrypted = $3
 where id = $1;
 `
-	ct, err := r.db.Pool().Exec(ctx, q, accountID, enabledAt, encryptedBackupCodes)
-	if err != nil {
-		return err
-	}
-	if ct.RowsAffected() == 0 {
-		return core.ErrAccountNotFound
-	}
-	return nil
+	return r.execAffectingOne(ctx, core.ErrAccountNotFound, q, accountID, enabledAt, encryptedBackupCodes)
 }
 
 func (r *Repo) DisableTOTP(ctx context.Context, accountID uuid.UUID) error {
@@ -389,14 +361,7 @@ set totp_secret_encrypted = null,
     totp_backup_codes_encrypted = null
 where id = $1;
 `
-	ct, err := r.db.Pool().Exec(ctx, q, accountID)
-	if err != nil {
-		return err
-	}
-	if ct.RowsAffected() == 0 {
-		return core.ErrAccountNotFound
-	}
-	return nil
+	return r.execAffectingOne(ctx, core.ErrAccountNotFound, q, accountID)
 }
 
 func (r *Repo) UpdateTOTPBackupCodes(ctx context.Context, accountID uuid.UUID, encryptedBackupCodes []byte) error {
@@ -405,14 +370,7 @@ update accounts
 set totp_backup_codes_encrypted = $2
 where id = $1;
 `
-	ct, err := r.db.Pool().Exec(ctx, q, accountID, encryptedBackupCodes)
-	if err != nil {
-		return err
-	}
-	if ct.RowsAffected() == 0 {
-		return core.ErrAccountNotFound
-	}
-	return nil
+	return r.execAffectingOne(ctx, core.ErrAccountNotFound, q, accountID, encryptedBackupCodes)
 }
 
 // AdvanceAccountTOTPStep atomically writes the supplied step number iff

@@ -205,11 +205,7 @@ join products p on p.id = a.product_id
 where p.workspace_id = $1
   and cs.expires_at > now();
 `
-	var n int
-	if err := r.db.Pool().QueryRow(ctx, q, workspaceID).Scan(&n); err != nil {
-		return 0, err
-	}
-	return n, nil
+	return r.scalarCount(ctx, q, workspaceID)
 }
 
 // GetActiveClientSessionResourcesForWorkspace returns paginated active sessions for a workspace.
@@ -320,11 +316,7 @@ where p.workspace_id = $1
   and u.email ilike $2 escape '\';
 `
 	escaped := "%" + strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`).Replace(email) + "%"
-	var n int
-	if err := r.db.Pool().QueryRow(ctx, q, workspaceID, escaped).Scan(&n); err != nil {
-		return 0, err
-	}
-	return n, nil
+	return r.scalarCount(ctx, q, workspaceID, escaped)
 }
 
 // GetActiveClientSessionResourcesForWorkspaceByEmail returns paginated active sessions filtered by email.

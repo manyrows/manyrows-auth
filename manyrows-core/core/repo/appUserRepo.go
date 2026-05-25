@@ -71,28 +71,14 @@ func (r *Repo) UpdateAppUserLastLogin(ctx context.Context, appID, userID uuid.UU
 // SetAppUserStatus changes the membership status (active/pending/disabled).
 func (r *Repo) SetAppUserStatus(ctx context.Context, appID, userID uuid.UUID, status core.AppUserStatus) error {
 	const q = `UPDATE app_users SET status = $3 WHERE app_id = $1 AND user_id = $2;`
-	ct, err := r.db.Pool().Exec(ctx, q, appID, userID, string(status))
-	if err != nil {
-		return err
-	}
-	if ct.RowsAffected() == 0 {
-		return ErrNotFound
-	}
-	return nil
+	return r.execAffectingOne(ctx, ErrNotFound, q, appID, userID, string(status))
 }
 
 // DeleteAppMember removes the membership row. The underlying user row
 // (in the pool) is untouched.
 func (r *Repo) DeleteAppMember(ctx context.Context, appID, userID uuid.UUID) error {
 	const q = `DELETE FROM app_users WHERE app_id = $1 AND user_id = $2;`
-	ct, err := r.db.Pool().Exec(ctx, q, appID, userID)
-	if err != nil {
-		return err
-	}
-	if ct.RowsAffected() == 0 {
-		return ErrNotFound
-	}
-	return nil
+	return r.execAffectingOne(ctx, ErrNotFound, q, appID, userID)
 }
 
 // CountAppMembershipsByUser returns how many app memberships the user

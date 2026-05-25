@@ -210,11 +210,7 @@ func (r *Repo) DeleteUserField(ctx context.Context, userPoolID, fieldID uuid.UUI
 
 func (r *Repo) CountUserFieldsByUserPoolID(ctx context.Context, userPoolID uuid.UUID) (int, error) {
 	const q = `select count(*) from user_fields where user_pool_id = $1 and status <> 'archived'`
-	var n int
-	if err := r.db.Pool().QueryRow(ctx, q, userPoolID).Scan(&n); err != nil {
-		return 0, err
-	}
-	return n, nil
+	return r.scalarCount(ctx, q, userPoolID)
 }
 
 // ----------------------------

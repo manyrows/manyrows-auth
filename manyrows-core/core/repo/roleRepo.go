@@ -498,9 +498,5 @@ func (r *Repo) DeleteRole(ctx context.Context, productID, roleID uuid.UUID) erro
 // CountRolesByProductID returns the number of roles in a project.
 func (r *Repo) CountRolesByProductID(ctx context.Context, productID uuid.UUID) (int, error) {
 	const q = `SELECT COUNT(*) FROM roles WHERE product_id = $1`
-	var n int
-	if err := r.db.Pool().QueryRow(ctx, q, productID).Scan(&n); err != nil {
-		return 0, err
-	}
-	return n, nil
+	return r.scalarCount(ctx, q, productID)
 }

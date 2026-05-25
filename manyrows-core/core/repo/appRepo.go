@@ -37,11 +37,10 @@ func (r *Repo) InsertApp(ctx context.Context, a core.App) (core.App, error) {
 	const q = `
 		INSERT INTO apps (id, workspace_id, product_id, type, enabled, allow_registration, allow_account_deletion, allow_email_change, default_role_id, allowed_email_domains, primary_auth_method, auth_method_google, require_2fa, google_oauth_client_id, description, app_url, user_pool_id)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
-		RETURNING id, workspace_id, product_id, type, (select name from products where id = apps.product_id) as product_name, enabled, allow_registration, allow_account_deletion, allow_email_change, default_role_id, allowed_email_domains, primary_auth_method, auth_method_google, require_2fa, google_oauth_client_id, google_oauth_client_secret_encrypted, auth_method_apple, apple_services_id, apple_team_id, apple_key_id, apple_private_key_encrypted, auth_method_microsoft, microsoft_client_id, microsoft_client_secret_encrypted, microsoft_tenant, auth_method_github, github_client_id, github_client_secret_encrypted, auth_method_kakao, kakao_client_id, kakao_client_secret_encrypted, auth_method_naver, naver_client_id, naver_client_secret_encrypted, app_url, auth_domain, session_ttl_minutes, idle_timeout_minutes, remember_me_ttl_minutes, access_token_ttl_minutes, max_sessions_per_user, created_at, updated_at, description, password_min_length, password_min_zxcvbn_score, cookie_domain, transport_mode, session_cookie_samesite, qr_sign_in_enabled, user_pool_id, (select name from user_pools where id = apps.user_pool_id) as user_pool_name
-	`
+		RETURNING ` + appColumnsReturning
 
 	var out core.App
-	err := r.db.Pool().QueryRow(ctx, q,
+	err := scanAppFull(r.db.Pool().QueryRow(ctx, q,
 		a.ID,
 		a.WorkspaceID,
 		a.ProductID,
@@ -59,60 +58,7 @@ func (r *Repo) InsertApp(ctx context.Context, a core.App) (core.App, error) {
 		a.Description,
 		a.AppURL,
 		a.UserPoolID,
-	).Scan(
-		&out.ID,
-		&out.WorkspaceID,
-		&out.ProductID,
-		&out.Type,
-		&out.ProductName,
-		&out.Enabled,
-		&out.AllowRegistration,
-		&out.AllowAccountDeletion,
-		&out.AllowEmailChange,
-		&out.DefaultRoleID,
-		&out.AllowedEmailDomains,
-		&out.PrimaryAuthMethod,
-		&out.AuthMethodGoogle,
-		&out.Require2FA,
-		&out.GoogleOAuthClientID,
-		&out.GoogleOAuthClientSecretEncrypted,
-		&out.AuthMethodApple,
-		&out.AppleServicesID,
-		&out.AppleTeamID,
-		&out.AppleKeyID,
-		&out.ApplePrivateKeyEncrypted,
-		&out.AuthMethodMicrosoft,
-		&out.MicrosoftClientID,
-		&out.MicrosoftClientSecretEncrypted,
-		&out.MicrosoftTenant,
-		&out.AuthMethodGithub,
-		&out.GithubClientID,
-		&out.GithubClientSecretEncrypted,
-		&out.AuthMethodKakao,
-		&out.KakaoClientID,
-		&out.KakaoClientSecretEncrypted,
-		&out.AuthMethodNaver,
-		&out.NaverClientID,
-		&out.NaverClientSecretEncrypted,
-		&out.AppURL,
-		&out.AuthDomain,
-		&out.SessionTTLMinutes,
-		&out.IdleTimeoutMinutes,
-		&out.RememberMeTTLMinutes,
-		&out.AccessTokenTTLMinutes,
-		&out.MaxSessionsPerUser,
-		&out.CreatedAt,
-		&out.UpdatedAt,
-		&out.Description,
-		&out.PasswordMinLength,
-		&out.PasswordMinZxcvbnScore,
-		&out.CookieDomain,
-		&out.TransportMode,
-		&out.SessionCookieSameSite,
-		&out.QRSignInEnabled,
-		&out.UserPoolID,
-		&out.UserPoolName,
-	)
+	), &out)
 	if err != nil {
 		return core.App{}, err
 	}
@@ -126,7 +72,7 @@ func (r *Repo) InsertApp(ctx context.Context, a core.App) (core.App, error) {
 // Safer multi-tenant list (recommended to use in handlers)
 func (r *Repo) GetAppsByWorkspaceAndProductID(ctx context.Context, workspaceID, productID uuid.UUID) ([]core.App, error) {
 	const q = `
-		select id, workspace_id, product_id, type, (select name from products where id = apps.product_id) as product_name, enabled, allow_registration, allow_account_deletion, allow_email_change, default_role_id, allowed_email_domains, primary_auth_method, auth_method_google, require_2fa, google_oauth_client_id, google_oauth_client_secret_encrypted, auth_method_apple, apple_services_id, apple_team_id, apple_key_id, apple_private_key_encrypted, auth_method_microsoft, microsoft_client_id, microsoft_client_secret_encrypted, microsoft_tenant, auth_method_github, github_client_id, github_client_secret_encrypted, auth_method_kakao, kakao_client_id, kakao_client_secret_encrypted, auth_method_naver, naver_client_id, naver_client_secret_encrypted, app_url, auth_domain, session_ttl_minutes, idle_timeout_minutes, remember_me_ttl_minutes, access_token_ttl_minutes, max_sessions_per_user, created_at, updated_at, description, password_min_length, password_min_zxcvbn_score, cookie_domain, transport_mode, session_cookie_samesite, qr_sign_in_enabled, user_pool_id, (select name from user_pools where id = apps.user_pool_id) as user_pool_name
+		select ` + appColumnsReturning + `
 from apps
 		where workspace_id = $1 and product_id = $2
 		order by created_at desc
@@ -141,60 +87,7 @@ from apps
 	var out []core.App
 	for rows.Next() {
 		var a core.App
-		if err := rows.Scan(
-			&a.ID,
-			&a.WorkspaceID,
-			&a.ProductID,
-			&a.Type,
-			&a.ProductName,
-			&a.Enabled,
-			&a.AllowRegistration,
-			&a.AllowAccountDeletion,
-			&a.AllowEmailChange,
-			&a.DefaultRoleID,
-			&a.AllowedEmailDomains,
-			&a.PrimaryAuthMethod,
-			&a.AuthMethodGoogle,
-			&a.Require2FA,
-			&a.GoogleOAuthClientID,
-			&a.GoogleOAuthClientSecretEncrypted,
-			&a.AuthMethodApple,
-			&a.AppleServicesID,
-			&a.AppleTeamID,
-			&a.AppleKeyID,
-			&a.ApplePrivateKeyEncrypted,
-			&a.AuthMethodMicrosoft,
-			&a.MicrosoftClientID,
-			&a.MicrosoftClientSecretEncrypted,
-			&a.MicrosoftTenant,
-			&a.AuthMethodGithub,
-			&a.GithubClientID,
-			&a.GithubClientSecretEncrypted,
-			&a.AuthMethodKakao,
-			&a.KakaoClientID,
-			&a.KakaoClientSecretEncrypted,
-			&a.AuthMethodNaver,
-			&a.NaverClientID,
-			&a.NaverClientSecretEncrypted,
-			&a.AppURL,
-			&a.AuthDomain,
-			&a.SessionTTLMinutes,
-			&a.IdleTimeoutMinutes,
-			&a.RememberMeTTLMinutes,
-			&a.AccessTokenTTLMinutes,
-			&a.MaxSessionsPerUser,
-			&a.CreatedAt,
-			&a.UpdatedAt,
-			&a.Description,
-			&a.PasswordMinLength,
-			&a.PasswordMinZxcvbnScore,
-			&a.CookieDomain,
-			&a.TransportMode,
-			&a.SessionCookieSameSite,
-			&a.QRSignInEnabled,
-			&a.UserPoolID,
-			&a.UserPoolName,
-		); err != nil {
+		if err := scanAppFull(rows, &a); err != nil {
 			return nil, err
 		}
 		out = append(out, a)
@@ -212,66 +105,13 @@ from apps
 
 func (r *Repo) GetAppByID(ctx context.Context, appID uuid.UUID) (core.App, error) {
 	const q = `
-		select id, workspace_id, product_id, type, (select name from products where id = apps.product_id) as product_name, enabled, allow_registration, allow_account_deletion, allow_email_change, default_role_id, allowed_email_domains, primary_auth_method, auth_method_google, require_2fa, google_oauth_client_id, google_oauth_client_secret_encrypted, auth_method_apple, apple_services_id, apple_team_id, apple_key_id, apple_private_key_encrypted, auth_method_microsoft, microsoft_client_id, microsoft_client_secret_encrypted, microsoft_tenant, auth_method_github, github_client_id, github_client_secret_encrypted, auth_method_kakao, kakao_client_id, kakao_client_secret_encrypted, auth_method_naver, naver_client_id, naver_client_secret_encrypted, app_url, auth_domain, session_ttl_minutes, idle_timeout_minutes, remember_me_ttl_minutes, access_token_ttl_minutes, max_sessions_per_user, created_at, updated_at, description, password_min_length, password_min_zxcvbn_score, cookie_domain, transport_mode, session_cookie_samesite, qr_sign_in_enabled, user_pool_id, (select name from user_pools where id = apps.user_pool_id) as user_pool_name
+		select ` + appColumnsReturning + `
 from apps
 		where id = $1
 	`
 
 	var a core.App
-	err := r.db.Pool().QueryRow(ctx, q, appID).Scan(
-		&a.ID,
-		&a.WorkspaceID,
-		&a.ProductID,
-		&a.Type,
-		&a.ProductName,
-		&a.Enabled,
-		&a.AllowRegistration,
-		&a.AllowAccountDeletion,
-		&a.AllowEmailChange,
-		&a.DefaultRoleID,
-		&a.AllowedEmailDomains,
-		&a.PrimaryAuthMethod,
-		&a.AuthMethodGoogle,
-		&a.Require2FA,
-		&a.GoogleOAuthClientID,
-		&a.GoogleOAuthClientSecretEncrypted,
-		&a.AuthMethodApple,
-		&a.AppleServicesID,
-		&a.AppleTeamID,
-		&a.AppleKeyID,
-		&a.ApplePrivateKeyEncrypted,
-		&a.AuthMethodMicrosoft,
-		&a.MicrosoftClientID,
-		&a.MicrosoftClientSecretEncrypted,
-		&a.MicrosoftTenant,
-		&a.AuthMethodGithub,
-		&a.GithubClientID,
-		&a.GithubClientSecretEncrypted,
-		&a.AuthMethodKakao,
-		&a.KakaoClientID,
-		&a.KakaoClientSecretEncrypted,
-		&a.AuthMethodNaver,
-		&a.NaverClientID,
-		&a.NaverClientSecretEncrypted,
-		&a.AppURL,
-		&a.AuthDomain,
-		&a.SessionTTLMinutes,
-		&a.IdleTimeoutMinutes,
-		&a.RememberMeTTLMinutes,
-		&a.AccessTokenTTLMinutes,
-		&a.MaxSessionsPerUser,
-		&a.CreatedAt,
-		&a.UpdatedAt,
-		&a.Description,
-		&a.PasswordMinLength,
-		&a.PasswordMinZxcvbnScore,
-		&a.CookieDomain,
-		&a.TransportMode,
-		&a.SessionCookieSameSite,
-		&a.QRSignInEnabled,
-		&a.UserPoolID,
-		&a.UserPoolName,
-	)
+	err := scanAppFull(r.db.Pool().QueryRow(ctx, q, appID), &a)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return core.App{}, ErrNotFound
@@ -284,66 +124,13 @@ from apps
 
 func (r *Repo) GetAppByIDForProduct(ctx context.Context, workspaceID, productID, appID uuid.UUID) (core.App, error) {
 	const q = `
-		select id, workspace_id, product_id, type, (select name from products where id = apps.product_id) as product_name, enabled, allow_registration, allow_account_deletion, allow_email_change, default_role_id, allowed_email_domains, primary_auth_method, auth_method_google, require_2fa, google_oauth_client_id, google_oauth_client_secret_encrypted, auth_method_apple, apple_services_id, apple_team_id, apple_key_id, apple_private_key_encrypted, auth_method_microsoft, microsoft_client_id, microsoft_client_secret_encrypted, microsoft_tenant, auth_method_github, github_client_id, github_client_secret_encrypted, auth_method_kakao, kakao_client_id, kakao_client_secret_encrypted, auth_method_naver, naver_client_id, naver_client_secret_encrypted, app_url, auth_domain, session_ttl_minutes, idle_timeout_minutes, remember_me_ttl_minutes, access_token_ttl_minutes, max_sessions_per_user, created_at, updated_at, description, password_min_length, password_min_zxcvbn_score, cookie_domain, transport_mode, session_cookie_samesite, qr_sign_in_enabled, user_pool_id, (select name from user_pools where id = apps.user_pool_id) as user_pool_name
+		select ` + appColumnsReturning + `
 from apps
 		where id = $1 and workspace_id = $2 and product_id = $3
 	`
 
 	var a core.App
-	err := r.db.Pool().QueryRow(ctx, q, appID, workspaceID, productID).Scan(
-		&a.ID,
-		&a.WorkspaceID,
-		&a.ProductID,
-		&a.Type,
-		&a.ProductName,
-		&a.Enabled,
-		&a.AllowRegistration,
-		&a.AllowAccountDeletion,
-		&a.AllowEmailChange,
-		&a.DefaultRoleID,
-		&a.AllowedEmailDomains,
-		&a.PrimaryAuthMethod,
-		&a.AuthMethodGoogle,
-		&a.Require2FA,
-		&a.GoogleOAuthClientID,
-		&a.GoogleOAuthClientSecretEncrypted,
-		&a.AuthMethodApple,
-		&a.AppleServicesID,
-		&a.AppleTeamID,
-		&a.AppleKeyID,
-		&a.ApplePrivateKeyEncrypted,
-		&a.AuthMethodMicrosoft,
-		&a.MicrosoftClientID,
-		&a.MicrosoftClientSecretEncrypted,
-		&a.MicrosoftTenant,
-		&a.AuthMethodGithub,
-		&a.GithubClientID,
-		&a.GithubClientSecretEncrypted,
-		&a.AuthMethodKakao,
-		&a.KakaoClientID,
-		&a.KakaoClientSecretEncrypted,
-		&a.AuthMethodNaver,
-		&a.NaverClientID,
-		&a.NaverClientSecretEncrypted,
-		&a.AppURL,
-		&a.AuthDomain,
-		&a.SessionTTLMinutes,
-		&a.IdleTimeoutMinutes,
-		&a.RememberMeTTLMinutes,
-		&a.AccessTokenTTLMinutes,
-		&a.MaxSessionsPerUser,
-		&a.CreatedAt,
-		&a.UpdatedAt,
-		&a.Description,
-		&a.PasswordMinLength,
-		&a.PasswordMinZxcvbnScore,
-		&a.CookieDomain,
-		&a.TransportMode,
-		&a.SessionCookieSameSite,
-		&a.QRSignInEnabled,
-		&a.UserPoolID,
-		&a.UserPoolName,
-	)
+	err := scanAppFull(r.db.Pool().QueryRow(ctx, q, appID, workspaceID, productID), &a)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return core.App{}, ErrNotFound
@@ -391,66 +178,12 @@ func (r *Repo) UpdateAppEnabled(ctx context.Context, workspaceID, productID, app
 		    description = $12,
 		    updated_at = now()
 		where id = $1 and workspace_id = $2 and product_id = $3
-		returning id, workspace_id, product_id, type, (select name from products where id = apps.product_id) as product_name, enabled, allow_registration, allow_account_deletion, allow_email_change, default_role_id, allowed_email_domains, primary_auth_method, auth_method_google, require_2fa, google_oauth_client_id, google_oauth_client_secret_encrypted, auth_method_apple, apple_services_id, apple_team_id, apple_key_id, apple_private_key_encrypted, auth_method_microsoft, microsoft_client_id, microsoft_client_secret_encrypted, microsoft_tenant, auth_method_github, github_client_id, github_client_secret_encrypted, auth_method_kakao, kakao_client_id, kakao_client_secret_encrypted, auth_method_naver, naver_client_id, naver_client_secret_encrypted, app_url, auth_domain, session_ttl_minutes, idle_timeout_minutes, remember_me_ttl_minutes, access_token_ttl_minutes, max_sessions_per_user, created_at, updated_at, description, password_min_length, password_min_zxcvbn_score, cookie_domain, transport_mode, session_cookie_samesite, qr_sign_in_enabled, user_pool_id, (select name from user_pools where id = apps.user_pool_id) as user_pool_name
-	`
+		returning ` + appColumnsReturning
 
 	var out core.App
-	err := r.db.Pool().QueryRow(ctx, q, appID, workspaceID, productID, enabled,
+	err := scanAppFull(r.db.Pool().QueryRow(ctx, q, appID, workspaceID, productID, enabled,
 		u.AppURL, u.AuthDomain, u.SessionTTLMinutes, u.IdleTimeoutMinutes, u.RememberMeTTLMinutes, u.AccessTokenTTLMinutes, u.MaxSessionsPerUser, u.Description,
-	).Scan(
-		&out.ID,
-		&out.WorkspaceID,
-		&out.ProductID,
-		&out.Type,
-		&out.ProductName,
-		&out.Enabled,
-		&out.AllowRegistration,
-		&out.AllowAccountDeletion,
-		&out.AllowEmailChange,
-		&out.DefaultRoleID,
-		&out.AllowedEmailDomains,
-		&out.PrimaryAuthMethod,
-		&out.AuthMethodGoogle,
-		&out.Require2FA,
-		&out.GoogleOAuthClientID,
-		&out.GoogleOAuthClientSecretEncrypted,
-		&out.AuthMethodApple,
-		&out.AppleServicesID,
-		&out.AppleTeamID,
-		&out.AppleKeyID,
-		&out.ApplePrivateKeyEncrypted,
-		&out.AuthMethodMicrosoft,
-		&out.MicrosoftClientID,
-		&out.MicrosoftClientSecretEncrypted,
-		&out.MicrosoftTenant,
-		&out.AuthMethodGithub,
-		&out.GithubClientID,
-		&out.GithubClientSecretEncrypted,
-		&out.AuthMethodKakao,
-		&out.KakaoClientID,
-		&out.KakaoClientSecretEncrypted,
-		&out.AuthMethodNaver,
-		&out.NaverClientID,
-		&out.NaverClientSecretEncrypted,
-		&out.AppURL,
-		&out.AuthDomain,
-		&out.SessionTTLMinutes,
-		&out.IdleTimeoutMinutes,
-		&out.RememberMeTTLMinutes,
-		&out.AccessTokenTTLMinutes,
-		&out.MaxSessionsPerUser,
-		&out.CreatedAt,
-		&out.UpdatedAt,
-		&out.Description,
-		&out.PasswordMinLength,
-		&out.PasswordMinZxcvbnScore,
-		&out.CookieDomain,
-		&out.TransportMode,
-		&out.SessionCookieSameSite,
-		&out.QRSignInEnabled,
-		&out.UserPoolID,
-		&out.UserPoolName,
-	)
+	), &out)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return core.App{}, ErrNotFound
@@ -461,9 +194,9 @@ func (r *Repo) UpdateAppEnabled(ctx context.Context, workspaceID, productID, app
 	return out, nil
 }
 
-// scanAppFull reads a full apps-table row into a core.App. Used by the
-// post-cleanup update endpoints; the older multi-line Scan blocks above
-// are left in place to keep this diff focused.
+// scanAppFull reads a full apps-table row into a core.App. The column
+// order here must match appColumnsReturning; every read/write that returns
+// an apps row pairs the two so the 52-field list lives in exactly one place.
 type appRowScanner interface {
 	Scan(dest ...any) error
 }
@@ -925,34 +658,19 @@ func (r *Repo) DeleteAppByID(ctx context.Context, workspaceID, productID, appID 
 		where id = $1 and workspace_id = $2 and product_id = $3
 	`
 
-	ct, err := r.db.Pool().Exec(ctx, q, appID, workspaceID, productID)
-	if err != nil {
-		return err
-	}
-	if ct.RowsAffected() == 0 {
-		return ErrNotFound
-	}
-	return nil
+	return r.execAffectingOne(ctx, ErrNotFound, q, appID, workspaceID, productID)
 }
 
 // CountAppsByProductID returns the number of apps in a project. Used
 // for the project-level "Apps" usage counter
 func (r *Repo) CountAppsByProductID(ctx context.Context, productID uuid.UUID) (int, error) {
 	const q = `select count(*) from apps where product_id = $1`
-	var n int
-	if err := r.db.Pool().QueryRow(ctx, q, productID).Scan(&n); err != nil {
-		return 0, err
-	}
-	return n, nil
+	return r.scalarCount(ctx, q, productID)
 }
 
 // CountAppsByWorkspaceID returns the number of apps in a workspace,
 // across all products. Used to enforce the per-workspace app cap.
 func (r *Repo) CountAppsByWorkspaceID(ctx context.Context, workspaceID uuid.UUID) (int, error) {
 	const q = `select count(*) from apps where workspace_id = $1`
-	var n int
-	if err := r.db.Pool().QueryRow(ctx, q, workspaceID).Scan(&n); err != nil {
-		return 0, err
-	}
-	return n, nil
+	return r.scalarCount(ctx, q, workspaceID)
 }

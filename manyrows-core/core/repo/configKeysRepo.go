@@ -335,14 +335,7 @@ func (r *Repo) UpdateConfigKey(
 
 func (r *Repo) DeleteConfigKey(ctx context.Context, productID, configKeyID uuid.UUID) error {
 	const q = `delete from config_keys where product_id = $1 and id = $2`
-	ct, err := r.db.Pool().Exec(ctx, q, productID, configKeyID)
-	if err != nil {
-		return err
-	}
-	if ct.RowsAffected() == 0 {
-		return ErrNotFound
-	}
-	return nil
+	return r.execAffectingOne(ctx, ErrNotFound, q, productID, configKeyID)
 }
 
 // ----------------------------
@@ -540,14 +533,7 @@ func (r *Repo) DeleteConfigValue(ctx context.Context, productID, configKeyID, ap
 		delete from config_values
 		where product_id = $1 and config_key_id = $2 and app_id = $3
 	`
-	ct, err := r.db.Pool().Exec(ctx, q, productID, configKeyID, appID)
-	if err != nil {
-		return err
-	}
-	if ct.RowsAffected() == 0 {
-		return ErrNotFound
-	}
-	return nil
+	return r.execAffectingOne(ctx, ErrNotFound, q, productID, configKeyID, appID)
 }
 
 // ----------------------------
@@ -798,9 +784,5 @@ func (r *Repo) encryptSecretJSON(ctx context.Context, raw json.RawMessage, works
 // CountConfigKeysByProductID returns the number of config keys in a project (excludes archived).
 func (r *Repo) CountConfigKeysByProductID(ctx context.Context, productID uuid.UUID) (int, error) {
 	const q = `SELECT COUNT(*) FROM config_keys WHERE product_id = $1 AND status != 'archived'`
-	var n int
-	if err := r.db.Pool().QueryRow(ctx, q, productID).Scan(&n); err != nil {
-		return 0, err
-	}
-	return n, nil
+	return r.scalarCount(ctx, q, productID)
 }
