@@ -1,7 +1,4 @@
 import * as React from "react";
-import axios from "axios";
-import { extractApiError } from "../lib/apiError.ts";
-import { useDebouncedValue } from "../hooks/useDebouncedValue.ts";
 import {
   Alert,
   Box,
@@ -52,39 +49,12 @@ import {
 import PageHeader from "../components/PageHeader.tsx";
 import { useTranslation } from "react-i18next";
 import { useSnackbar } from "notistack";
+import { type AuthLog, type PresetId, useAuthLogs } from "./useAuthLogs.ts";
 
 interface Props {
   workspaceId: string;
   appId?: string;
 }
-
-type AuthLog = {
-  id: string;
-  workspaceId: string;
-  appId?: string | null;
-  createdAt: string;
-
-  event: string;
-  method?: string;
-  outcome: "success" | "failed";
-  failureReason?: string;
-
-  subjectUserId?: string | null;
-  subjectAccountId?: string | null;
-  emailAttempted?: string;
-
-  actorType: "self" | "admin" | "api_key" | "system";
-  actorAccountId?: string | null;
-  actorApiKeyId?: string | null;
-  actorLabel?: string;
-
-  ip?: string;
-  userAgent?: string;
-  sessionId?: string | null;
-  requestId?: string;
-
-  metadata?: any;
-};
 
 // isLoopbackOrPrivate detects loopback / private / link-local IPs so
 // ipDisplay can render them with a friendlier "localhost" label instead
@@ -118,13 +88,6 @@ function ipDisplay(ip: string | undefined): { text: string; muted: boolean; tool
   if (isLoopbackOrPrivate(ip)) return { text: "localhost", muted: true, tooltip: ip };
   return { text: ip, muted: false };
 }
-
-type AuthLogsResponse = {
-  logs: AuthLog[];
-  total: number;
-  page: number;
-  pageSize: number;
-};
 
 // EVENT_VOCAB / METHOD_VOCAB / FAILURE_VOCAB mirror the closed sets in
 // manyrows-core/core/authLog.go. Keep these in sync - the admin UI
@@ -187,7 +150,7 @@ const ACTOR_TYPE_VOCAB: { value: AuthLog["actorType"]; label: string; labelKey: 
 // for an admin glancing at the page. They map to filter state, not to
 // special server endpoints - same shape as a manually-applied filter.
 type Preset = {
-  id: "all" | "suspicious" | "admin" | "oauth" | "failed";
+  id: PresetId;
   label: string;
   labelKey: string;
 };
@@ -300,128 +263,38 @@ function eventIcon(event: string): LucideIcon {
   return Filter;
 }
 
-// presetParams maps a preset choice to query-param overrides. Returns an
-// object that the load() function spreads into its base params; nil means
-// "no preset, use whatever the manual filters are set to".
-function presetParams(p: Preset["id"]): Record<string, string | string[]> | null {
-  switch (p) {
-    case "suspicious":
-      // Failed logins + lockouts + admin password clears - the same
-      // first-line incident-triage filter you'd want during a wake-up
-      // page. Last 24h is implied by the parent's time-range, which
-      // we don't override here.
-      return {
-        outcome: "failed",
-      };
-    case "admin":
-      return { actorType: "admin" };
-    case "oauth":
-      return { method: ["google", "microsoft", "apple", "github", "kakao", "naver"] };
-    case "failed":
-      return { outcome: "failed" };
-    default:
-      return null;
-  }
-}
-
 export default function AuthLogs({ workspaceId, appId }: Props) {
-  const baseURL = `/admin/workspace/${workspaceId}/auth/logs`;
   const { t } = useTranslation();
   const { enqueueSnackbar } = useSnackbar();
 
-  // URL query-param pre-filters. Lets the User detail dialog deep-link
-  // here with ?subjectUserId=<uuid> for the per-user activity view, and
-  // future correlation drilldowns (?sessionId=, ?requestId=) without
-  // adding extra props to this component.
-  const initialURLParams = React.useMemo(() => new URLSearchParams(window.location.search), []);
-  const initialSubjectUserId = initialURLParams.get("subjectUserId") || "";
-  const initialSessionId = initialURLParams.get("sessionId") || "";
-  const initialRequestId = initialURLParams.get("requestId") || "";
-
-  // Server-driven state.
-  const [logs, setLogs] = React.useState<AuthLog[]>([]);
-  const [total, setTotal] = React.useState(0);
-  const [loading, setLoading] = React.useState(false);
-  const [err, setErr] = React.useState<string | null>(null);
-
-  // Filters.
-  const [preset, setPreset] = React.useState<Preset["id"]>("all");
-  const [eventsSel, setEventsSel] = React.useState<string[]>([]);
-  const [methodsSel, setMethodsSel] = React.useState<string[]>([]);
-  const [outcome, setOutcome] = React.useState<"" | "success" | "failed">("");
-  const [actorType, setActorType] = React.useState<"" | AuthLog["actorType"]>("");
-  const [emailLike, setEmailLike] = React.useState("");
-  const emailDebounced = useDebouncedValue(emailLike, 350);
-  const [subjectUserId] = React.useState<string>(initialSubjectUserId);
-  const [sessionId] = React.useState<string>(initialSessionId);
-  const [requestId] = React.useState<string>(initialRequestId);
-
-  // Pagination.
-  const [page, setPage] = React.useState(0);
-  const [pageSize, setPageSize] = React.useState(50);
-
-  // Auto-refresh.
-  const [autoRefresh, setAutoRefresh] = React.useState(false);
+  const {
+    logs,
+    total,
+    loading,
+    err,
+    preset,
+    setPreset,
+    eventsSel,
+    setEventsSel,
+    methodsSel,
+    setMethodsSel,
+    outcome,
+    setOutcome,
+    actorType,
+    setActorType,
+    emailLike,
+    setEmailLike,
+    page,
+    setPage,
+    pageSize,
+    setPageSize,
+    autoRefresh,
+    setAutoRefresh,
+    load,
+  } = useAuthLogs(workspaceId, appId);
 
   // Drill-in panel.
   const [selected, setSelected] = React.useState<AuthLog | null>(null);
-
-  const load = React.useCallback(async () => {
-    if (!workspaceId) {
-      setLogs([]);
-      setTotal(0);
-      return;
-    }
-    setErr(null);
-    setLoading(true);
-    try {
-      const params = new URLSearchParams();
-      params.set("page", String(page));
-      params.set("pageSize", String(pageSize));
-      if (appId) params.set("appId", appId);
-
-      // Preset overrides come first, then per-control filters get a
-      // chance to add or refine. A preset that sets `outcome=failed`
-      // can still be narrowed by the user setting `event=login.failed`.
-      const overrides = presetParams(preset);
-      if (overrides) {
-        for (const [k, v] of Object.entries(overrides)) {
-          if (Array.isArray(v)) v.forEach((x) => params.append(k, x));
-          else params.set(k, v);
-        }
-      }
-
-      eventsSel.forEach((e) => params.append("event", e));
-      methodsSel.forEach((m) => params.append("method", m));
-      if (outcome && !overrides?.outcome) params.set("outcome", outcome);
-      if (actorType) params.set("actorType", actorType);
-      if (emailDebounced.trim()) params.set("emailLike", emailDebounced.trim());
-      if (subjectUserId) params.set("subjectUserId", subjectUserId);
-      if (sessionId) params.set("sessionId", sessionId);
-      if (requestId) params.set("requestId", requestId);
-
-      const res = await axios.get<AuthLogsResponse>(`${baseURL}?${params.toString()}`);
-      setLogs(res.data?.logs ?? []);
-      setTotal(res.data?.total ?? 0);
-    } catch (e) {
-      setErr(extractApiError(e, t("authLogs.loadFailed", { defaultValue: "Failed to load auth logs" })));
-    } finally {
-      setLoading(false);
-    }
-  }, [workspaceId, baseURL, appId, page, pageSize, preset, eventsSel, methodsSel, outcome, actorType, emailDebounced, subjectUserId, sessionId, requestId, t]);
-
-  React.useEffect(() => {
-    void load();
-  }, [load]);
-
-  // Auto-refresh poll. 10s is the documented default - a busy admin
-  // watching for incident activity gets near-realtime feedback without
-  // hammering the server. WebSocket would be overkill for this.
-  React.useEffect(() => {
-    if (!autoRefresh) return;
-    const id = window.setInterval(() => void load(), 10_000);
-    return () => window.clearInterval(id);
-  }, [autoRefresh, load]);
 
   const stats = React.useMemo(() => {
     const failed = logs.filter((l) => l.outcome === "failed").length;
