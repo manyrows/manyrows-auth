@@ -152,7 +152,15 @@ subsequent boots.
 
 ## Going to production
 
-The Docker compose stack is for local evaluation. For a real deploy:
+ManyRows ships as a single static binary with the admin UI and AppKit
+runtime embedded - no sidecars, no asset server - so the production
+story is short: run it behind a TLS-terminating proxy and point it at
+Postgres. The bundled **Docker Compose** stack, a **standalone
+container**, and **Heroku** are all production-grade paths (see
+[Deployment paths](#deployment-paths) below) - pick whichever matches
+your infra.
+
+Whichever you pick, do these five things:
 
 1. **Terminate TLS upstream** - Caddy, Traefik, nginx + certbot,
    Cloudflare proxy, or your platform's load balancer. ManyRows speaks
@@ -174,6 +182,164 @@ The Docker compose stack is for local evaluation. For a real deploy:
      (`auth.drumkingdom.com` → `drumkingdom.com`). Skip it and the
      session cookie is scoped to the auth subdomain only, so it won't
      be sent on requests from your app's own domain.
+
+### Deployment paths
+
+Every path below runs the same image and reads the same environment
+variables ([Configuration](#configuration)); the only real difference is
+who runs the container and where Postgres lives.
+
+> **Use your own domain for `MANYROWS_BASE_URL`** - a subdomain of your
+> app's registrable domain (`auth.yourdomain.com`), *not* the platform's
+> default host. `*.herokuapp.com`, `*.fly.dev`, and `*.onrender.com` are
+> on the Public Suffix List, so session cookies set there can't be shared
+> first-party with your app - which is the whole point of checklist
+> step 5. Every example below assumes `auth.yourdomain.com`.
+
+#### Docker Compose
+
+The bundled `docker-compose.yml` is production-capable, not just a local
+demo. Two ways to take it live:
+
+- **Managed Postgres (recommended).** Drop the `db` service and point
+  `DATABASE_URL` at your managed instance (RDS, Cloud SQL, Neon,
+  Supabase, ...). ManyRows holds no local state, so the `web` service is
+  then stateless and trivially restartable.
+- **Bundled Postgres.** Keep the `db` service for a small single-host
+  install, but change the default `POSTGRES_PASSWORD` (the `.env`
+  default is `manyrows`) and back the `manyrows-db` volume up on a
+  schedule.
+
+Either way: set a real `MANYROWS_FROM_EMAIL` + SMTP credentials, and put
+the `web` service behind one of the reverse proxies below. It already
+restarts `unless-stopped`.
+
+#### Standalone container
+
+Any platform that runs an OCI image works - plain `docker run`,
+Kubernetes, ECS, Cloud Run, or any orchestrator (Render and Fly.io get
+dedicated recipes below):
+
+```bash
+docker build -t manyrows .
+docker run -d -p 8080:8080 \
+  -e DATABASE_URL="postgres://user:pass@host:5432/manyrows?sslmode=require" \
+  -e MANYROWS_FROM_EMAIL="auth@yourdomain.com" \
+  -e MANYROWS_BASE_URL="https://auth.yourdomain.com" \
+  manyrows
+```
+
+The binary binds `$PORT` when the platform sets it, falling back to
+`8080` - so most PaaS auto-wire the port with no extra config.
+
+#### Heroku
+
+The image is Heroku-ready: it honours `$PORT` and defaults to the `prod`
+profile. Heroku's router terminates TLS and sets `X-Forwarded-Proto`, so
+checklist steps 1-2 are handled for you either way; the custom-domain
+step still applies if you front it with `auth.yourdomain.com`.
+
+**Container registry** - simplest, reuses the `Dockerfile`:
+
+```bash
+heroku create your-manyrows
+heroku addons:create heroku-postgresql:essential-0   # provisions DATABASE_URL
+heroku config:set \
+  MANYROWS_FROM_EMAIL="auth@yourdomain.com" \
+  MANYROWS_BASE_URL="https://auth.yourdomain.com"
+heroku stack:set container
+heroku container:push web && heroku container:release web
+```
+
+**Binary slug via the Platform API** - no Docker; build a Linux binary
+locally and push it as a slug. It releases to an app you've already
+created (run the `heroku create` / `addons:create` / `config:set` steps
+above first, just skip `stack:set container`), and needs `jq` plus
+Heroku credentials in `~/.netrc` (written by `heroku login`). First
+build the slug - the UI bundles come from the committed `build-ui.sh`:
+
+```bash
+bash ./build-ui.sh || { echo "build-ui failed"; exit 1; }
+
+cd manyrows-core
+VERSION=$(git describe --tags --always --dirty 2>/dev/null || echo dev)
+GOARCH=amd64 GOOS=linux go build -ldflags="-X main.Version=${VERSION}" \
+  -o ../app/web start.go
+cd ..
+tar czf slug.tgz ./app   # Heroku expects a top-level ./app dir → /app/web
+```
+
+Then create, upload, and release the slug (set `AppID` to your app):
+
+```bash
+AppID='your-heroku-app'
+
+slug=$(curl -s -X POST \
+  -H 'Content-Type: application/json' \
+  -H 'Accept: application/vnd.heroku+json; version=3' \
+  -d '{"process_types":{"web":"./web"}}' \
+  -n "https://api.heroku.com/apps/$AppID/slugs")
+
+curl -X PUT -H 'Content-Type:' --data-binary @slug.tgz "$(jq -r '.blob.url' <<< "$slug")"
+
+curl -X POST \
+  -H 'Accept: application/vnd.heroku+json; version=3' \
+  -H 'Content-Type: application/json' \
+  -d "{\"slug\":$(jq '.id' <<< "$slug")}" \
+  -n "https://api.heroku.com/apps/$AppID/releases"
+```
+
+#### Render
+
+Render builds straight from the `Dockerfile`, sets `$PORT`, and
+terminates TLS + forwards `X-Forwarded-Proto` at its edge - so the
+proxy checklist is handled. Commit a `render.yaml` blueprint that
+provisions Postgres and wires `DATABASE_URL` for you:
+
+```yaml
+databases:
+  - name: manyrows-db
+    plan: basic-256mb
+
+services:
+  - type: web
+    name: manyrows
+    runtime: docker
+    plan: starter
+    healthCheckPath: /health
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: manyrows-db
+          property: connectionString
+      - key: MANYROWS_FROM_EMAIL
+        value: auth@yourdomain.com
+      - key: MANYROWS_BASE_URL
+        sync: false   # set to your custom auth domain (auth.yourdomain.com)
+```
+
+Then *New → Blueprint* in the dashboard and point it at your repo. The
+Dockerfile EXPOSEs `8080` and the binary honours `$PORT`, so the port
+wires up with no extra config.
+
+#### Fly.io
+
+`fly launch` reads the `Dockerfile`, picks up its `EXPOSE 8080` as the
+`internal_port`, and writes a `fly.toml` with `force_https = true`. Fly
+terminates TLS and forwards `X-Forwarded-Proto`, so the proxy checklist
+is covered.
+
+```bash
+fly launch --no-deploy              # detects the Dockerfile, writes fly.toml
+fly postgres create                 # or point DATABASE_URL at Supabase/Neon/Fly MPG
+fly postgres attach <pg-app-name>   # sets the DATABASE_URL secret
+fly secrets set MANYROWS_FROM_EMAIL=auth@yourdomain.com \
+                MANYROWS_BASE_URL=https://auth.yourdomain.com
+fly deploy
+```
+
+The binary's default port (`8080`) matches the `internal_port` Fly
+detects, so there's no `$PORT` wiring to do.
 
 ### Reverse-proxy examples
 
@@ -225,6 +391,21 @@ server {
 `X-Forwarded-Proto $scheme` is the load-bearing line: without it the
 binary won't realise requests are HTTPS and the session cookies will
 miss the `Secure` flag.
+
+### Upgrades and backups
+
+- **Upgrades.** Pull the new image (or push a new slug) and restart.
+  Schema migrations run automatically on boot via goose. For rollouts
+  that apply schema separately from the binary, run migrations once
+  out-of-band and set `MANYROWS_DB_SKIP_MIGRATIONS=true` on the new
+  release so it boots without re-racing them.
+- **Backups.** Managed Postgres gives you automated snapshots - use
+  them. On the bundled compose Postgres, `pg_dump` on a schedule. The
+  auto-generated HMAC/encryption keys and OTP pepper live in the
+  database (`system_secrets`), so a Postgres backup captures everything
+  - there's no separate keystore to save.
+- **Health checks.** Point your platform's liveness/readiness probe at
+  `/health` (it also reports the running build version).
 
 ---
 
