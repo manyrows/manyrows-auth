@@ -463,10 +463,12 @@ func (handler *RequestHandler) HandleGetAppForAppKit(w http.ResponseWriter, r *h
 		a.NaverClientID != nil && *a.NaverClientID != "" &&
 		len(a.NaverClientSecretEncrypted) > 0
 
-	// Self-hosted: branding-removal toggle no longer gated by a plan tier.
-	// All apps treated as if branding is removable; fold this into a UI
-	// preference if the operator wants to keep the badge.
-	hideBranding := true
+	// Branding: the "Powered by ManyRows" badge shows on every app right now —
+	// free-tier attribution + distribution, and there's no billing/entitlement
+	// system to gate removal against yet. White-label (hideBranding = true) is
+	// the reserved first paid lever — gate it on plan/entitlement here once
+	// billing exists.
+	hideBranding := false
 
 	passkeyEnabled := false
 	if rpid, err := handler.repo.GetAppWebAuthnRPID(r.Context(), a.ID); err == nil && rpid != nil && *rpid != "" {
