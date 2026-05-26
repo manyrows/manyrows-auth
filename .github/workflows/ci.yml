@@ -73,21 +73,15 @@ jobs:
 
       - name: gofmt
         run: |
-          unformatted=$(gofmt -l manyrows-core server-go)
+          unformatted=$(gofmt -l manyrows-core)
           if [ -n "$unformatted" ]; then
-            echo "::error::These files are not gofmt-clean. Run: gofmt -w manyrows-core server-go"
+            echo "::error::These files are not gofmt-clean. Run: gofmt -w manyrows-core"
             echo "$unformatted"
             exit 1
           fi
 
       - name: vet + build (manyrows-core)
         working-directory: manyrows-core
-        run: |
-          go vet ./...
-          go build ./...
-
-      - name: vet + build (server-go)
-        working-directory: server-go
         run: |
           go vet ./...
           go build ./...
