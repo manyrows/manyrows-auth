@@ -57,6 +57,27 @@ const tc = { code: <code />, b: <b />, strong: <strong /> };
 
 type TFunc = (key: string, opts?: Record<string, unknown>) => string;
 
+// Eyebrow label shared by the User Info dialog sections - mono, uppercase,
+// wide tracking. Matches the table-head / tab vocabulary so the dialog reads
+// as one piece with the rest of the admin chrome.
+function SectionLabel({ children }: { children: React.ReactNode }) {
+  return (
+    <Typography
+      component="div"
+      sx={{
+        fontFamily: "var(--font-mono)",
+        textTransform: "uppercase",
+        letterSpacing: "0.14em",
+        fontSize: 10,
+        fontWeight: 500,
+        color: "text.disabled",
+      }}
+    >
+      {children}
+    </Typography>
+  );
+}
+
 const UserActivityDialog = React.lazy(() => import("./UserActivityDialog.tsx"));
 const UserTagsDialog = React.lazy(() => import("./UserTagsDialog.tsx"));
 
@@ -1968,47 +1989,83 @@ export default function AppUsers({ project, appId: appIdProp }: Props) {
 
               <Divider />
 
-              <Stack spacing={0.5}>
-                <Typography variant="caption" color="text.secondary">{t("auth.email")}</Typography>
-                <Typography variant="body2">{infoMember.email}</Typography>
-              </Stack>
+              <Stack spacing={1.25}>
+                <SectionLabel>{t("projectMembers.detailsLabel", "Details")}</SectionLabel>
+                <Box
+                  sx={{
+                    display: "grid",
+                    gridTemplateColumns: "minmax(120px, max-content) 1fr",
+                    columnGap: 2.5,
+                    rowGap: 1.25,
+                    alignItems: "center",
+                  }}
+                >
+                  <Typography variant="caption" color="text.secondary">{t("auth.email")}</Typography>
+                  <Typography variant="body2" sx={{ wordBreak: "break-all" }}>{infoMember.email}</Typography>
 
-              <Stack spacing={0.5}>
-                <Typography variant="caption" color="text.secondary">{t("projectMembers.userId", "ID")}</Typography>
-                <Typography variant="body2" sx={{ fontFamily: "var(--font-mono)", fontSize: "0.8rem" }}>{infoMember.accountId}</Typography>
-              </Stack>
+                  <Typography variant="caption" color="text.secondary">{t("projectMembers.userId", "ID")}</Typography>
+                  <Typography variant="body2" sx={{ fontFamily: "var(--font-mono)", fontSize: "0.78rem", wordBreak: "break-all" }}>{infoMember.accountId}</Typography>
 
-              <Divider />
-
-              <Stack direction="row" spacing={3}>
-                <Stack spacing={0.5}>
                   <Typography variant="caption" color="text.secondary">{t("projectMembers.emailVerifiedLabel", "Email Verified")}</Typography>
                   <Typography variant="body2">
-                    {infoMember.emailVerifiedAt ? new Date(infoMember.emailVerifiedAt).toLocaleString() : "-"}
+                    {infoMember.emailVerifiedAt ? new Date(infoMember.emailVerifiedAt).toLocaleString() : "—"}
                   </Typography>
-                </Stack>
-                <Stack spacing={0.5}>
+
                   <Typography variant="caption" color="text.secondary">{t("projectMembers.passwordSetLabel", "Password Set")}</Typography>
                   <Stack direction="row" spacing={1} alignItems="center">
                     <Typography variant="body2">
-                      {infoMember.passwordSetAt ? new Date(infoMember.passwordSetAt).toLocaleString() : "-"}
+                      {infoMember.passwordSetAt ? new Date(infoMember.passwordSetAt).toLocaleString() : "—"}
                     </Typography>
                     {infoMember.passwordSetAt && (
                       <Button
                         size="small"
-                        variant="text"
                         onClick={() => { setClearPwMember(infoMember); setClearPwOpen(true); }}
-                        sx={{ fontSize: 11, textTransform: "none", minWidth: 0, py: 0, color: "text.primary" }}
+                        sx={{ fontSize: 12, textTransform: "none", minWidth: 0, minHeight: 0, py: 0.25, px: 0.75 }}
                       >
                         {t("projectMembers.clearPasswordBtn", { defaultValue: "Clear" })}
                       </Button>
                     )}
                   </Stack>
-                </Stack>
+
+                  <Typography variant="caption" color="text.secondary">{t("projectMembers.lastLogin", "Last Login")}</Typography>
+                  <Typography variant="body2">
+                    {infoMember.lastLoginAt ? new Date(infoMember.lastLoginAt).toLocaleString() : "—"}
+                  </Typography>
+
+                  <Typography variant="caption" color="text.secondary">{t("projectMembers.createdAt", "Created")}</Typography>
+                  <Typography variant="body2">
+                    {infoMember.createdAt ? new Date(infoMember.createdAt).toLocaleString() : "—"}
+                  </Typography>
+
+                  <Typography variant="caption" color="text.secondary">{t("projectMembers.status", "Status")}</Typography>
+                  <Stack direction="row" spacing={1} alignItems="center">
+                    <Chip
+                      size="small"
+                      label={infoMember.enabled !== false ? t("projectMembers.enabled", "Enabled") : t("projectMembers.disabled", "Disabled")}
+                      variant={infoMember.enabled !== false ? "filled" : "outlined"}
+                      sx={
+                        infoMember.enabled !== false
+                          ? { height: 22, fontSize: 11, bgcolor: "success.main", color: "#fff" }
+                          : { height: 22, fontSize: 11, borderColor: "error.main", color: "error.main" }
+                      }
+                    />
+                    <Button
+                      size="small"
+                      onClick={() => { setToggleMember(infoMember); setToggleOpen(true); }}
+                      sx={{ fontSize: 12, textTransform: "none", minWidth: 0, minHeight: 0, py: 0.25, px: 0.75 }}
+                    >
+                      {infoMember.enabled !== false
+                        ? t("projectMembers.disableBtn", "Disable")
+                        : t("projectMembers.enableBtn", "Enable")}
+                    </Button>
+                  </Stack>
+                </Box>
               </Stack>
 
-              <Stack spacing={0.5}>
-                <Typography variant="caption" color="text.secondary">{t("projectMembers.accountRecovery", "Account recovery")}</Typography>
+              <Divider />
+
+              <Stack spacing={1}>
+                <SectionLabel>{t("projectMembers.accountRecovery", "Account recovery")}</SectionLabel>
                 <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
                   <Button size="small" variant="outlined" onClick={() => setResetTotpOpen(true)} sx={{ textTransform: "none", fontSize: 12 }}>
                     {t("projectMembers.reset2fa", "Reset 2FA")}
@@ -2064,13 +2121,19 @@ export default function AppUsers({ project, appId: appIdProp }: Props) {
                     {infoMember.emailVerifiedAt ? t("projectMembers.markUnverified", "Mark unverified") : t("projectMembers.markVerified", "Mark verified")}
                   </Button>
                 </Stack>
+              </Stack>
+
+              <Divider />
+
+              <Stack spacing={1}>
+                <SectionLabel>{t("projectMembers.permissionCheckLabel", "Permission check")}</SectionLabel>
                 <Stack direction="row" spacing={1} alignItems="center">
                   <TextField
                     size="small"
                     placeholder={t("projectMembers.permissionSlug", "permission:slug")}
                     value={checkPerm}
                     onChange={(e) => { setCheckPerm(e.target.value); setCheckPermResult(null); }}
-                    sx={{ "& .MuiInputBase-input": { fontSize: 12, py: 0.5 } }}
+                    sx={{ flex: 1, "& .MuiInputBase-input": { fontSize: 12, py: 0.5, fontFamily: "var(--font-mono)" } }}
                   />
                   <Button
                     size="small"
@@ -2102,51 +2165,10 @@ export default function AppUsers({ project, appId: appIdProp }: Props) {
                 </Stack>
               </Stack>
 
-              <Stack direction="row" spacing={3}>
-                <Stack spacing={0.5}>
-                  <Typography variant="caption" color="text.secondary">{t("projectMembers.lastLogin", "Last Login")}</Typography>
-                  <Typography variant="body2">
-                    {infoMember.lastLoginAt ? new Date(infoMember.lastLoginAt).toLocaleString() : "-"}
-                  </Typography>
-                </Stack>
-                <Stack spacing={0.5}>
-                  <Typography variant="caption" color="text.secondary">{t("projectMembers.createdAt", "Created")}</Typography>
-                  <Typography variant="body2">
-                    {infoMember.createdAt ? new Date(infoMember.createdAt).toLocaleString() : "-"}
-                  </Typography>
-                </Stack>
-              </Stack>
-
-              <Stack direction="row" spacing={1} alignItems="center">
-                <Typography variant="caption" color="text.secondary">{t("projectMembers.status", "Status")}</Typography>
-                <Chip
-                  size="small"
-                  label={infoMember.enabled !== false ? t("projectMembers.enabled", "Enabled") : t("projectMembers.disabled", "Disabled")}
-                  variant={infoMember.enabled !== false ? "filled" : "outlined"}
-                  sx={
-                    infoMember.enabled !== false
-                      ? { height: 22, fontSize: 11, bgcolor: "success.main", color: "#fff" }
-                      : { height: 22, fontSize: 11, borderColor: "error.main", color: "error.main" }
-                  }
-                />
-                <Button
-                  size="small"
-                  variant="text"
-                  onClick={() => { setToggleMember(infoMember); setToggleOpen(true); }}
-                  sx={{ fontSize: 12, textTransform: "none", color: "text.primary" }}
-                >
-                  {infoMember.enabled !== false
-                    ? t("projectMembers.disableBtn", "Disable")
-                    : t("projectMembers.enableBtn", "Enable")}
-                </Button>
-              </Stack>
-
               {/* Connected social accounts */}
               <Divider />
               <Stack spacing={0.75}>
-                <Typography sx={{ fontFamily: "var(--font-mono)", textTransform: "uppercase", letterSpacing: "0.14em", fontSize: 10, fontWeight: 500, color: "text.disabled" }}>
-                  {t("projectMembers.connectedAccounts", "Connected Accounts")}
-                </Typography>
+                <SectionLabel>{t("projectMembers.connectedAccounts", "Connected Accounts")}</SectionLabel>
                 {identitiesLoading ? (
                   <CircularProgress size={14} />
                 ) : identities.length === 0 ? (
@@ -2177,9 +2199,7 @@ export default function AppUsers({ project, appId: appIdProp }: Props) {
                 <>
                   <Divider />
                   <Stack direction="row" alignItems="center" justifyContent="space-between">
-                    <Typography sx={{ fontFamily: "var(--font-mono)", textTransform: "uppercase", letterSpacing: "0.14em", fontSize: 10, fontWeight: 500, color: "text.disabled" }}>
-                      {t("projectMembers.directPermissions", "Extra Permissions")}
-                    </Typography>
+                    <SectionLabel>{t("projectMembers.directPermissions", "Extra Permissions")}</SectionLabel>
                     {!directPermEditing && (
                       <Button size="small" onClick={() => setDirectPermEditing(true)} sx={{ textTransform: "none", fontSize: 12 }}>
                         {t("common.edit", "Edit")}
@@ -2237,9 +2257,7 @@ export default function AppUsers({ project, appId: appIdProp }: Props) {
                 <>
                   <Divider />
                   <Stack direction="row" alignItems="center" justifyContent="space-between">
-                    <Typography sx={{ fontFamily: "var(--font-mono)", textTransform: "uppercase", letterSpacing: "0.14em", fontSize: 10, fontWeight: 500, color: "text.disabled" }}>
-                      {t("projectMembers.userFields", "User Fields")}
-                    </Typography>
+                    <SectionLabel>{t("projectMembers.userFields", "User Fields")}</SectionLabel>
                     {!userFieldEditing && (
                       <Button size="small" onClick={() => setUserFieldEditing(true)} sx={{ textTransform: "none", fontSize: 12 }}>
                         {t("common.edit", "Edit")}
