@@ -21,7 +21,6 @@ import {
   DialogContent,
   DialogTitle,
   Collapse,
-  Divider,
   FormControlLabel,
   IconButton,
   InputAdornment,
@@ -38,7 +37,7 @@ import {
   Tooltip,
   Typography,
 } from "@mui/material";
-import { CircleCheck, Copy, Download, Lightbulb, Plus, RefreshCw, Save, Search, Settings, Trash2, TriangleAlert, X } from "lucide-react";
+import { ChevronDown, ChevronRight, CircleCheck, Copy, Download, Lock, Plus, RefreshCw, Save, Search, Settings, Trash2, TriangleAlert, X } from "lucide-react";
 import PageHeader from "../components/PageHeader.tsx";
 import StatusChip from "../components/StatusChip.tsx";
 const tc = { code: <code />, b: <b />, strong: <strong /> };
@@ -273,58 +272,49 @@ function ConfigKeysAbout(props: { secretReady: boolean; expanded: boolean; onTog
   const { secretReady, expanded, onToggle, t } = props;
 
   return (
-    <Paper variant="outlined">
-      <Box
-        sx={{
-          px: 2,
-          py: 1.5,
-          display: "flex",
-          alignItems: "center",
-          gap: 1,
-          cursor: "pointer",
-          "&:hover": { bgcolor: "action.hover" },
-        }}
+    <Box>
+      <Button
         onClick={onToggle}
+        startIcon={expanded ? <ChevronDown size={13} strokeWidth={1.75} /> : <ChevronRight size={13} strokeWidth={1.75} />}
+        sx={{
+          minWidth: 0,
+          px: 0,
+          py: 0,
+          color: "text.secondary",
+          textTransform: "none",
+          fontFamily: "var(--font-mono)",
+          fontSize: 11,
+          letterSpacing: "0.04em",
+          "&:hover": { bgcolor: "transparent", color: "text.primary" },
+        }}
       >
-        <Box component="span" sx={{ color: "info.main" }}><Lightbulb size={14} strokeWidth={1.75} /></Box>
-        <Typography variant="body2" sx={{ flex: 1 }}><Trans i18nKey="configKeys.about.title" components={tc} /></Typography>
-        <Button
-          size="small"
-          variant="outlined"
-          onClick={(e) => { e.stopPropagation(); onToggle(); }}
-          sx={{ minWidth: 0, py: 0.25, px: 1.25, fontSize: 12, textTransform: "none" }}
-        >
-          {expanded ? t("configKeys.about.hide") : t("configKeys.about.learnMore")}
-        </Button>
-      </Box>
+        <Trans i18nKey="configKeys.about.title" components={tc} />
+      </Button>
       <Collapse in={expanded}>
-        <Divider />
-        <Box sx={{ px: 2, py: 1.25 }}>
-          <Stack spacing={0.5}>
-            <Typography variant="caption" color="text.secondary" sx={{ mb: 0.25 }}>
-              <Trans i18nKey="configKeys.about.exposureControls" components={tc} />
-            </Typography>
-            <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
-              <StatusChip label={t("configKeys.exposure.public")} severity="primary" />
-              <Typography variant="caption" color="text.secondary">{t("configKeys.about.publicSafe")}</Typography>
-            </Stack>
-            <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
-              <StatusChip label={t("configKeys.exposure.private")} />
-              <Typography variant="caption" color="text.secondary">{t("configKeys.about.privateServer")}</Typography>
-            </Stack>
-            <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
-              <StatusChip label={t("configKeys.exposure.secret")} severity="warning" />
-              <Typography variant="caption" color="text.secondary">{t("configKeys.about.secretEncrypted")}</Typography>
-            </Stack>
-            {!secretReady && (
-              <Alert severity="warning" sx={{ mt: 0.75, py: 0.25 }}>
-                {t("configKeys.about.secretsRequire")}
-              </Alert>
-            )}
+        <Stack spacing={0.75} sx={{ mt: 1, pl: 2, borderLeft: "2px solid", borderColor: "divider" }}>
+          <Typography variant="caption" color="text.secondary">
+            <Trans i18nKey="configKeys.about.exposureControls" components={tc} />
+          </Typography>
+          <Stack direction="row" spacing={1} alignItems="baseline" flexWrap="wrap" useFlexGap>
+            <StatusChip label={t("configKeys.exposure.public")} severity="primary" />
+            <Typography variant="caption" color="text.secondary">{t("configKeys.about.publicSafe")}</Typography>
           </Stack>
-        </Box>
+          <Stack direction="row" spacing={1} alignItems="baseline" flexWrap="wrap" useFlexGap>
+            <StatusChip label={t("configKeys.exposure.private")} />
+            <Typography variant="caption" color="text.secondary">{t("configKeys.about.privateServer")}</Typography>
+          </Stack>
+          <Stack direction="row" spacing={1} alignItems="baseline" flexWrap="wrap" useFlexGap>
+            <StatusChip label={t("configKeys.exposure.secret")} severity="warning" />
+            <Typography variant="caption" color="text.secondary">{t("configKeys.about.secretEncrypted")}</Typography>
+          </Stack>
+          {!secretReady && (
+            <Alert severity="warning" sx={{ mt: 0.5, py: 0.25 }}>
+              {t("configKeys.about.secretsRequire")}
+            </Alert>
+          )}
+        </Stack>
       </Collapse>
-    </Paper>
+    </Box>
   );
 }
 
@@ -1197,146 +1187,152 @@ export default function ConfigKeys({ project, appId: fixedAppId }: Props) {
         />
       ) : (
       <Stack spacing={2.5}>
-        {/* Status row */}
-        <Stack direction="row" alignItems="center" spacing={1} flexWrap="wrap" useFlexGap>
-          <Box sx={{ flex: 1, minWidth: 0 }} />
+        {/* Toolbar + status line, grouped as one unit */}
+        <Stack spacing={1}>
+          {/* Control bar: env context · search · actions */}
+          <Stack direction={{ xs: "column", md: "row" }} spacing={1.5} alignItems={{ xs: "stretch", md: "center" }}>
+            {/* Env switcher (project-level only — app-level pages show the
+                app in the breadcrumb, so we skip it). */}
+            {!fixedAppId && (
+              <Stack direction="row" spacing={1} alignItems="center">
+                <Typography sx={{ fontFamily: "var(--font-mono)", fontSize: 10, letterSpacing: "0.14em", textTransform: "uppercase", color: "text.disabled", whiteSpace: "nowrap" }}>
+                  {t("configKeys.editing")}
+                </Typography>
+                <TextField
+                  size="small"
+                  select
+                  value={selectedAppId}
+                  onChange={(e) => requestEnvSwitch(e.target.value)}
+                  disabled={!hasApps || loading || saving}
+                  sx={{ minWidth: 180 }}
+                >
+                  {apps.map((app) => (
+                    <MenuItem key={app.id} value={app.id}>
+                      <Stack direction="row" spacing={1} alignItems="center">
+                        <Typography variant="body2">{appTypeLabel(app)}</Typography>
+                        {isProdApp(app) && (
+                          <StatusChip size="xs" label={t("configKeys.prod")} severity="error" />
+                        )}
+                      </Stack>
+                    </MenuItem>
+                  ))}
+                </TextField>
+              </Stack>
+            )}
 
-          <Chip
-            size="small"
-            variant="outlined"
-            label={t("configKeys.keysCount", { count: keysTotal })}
-          />
+            {/* Search */}
+            {keys.length > 0 && (
+              <TextField
+                size="small"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder={t("configKeys.searchPlaceholder")}
+                sx={{ flex: 1, maxWidth: { md: 300 } }}
+                slotProps={{
+                  input: {
+                    startAdornment: (
+                      <InputAdornment position="start">
+                        <Search size={14} strokeWidth={1.75} />
+                      </InputAdornment>
+                    ),
+                    endAdornment: searchQuery ? (
+                      <InputAdornment position="end">
+                        <IconButton size="small" onClick={() => setSearchQuery("")}>
+                          <X size={14} strokeWidth={1.75} />
+                        </IconButton>
+                      </InputAdornment>
+                    ) : undefined,
+                  },
+                }}
+              />
+            )}
 
-          <Tooltip title={secretReady ? t("configKeys.secretsReadyTooltip") : t("configKeys.secretsNotReadyTooltip")}>
-            <Chip
-              size="small"
-              icon={secretReady ? <CircleCheck size={14} strokeWidth={1.75} /> : <TriangleAlert size={14} strokeWidth={1.75} />}
-              label={secretReady ? t("configKeys.secretsReady") : t("configKeys.secretsNotReady")}
-              color={secretReady ? "success" : "warning"}
-              variant={secretReady ? "filled" : "outlined"}
-            />
-          </Tooltip>
+            <Box sx={{ flex: 1, display: { xs: "none", md: "block" } }} />
 
-          <Tooltip title={t("configKeys.refresh")}>
-            <span>
-              <IconButton size="small" onClick={() => void refreshAll({ showSuccess: true })} disabled={loading || saving} aria-label={t("configKeys.refresh")}>
-                <RefreshCw size={14} strokeWidth={1.75} />
-              </IconButton>
-            </span>
-          </Tooltip>
+            {/* Actions */}
+            <Stack direction="row" spacing={1} alignItems="center" justifyContent="flex-end">
+              <Tooltip title={t("configKeys.refresh")}>
+                <span>
+                  <IconButton size="small" onClick={() => void refreshAll({ showSuccess: true })} disabled={loading || saving} aria-label={t("configKeys.refresh")}>
+                    <RefreshCw size={14} strokeWidth={1.75} />
+                  </IconButton>
+                </span>
+              </Tooltip>
 
-          <Button
-            size="small"
-            variant="outlined"
-            startIcon={<Download size={14} strokeWidth={1.75} />}
-            onClick={(e) => setExportAnchorEl(e.currentTarget)}
-            disabled={loading || keys.length === 0}
-          >
-            {t("configKeys.export")}
-          </Button>
-          <Menu
-            anchorEl={exportAnchorEl}
-            open={exportMenuOpen}
-            onClose={() => setExportAnchorEl(null)}
-          >
-            <MenuItem onClick={handleExportCsv}>
-              <ListItemIcon><Download size={14} strokeWidth={1.75} /></ListItemIcon>
-              <ListItemText>{t("configKeys.exportCsv")}</ListItemText>
-            </MenuItem>
-            <MenuItem onClick={handleExportJson}>
-              <ListItemIcon><Download size={14} strokeWidth={1.75} /></ListItemIcon>
-              <ListItemText>{t("configKeys.exportJson")}</ListItemText>
-            </MenuItem>
-          </Menu>
-
-          <Button
-            size="small"
-            variant="contained"
-            disableElevation
-            startIcon={<Plus size={14} strokeWidth={1.75} />}
-            onClick={() => setCreateOpen(true)}
-            disabled={loading || saving}
-          >
-            {t("configKeys.newKey")}
-          </Button>
-
-          {dirty.size > 0 && (
-            <Button
-              size="small"
-              variant="outlined"
-              color="warning"
-              startIcon={<Save size={14} strokeWidth={1.75} />}
-              onClick={() => void saveAll()}
-              disabled={editLocked || saving || !selectedAppId}
-            >
-              {t("configKeys.saveAll", { count: dirty.size })}
-            </Button>
-          )}
-        </Stack>
-
-        {/* App switcher (project-level only - app-level pages
-            already show the app in the breadcrumb, so we skip the row). */}
-        {!fixedAppId && (
-          <Stack direction="row" spacing={1} alignItems="center">
-            <Typography variant="body2" color="text.secondary">
-              {t("configKeys.editing")}
-            </Typography>
-            <TextField
-              size="small"
-              select
-              value={selectedAppId}
-              onChange={(e) => requestEnvSwitch(e.target.value)}
-              disabled={!hasApps || loading || saving}
-              sx={{ minWidth: 200 }}
-            >
-              {apps.map((app) => (
-                <MenuItem key={app.id} value={app.id}>
-                  <Stack direction="row" spacing={1} alignItems="center">
-                    <Typography variant="body2">{appTypeLabel(app)}</Typography>
-                    {isProdApp(app) && (
-                      <StatusChip size="xs" label={t("configKeys.prod")} severity="error" />
-                    )}
-                  </Stack>
+              <Button
+                size="small"
+                variant="outlined"
+                startIcon={<Download size={14} strokeWidth={1.75} />}
+                onClick={(e) => setExportAnchorEl(e.currentTarget)}
+                disabled={loading || keys.length === 0}
+              >
+                {t("configKeys.export")}
+              </Button>
+              <Menu
+                anchorEl={exportAnchorEl}
+                open={exportMenuOpen}
+                onClose={() => setExportAnchorEl(null)}
+              >
+                <MenuItem onClick={handleExportCsv}>
+                  <ListItemIcon><Download size={14} strokeWidth={1.75} /></ListItemIcon>
+                  <ListItemText>{t("configKeys.exportCsv")}</ListItemText>
                 </MenuItem>
-              ))}
-            </TextField>
+                <MenuItem onClick={handleExportJson}>
+                  <ListItemIcon><Download size={14} strokeWidth={1.75} /></ListItemIcon>
+                  <ListItemText>{t("configKeys.exportJson")}</ListItemText>
+                </MenuItem>
+              </Menu>
+
+              <Button
+                size="small"
+                variant="contained"
+                disableElevation
+                startIcon={<Plus size={14} strokeWidth={1.75} />}
+                onClick={() => setCreateOpen(true)}
+                disabled={loading || saving}
+              >
+                {t("configKeys.newKey")}
+              </Button>
+            </Stack>
           </Stack>
-        )}
 
-        {/* Help section */}
-        <ConfigKeysAbout
-          secretReady={secretReady}
-          expanded={helpExpanded}
-          onToggle={() => setHelpExpanded(!helpExpanded)}
-          t={t}
-        />
-
-        {/* Search */}
-        {keys.length > 0 && (
-          <TextField
-            size="small"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder={t("configKeys.searchPlaceholder")}
-            sx={{ maxWidth: 320 }}
-            slotProps={{
-              input: {
-                startAdornment: (
-                  <InputAdornment position="start">
-                    <Search size={14} strokeWidth={1.75} />
-                  </InputAdornment>
-                ),
-                endAdornment: searchQuery ? (
-                  <InputAdornment position="end">
-                    <IconButton size="small" onClick={() => setSearchQuery("")}>
-                      <X size={14} strokeWidth={1.75} />
-                    </IconButton>
-                  </InputAdornment>
-                ) : undefined,
-              },
-            }}
-          />
-        )}
+          {/* Quiet status line + exposure legend disclosure */}
+          <Stack direction="row" spacing={1.25} alignItems="center" flexWrap="wrap" useFlexGap>
+            <Typography sx={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "text.disabled" }}>
+              {t("configKeys.keysCount", { count: keysTotal })}
+            </Typography>
+            <Box component="span" sx={{ color: "text.disabled", opacity: 0.5 }}>·</Box>
+            <Tooltip title={secretReady ? t("configKeys.secretsReadyTooltip") : t("configKeys.secretsNotReadyTooltip")}>
+              <Box
+                component="button"
+                type="button"
+                onClick={() => setTabIndex(1)}
+                sx={{
+                  all: "unset",
+                  cursor: "pointer",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 0.5,
+                  fontFamily: "var(--font-mono)",
+                  fontSize: 11,
+                  color: secretReady ? "success.main" : "warning.main",
+                  "&:hover": { textDecoration: "underline" },
+                  "&:focus-visible": { outline: "2px solid", outlineColor: "primary.main", outlineOffset: 2, borderRadius: 2 },
+                }}
+              >
+                {secretReady ? <CircleCheck size={12} strokeWidth={2} /> : <TriangleAlert size={12} strokeWidth={2} />}
+                {secretReady ? t("configKeys.secretsReady") : t("configKeys.secretsNotReady")}
+              </Box>
+            </Tooltip>
+            <Box sx={{ flex: 1 }} />
+            <ConfigKeysAbout
+              secretReady={secretReady}
+              expanded={helpExpanded}
+              onToggle={() => setHelpExpanded(!helpExpanded)}
+              t={t}
+            />
+          </Stack>
+        </Stack>
 
         {error && <Alert severity="error">{error}</Alert>}
 
@@ -1382,9 +1378,44 @@ export default function ConfigKeys({ project, appId: fixedAppId }: Props) {
           <Alert severity="info">{t("configKeys.noSearchResults")}</Alert>
         )}
 
-        {/* Grouped keys */}
+        {/* Unsaved-changes banner */}
+        {dirty.size > 0 && (
+          <Stack
+            direction="row"
+            spacing={1.5}
+            alignItems="center"
+            sx={{
+              px: 2,
+              py: 1,
+              borderRadius: 2,
+              border: "1px solid",
+              borderColor: "warning.main",
+              bgcolor: alpha("#C97A1A", 0.06),
+            }}
+          >
+            <Box component="span" sx={{ color: "warning.main", display: "inline-flex" }}>
+              <TriangleAlert size={14} strokeWidth={1.75} />
+            </Box>
+            <Typography variant="body2" sx={{ flex: 1 }}>
+              {t("configKeys.unsaved")}
+            </Typography>
+            <Button
+              size="small"
+              variant="contained"
+              disableElevation
+              color="warning"
+              startIcon={<Save size={14} strokeWidth={1.75} />}
+              onClick={() => void saveAll()}
+              disabled={editLocked || saving || !selectedAppId}
+            >
+              {t("configKeys.saveAll", { count: dirty.size })}
+            </Button>
+          </Stack>
+        )}
+
+        {/* Config keys ledger */}
         {!loading && filteredKeys.length > 0 && (
-          <Stack spacing={2}>
+          <Stack spacing={3}>
             {[...groupedKeys.entries()].map(([groupName, groupKeys]) => (
               <Box key={groupName}>
                 {/* Group header */}
@@ -1392,7 +1423,6 @@ export default function ConfigKeys({ project, appId: fixedAppId }: Props) {
                   sx={{
                     display: "block",
                     mb: 1,
-                    ml: 0.5,
                     fontFamily: "var(--font-mono)",
                     textTransform: "uppercase",
                     letterSpacing: "0.14em",
@@ -1404,8 +1434,8 @@ export default function ConfigKeys({ project, appId: fixedAppId }: Props) {
                   {groupName} ({groupKeys.length})
                 </Typography>
 
-                {/* Keys in group */}
-                <Stack spacing={1}>
+                {/* Keys: a typeset ledger, hairline-separated */}
+                <Box sx={{ borderTop: "1px solid", borderColor: "divider" }}>
                   {groupKeys.map((k) => {
                     const appId = selectedAppId || "";
                     const rowId = appId ? `${k.id}::${appId}` : "";
@@ -1417,6 +1447,7 @@ export default function ConfigKeys({ project, appId: fixedAppId }: Props) {
                     const exposure = (k.exposure as ConfigExposure) || "private";
                     const vt = (k.valueType as ConfigValueType) || "string";
                     const appsWithValue = countAppsWithValue(k.id);
+                    const isSecret = exposure === "secret";
 
                     const rowError =
                       d && selectedAppId && isDirty && !d.isUnset
@@ -1430,145 +1461,180 @@ export default function ConfigKeys({ project, appId: fixedAppId }: Props) {
                           })()
                         : null;
 
-                    const secretBlocked = exposure === "secret" && !secretReady;
+                    const secretBlocked = isSecret && !secretReady;
                     const saveDisabled =
                       editLocked || saving || !selectedAppId || !rowId || !dirty.has(rowId) || !!rowError || secretBlocked;
 
+                    // Calm state signalling: a single 2px left accent.
+                    // Unsaved (warning) takes precedence over the secret
+                    // (amber) hint; everything else is borderless. No fills.
+                    const accentColor = isDirty ? "warning.main" : isSecret ? alpha("#C97A1A", 0.45) : "transparent";
+
                     return (
-                      <Paper
+                      <Box
                         key={k.id}
-                        variant="outlined"
                         sx={{
-                          borderRadius: 2,
-                          overflow: "hidden",
-                          borderColor: isDirty ? "warning.main" : exists ? "success.light" : undefined,
-                          borderWidth: isDirty || exists ? 2 : 1,
+                          borderBottom: "1px solid",
+                          borderBottomColor: "divider",
+                          borderLeft: "2px solid",
+                          borderLeftColor: accentColor,
+                          pl: 1.75,
+                          pr: 0.5,
+                          py: 1.25,
+                          transition: "background-color 120ms ease",
+                          "&:hover": { bgcolor: "action.hover" },
+                          "&:hover .row-actions, &:focus-within .row-actions": { opacity: 1 },
                         }}
                       >
-                        {/* Key header row */}
                         <Box
                           sx={{
-                            px: 2,
-                            py: 0.75,
-                            bgcolor: exists
-                              ? exposure === "secret"
-                                ? alpha("#F59E0B", 0.05)
-                                : alpha("#16A34A", 0.05)
-                              : "transparent",
+                            display: "grid",
+                            gridTemplateColumns: { xs: "1fr", md: "minmax(200px, 300px) 1fr auto" },
+                            columnGap: 2,
+                            rowGap: 1,
+                            alignItems: "start",
                           }}
                         >
-                          <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
-                            {/* Key name */}
-                            <Typography
-                              variant="body2"
-                              sx={{ fontFamily: "var(--font-mono)", fontWeight: 600 }}
-                            >
-                              {k.key}
-                            </Typography>
-
-                            <Tooltip title={t("configKeys.copyKeyTooltip")}>
-                              <IconButton size="small" onClick={() => copyKeyToClipboard(k.key)} aria-label={t("configKeys.copyKeyTooltip")}>
-                                <Copy size={14} strokeWidth={1.75} />
-                              </IconButton>
-                            </Tooltip>
-
-                            {/* Badges */}
-                            <Tooltip title={exposureDescription(exposure, t)}>
-                              <span>
-                                <StatusChip
-                                  label={prettyExposure(exposure, t)}
-                                  severity={
-                                    exposure === "public" ? "primary"
-                                      : exposure === "secret" ? "warning"
-                                      : "neutral"
-                                  }
+                          {/* Identity */}
+                          <Box sx={{ minWidth: 0 }}>
+                            <Stack direction="row" spacing={0.75} alignItems="center">
+                              <Tooltip title={t("configKeys.appValueTooltip", { count: appsWithValue, total: apps.length })}>
+                                <Box
+                                  component="span"
+                                  sx={{
+                                    width: 7,
+                                    height: 7,
+                                    borderRadius: "50%",
+                                    flexShrink: 0,
+                                    bgcolor: exists ? "success.main" : "transparent",
+                                    border: exists ? "none" : "1.5px solid",
+                                    borderColor: "text.disabled",
+                                    opacity: exists ? 1 : 0.4,
+                                  }}
                                 />
-                              </span>
-                            </Tooltip>
+                              </Tooltip>
+                              {isSecret && (
+                                <Box component="span" sx={{ color: "warning.main", display: "inline-flex" }}>
+                                  <Lock size={12} strokeWidth={2} />
+                                </Box>
+                              )}
+                              <Typography sx={{ fontFamily: "var(--font-mono)", fontSize: 13, fontWeight: 600, wordBreak: "break-all", lineHeight: 1.3 }}>
+                                {k.key}
+                              </Typography>
+                              <Tooltip title={t("configKeys.copyKeyTooltip")}>
+                                <IconButton
+                                  className="row-actions"
+                                  size="small"
+                                  onClick={() => copyKeyToClipboard(k.key)}
+                                  aria-label={t("configKeys.copyKeyTooltip")}
+                                  sx={{ opacity: 0, transition: "opacity 120ms ease" }}
+                                >
+                                  <Copy size={12} strokeWidth={1.75} />
+                                </IconButton>
+                              </Tooltip>
+                            </Stack>
 
-                            <StatusChip label={typeLabel(vt, t)} uppercase={false} />
+                            {/* Meta: exposure · type · coverage · unsaved */}
+                            <Stack direction="row" spacing={0.75} alignItems="center" flexWrap="wrap" useFlexGap sx={{ mt: 0.25 }}>
+                              <Tooltip title={exposureDescription(exposure, t)}>
+                                <Typography
+                                  component="span"
+                                  sx={{
+                                    fontFamily: "var(--font-mono)",
+                                    fontSize: 10.5,
+                                    letterSpacing: "0.06em",
+                                    textTransform: "uppercase",
+                                    color: isSecret ? "warning.main" : exposure === "public" ? "primary.main" : "text.disabled",
+                                  }}
+                                >
+                                  {prettyExposure(exposure, t)}
+                                </Typography>
+                              </Tooltip>
+                              <Box component="span" sx={{ color: "text.disabled", opacity: 0.4, fontSize: 10 }}>·</Box>
+                              <Typography component="span" sx={{ fontFamily: "var(--font-mono)", fontSize: 10.5, color: "text.disabled" }}>
+                                {typeLabel(vt, t)}
+                              </Typography>
+                              {apps.length > 1 && (
+                                <>
+                                  <Box component="span" sx={{ color: "text.disabled", opacity: 0.4, fontSize: 10 }}>·</Box>
+                                  <Tooltip title={t("configKeys.appValueTooltip", { count: appsWithValue, total: apps.length })}>
+                                    <Typography
+                                      component="span"
+                                      sx={{
+                                        fontFamily: "var(--font-mono)",
+                                        fontSize: 10.5,
+                                        color: appsWithValue === apps.length ? "success.main" : appsWithValue > 0 ? "text.secondary" : "text.disabled",
+                                      }}
+                                    >
+                                      {t("configKeys.appsValue", { count: appsWithValue, total: apps.length })}
+                                    </Typography>
+                                  </Tooltip>
+                                </>
+                              )}
+                              {isDirty && (
+                                <Typography component="span" sx={{ fontFamily: "var(--font-mono)", fontSize: 10.5, fontWeight: 600, color: "warning.main" }}>
+                                  • {t("configKeys.unsaved")}
+                                </Typography>
+                              )}
+                            </Stack>
 
-                            {/* App coverage indicator */}
-                            <Tooltip title={t("configKeys.appValueTooltip", { count: appsWithValue, total: apps.length })}>
-                              <span>
-                                <StatusChip
-                                  label={t("configKeys.appsValue", { count: appsWithValue, total: apps.length })}
-                                  uppercase={false}
-                                  severity={
-                                    appsWithValue === apps.length ? "success"
-                                      : appsWithValue > 0 ? "info"
-                                      : "muted"
-                                  }
-                                />
-                              </span>
-                            </Tooltip>
-
-                            {isDirty && (
-                              <Chip
-                                size="small"
-                                label={t("configKeys.unsaved")}
-                                color="warning"
-                                variant="filled"
-                                sx={{ height: 20, fontSize: 11 }}
-                              />
+                            {k.description && (
+                              <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 0.5 }}>
+                                {k.description}
+                              </Typography>
                             )}
+                          </Box>
 
-                            <Box sx={{ flex: 1 }} />
+                          {/* Value editor */}
+                          <Box sx={{ minWidth: 0 }}>
+                            {!selectedAppId ? (
+                              <Typography variant="body2" color="text.secondary">
+                                {t("configKeys.selectEnvToEdit")}
+                              </Typography>
+                            ) : d ? (
+                              <Stack spacing={0.5}>
+                                {renderValueEditor(k, { ...d, error: rowError ?? d.error ?? null }, exists)}
+                                {rowError && (
+                                  <Alert severity="warning" sx={{ py: 0.25 }}>
+                                    {rowError}
+                                  </Alert>
+                                )}
+                                {secretBlocked && (
+                                  <Alert severity="warning" sx={{ py: 0.25 }}>
+                                    {t("configKeys.secretsRequireKey")}
+                                  </Alert>
+                                )}
+                              </Stack>
+                            ) : null}
+                          </Box>
 
-                            {/* Actions */}
-                            <Stack direction="row" spacing={0.5}>
-                              <Tooltip title={saveDisabled ? (secretBlocked ? t("configKeys.configureEncryptionFirst") : rowError || t("configKeys.saveTooltip")) : t("configKeys.saveTooltip")}>
-                                <span>
-                                  <IconButton size="small" onClick={() => void saveOne(k.id)} disabled={saveDisabled} aria-label={t("configKeys.saveTooltip")}>
-                                    {isDirty && !saveDisabled ? <Box component="span" sx={{ color: "warning.main" }}><Save size={14} strokeWidth={1.75} /></Box> : <Save size={14} strokeWidth={1.75} />}
-                                  </IconButton>
-                                </span>
-                              </Tooltip>
-
-                              <Tooltip title={t("configKeys.deleteKeyTooltip")}>
-                                <span>
-                                  <IconButton size="small" onClick={() => openDelete(k)} disabled={saving} aria-label={t("configKeys.deleteKeyTooltip")}>
-                                    <Trash2 size={14} strokeWidth={1.75} />
-                                  </IconButton>
-                                </span>
-                              </Tooltip>
-                            </Stack>
+                          {/* Row actions (reveal on hover/focus; forced visible when dirty) */}
+                          <Stack
+                            className="row-actions"
+                            direction="row"
+                            spacing={0.25}
+                            sx={{ opacity: isDirty ? 1 : 0, transition: "opacity 120ms ease", justifySelf: "end" }}
+                          >
+                            <Tooltip title={saveDisabled ? (secretBlocked ? t("configKeys.configureEncryptionFirst") : rowError || t("configKeys.saveTooltip")) : t("configKeys.saveTooltip")}>
+                              <span>
+                                <IconButton size="small" onClick={() => void saveOne(k.id)} disabled={saveDisabled} aria-label={t("configKeys.saveTooltip")}>
+                                  {isDirty && !saveDisabled ? <Box component="span" sx={{ color: "warning.main", display: "inline-flex" }}><Save size={14} strokeWidth={1.75} /></Box> : <Save size={14} strokeWidth={1.75} />}
+                                </IconButton>
+                              </span>
+                            </Tooltip>
+                            <Tooltip title={t("configKeys.deleteKeyTooltip")}>
+                              <span>
+                                <IconButton size="small" onClick={() => openDelete(k)} disabled={saving} aria-label={t("configKeys.deleteKeyTooltip")}>
+                                  <Trash2 size={14} strokeWidth={1.75} />
+                                </IconButton>
+                              </span>
+                            </Tooltip>
                           </Stack>
-
-                          {/* Description */}
-                          {k.description && (
-                            <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 0.25 }}>
-                              {k.description}
-                            </Typography>
-                          )}
                         </Box>
-
-                        {/* Value editor */}
-                        <Box sx={{ px: 2, pt: 0, pb: 0.75 }}>
-                          {!selectedAppId ? (
-                            <Typography variant="body2" color="text.secondary">
-                              {t("configKeys.selectEnvToEdit")}
-                            </Typography>
-                          ) : d ? (
-                            <Stack spacing={0.5}>
-                              {renderValueEditor(k, { ...d, error: rowError ?? d.error ?? null }, exists)}
-                              {rowError && (
-                                <Alert severity="warning" sx={{ py: 0.5 }}>
-                                  {rowError}
-                                </Alert>
-                              )}
-                              {secretBlocked && (
-                                <Alert severity="warning" sx={{ py: 0.5 }}>
-                                  {t("configKeys.secretsRequireKey")}
-                                </Alert>
-                              )}
-                            </Stack>
-                          ) : null}
-                        </Box>
-                      </Paper>
+                      </Box>
                     );
                   })}
-                </Stack>
+                </Box>
               </Box>
             ))}
           </Stack>
