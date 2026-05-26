@@ -317,11 +317,14 @@ func buildAuthLogWhere(p ListAuthLogsParams) (string, []any) {
 	if e := strings.TrimSpace(strings.ToLower(p.EmailAttemptedLike)); e != "" {
 		// Match the typed email OR the subject's actual email so a
 		// known user/admin is found even when email_attempted is null.
+		// Escape ILIKE wildcards so an email containing a literal '%' or '_'
+		// matches exactly rather than expanding (matches the user-search paths).
+		arg := emailILIKEArg(e)
 		add(
-			"(email_attempted ILIKE ?"+
-				" OR EXISTS (SELECT 1 FROM users u WHERE u.id = auth_logs.subject_user_id AND u.email ILIKE ?)"+
-				" OR EXISTS (SELECT 1 FROM accounts a WHERE a.id = auth_logs.subject_account_id AND a.email ILIKE ?))",
-			"%"+e+"%", "%"+e+"%", "%"+e+"%",
+			"(email_attempted ILIKE ? ESCAPE '\\'"+
+				" OR EXISTS (SELECT 1 FROM users u WHERE u.id = auth_logs.subject_user_id AND u.email ILIKE ? ESCAPE '\\')"+
+				" OR EXISTS (SELECT 1 FROM accounts a WHERE a.id = auth_logs.subject_account_id AND a.email ILIKE ? ESCAPE '\\'))",
+			arg, arg, arg,
 		)
 	}
 	if p.SessionID != nil {
