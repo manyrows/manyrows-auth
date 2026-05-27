@@ -58,6 +58,7 @@ const ApiKeys = React.lazy(() => import("../workspace/ApiKeys.tsx"));
 const AppCorsOrigins = React.lazy(() => import("./AppCorsOrigins.tsx"));
 const AppIPAllowlist = React.lazy(() => import("./AppIPAllowlist.tsx"));
 const Webhooks = React.lazy(() => import("./Webhooks.tsx"));
+const Branding = React.lazy(() => import("./Branding.tsx"));
 
 interface Props {
   workspace: Workspace;
@@ -506,6 +507,8 @@ export default function ProductHome(props: Props) {
                 <AppUsers project={project} />
               ) : page === "permissions" ? (
                 <Permissions project={project} workspace={workspace} />
+              ) : page === "branding" ? (
+                <Branding project={project} workspace={workspace} />
               ) : page === "settings" ? (
                 <ProductSettings project={project} />
               ) : page === "appDetail" && appId && appPage === "auth-methods" ? (

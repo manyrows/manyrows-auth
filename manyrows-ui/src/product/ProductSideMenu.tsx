@@ -17,6 +17,8 @@ import {
   Layers,
   ShieldCheck,
   ArrowLeftRight,
+  Palette,
+  Sparkles,
 } from "lucide-react";
 
 interface Props {
@@ -108,6 +110,20 @@ export default function ProductSideMenu({ value, basePath, workspaceBasePath }: 
           basePath={basePath}
         />
         <NavItem
+          label={t("project.nav.branding")}
+          value="branding"
+          icon={<Palette size={ICON_SIZE} strokeWidth={ICON_STROKE} />}
+          selected={value}
+          basePath={basePath}
+          badge={
+            <Sparkles
+              size={11}
+              strokeWidth={2}
+              aria-label={t("branding.premium")}
+            />
+          }
+        />
+        <NavItem
           label={t("project.nav.settings")}
           value="settings"
           icon={<Settings size={ICON_SIZE} strokeWidth={ICON_STROKE} />}
@@ -151,12 +167,15 @@ function NavItem({
   selected,
   basePath,
   icon,
+  badge,
 }: {
   label: string;
   value: string;
   selected: string;
   basePath: string;
   icon: React.ReactNode;
+  // Optional trailing mark (e.g. a Sparkles glyph flagging a premium page).
+  badge?: React.ReactNode;
 }) {
   const isSel = selected === value;
   return (
@@ -174,6 +193,20 @@ function NavItem({
           fontWeight: isSel ? 600 : 500,
         }}
       />
+      {badge && (
+        <Box
+          component="span"
+          sx={{
+            display: "inline-flex",
+            alignItems: "center",
+            color: "primary.main",
+            ml: 0.5,
+            flexShrink: 0,
+          }}
+        >
+          {badge}
+        </Box>
+      )}
     </ListItemButton>
   );
 }
