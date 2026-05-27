@@ -139,9 +139,7 @@ const (
 	AuthFailIdentityConflict     AuthLogFailureReason = "identity_conflict"
 	AuthFailProviderExchangeFail AuthLogFailureReason = "provider_exchange_failed"
 	AuthFailAudienceMismatch     AuthLogFailureReason = "audience_mismatch"
-	AuthFailTenantMismatch       AuthLogFailureReason = "tenant_mismatch"
 	AuthFailRateLimited          AuthLogFailureReason = "rate_limited"
-	AuthFailInternalError        AuthLogFailureReason = "internal_error"
 
 	// Passkey-specific verification failures. Generic
 	// AuthFailInvalidCode is too vague for an admin trying to
@@ -195,7 +193,6 @@ type RegisterSource string
 
 const (
 	RegisterSourceSelfSignup RegisterSource = "self_signup"
-	RegisterSourceInvite     RegisterSource = "invite"
 	RegisterSourceAdminAdded RegisterSource = "admin_added"
 )
 
