@@ -11,7 +11,6 @@ type AppUserStatus string
 
 const (
 	AppUserStatusActive   AppUserStatus = "active"
-	AppUserStatusPending  AppUserStatus = "pending"
 	AppUserStatusDisabled AppUserStatus = "disabled"
 )
 
