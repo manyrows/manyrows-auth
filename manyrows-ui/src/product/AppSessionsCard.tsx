@@ -181,8 +181,8 @@ function SessionTransportPane({
         >
           <Eyebrow sx={{ mb: 0.75 }}>{t("sessionTransport.noSetupTitle", { defaultValue: "No extra setup" })}</Eyebrow>
           <Typography variant="body2" color="text.secondary">
-            <Trans i18nKey="sessionTransport.noSetupBody" components={{ code: <code /> }}>
-              Local mode is the AppKit default. There's nothing to configure here - embed <code>&lt;AppKit /&gt;</code> on your site and sign-in just works. To switch later, choose First-party cookie or Backend proxy.
+            <Trans i18nKey="sessionTransport.noSetupBody">
+              Local mode is the AppKit default. There's nothing to configure here - embed AppKit on your site and sign-in just works. To switch later, pick First-party cookie above.
             </Trans>
           </Typography>
         </Box>

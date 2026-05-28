@@ -1141,7 +1141,7 @@
   "sessionTransport.cookieDesc": "ManyRows가 앱과 동일 사이트인 호스트(예: <code>www.yourdomain.com</code> 옆의 <code>auth.yourdomain.com</code>)에 <code>HttpOnly; Secure; SameSite=Lax</code> 세션 쿠키를 설정합니다. 토큰은 JS에 노출되지 않습니다. ManyRows에 커스텀 도메인 CNAME으로 접근하든 동일 호스트 배포로 접근하든 동작합니다. 아래에서 쿠키 도메인을 설정하세요. 커스텀 도메인 형태의 설정 세부 사항은 대화상자에 있습니다.",
   "sessionTransport.dirtyWarning": "현재 설정과 다른 전송 방식을 선택했습니다. 저장하기 전까지 변경 사항은 적용되지 않으며, 모드를 전환하면 아래의 모드별 설정 패널도 초기화되어 적용 후 새 모드를 설정할 수 있습니다.",
   "sessionTransport.noSetupTitle": "추가 설정 없음",
-  "sessionTransport.noSetupBody": "로컬 모드는 AppKit 기본값입니다. 여기서 설정할 것은 없으며, 사이트에 <code>&lt;AppKit /&gt;</code>를 임베드하면 로그인이 바로 동작합니다. 나중에 전환하려면 퍼스트파티 쿠키 또는 백엔드 프록시를 선택하세요.",
+  "sessionTransport.noSetupBody": "로컬 모드는 AppKit 기본값입니다. 여기서 설정할 것은 없으며, 사이트에 AppKit을 임베드하면 로그인이 바로 동작합니다. 나중에 전환하려면 위의 퍼스트파티 쿠키를 선택하세요.",
   "sessionTransport.customDomainTitle": "커스텀 도메인 설정 (선택)",
   "sessionTransport.customDomainBody": "ManyRows가 아직 앱과 동일 사이트 호스트에 있지 않다면 서브도메인(예: <code>auth.yourdomain.com</code>)을 이 설치로 CNAME 연결할 수 있습니다. 대화상자에서 DNS, TLS, Cloudflare 특유의 주의 사항을 다룹니다.",
   "sessionTransport.showInstructions": "설정 안내 보기",

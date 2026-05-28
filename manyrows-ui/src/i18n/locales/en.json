@@ -1141,7 +1141,7 @@
   "sessionTransport.cookieDesc": "ManyRows sets an <code>HttpOnly; Secure; SameSite=Lax</code> session cookie on a host that's same-site as your app (e.g. <code>auth.yourdomain.com</code> alongside <code>www.yourdomain.com</code>). The token never touches JS. Works whether ManyRows is reached via a custom-domain CNAME or a same-host deploy. Configure the cookie domain below; setup details for the custom-domain shape are in the dialog.",
   "sessionTransport.dirtyWarning": "You've picked a different transport than what's currently configured. The change isn't applied until you save - switching modes also clears the per-mode setup panel below so you can configure the new mode after committing.",
   "sessionTransport.noSetupTitle": "No extra setup",
-  "sessionTransport.noSetupBody": "Local mode is the AppKit default. There's nothing to configure here - embed <code>&lt;AppKit /&gt;</code> on your site and sign-in just works. To switch later, choose First-party cookie or Backend proxy.",
+  "sessionTransport.noSetupBody": "Local mode is the AppKit default. There's nothing to configure here - embed AppKit on your site and sign-in just works. To switch later, pick First-party cookie above.",
   "sessionTransport.customDomainTitle": "Custom-domain setup (optional)",
   "sessionTransport.customDomainBody": "If ManyRows isn't already on a same-site host with your app, you can CNAME a subdomain (e.g. <code>auth.yourdomain.com</code>) to this install. The dialog covers DNS, TLS, and Cloudflare-specific gotchas.",
   "sessionTransport.showInstructions": "Show setup instructions",
