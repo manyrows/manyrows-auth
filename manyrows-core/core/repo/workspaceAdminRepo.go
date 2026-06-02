@@ -85,7 +85,7 @@ func (r *Repo) CountWorkspaceOwners(ctx context.Context, workspaceID uuid.UUID) 
 // GetWorkspacesForAccount returns all workspaces the account has access to (via workspace_admins).
 func (r *Repo) GetWorkspacesForAccount(ctx context.Context, accountID uuid.UUID) ([]WorkspaceMembership, error) {
 	const q = `
-SELECT w.id, w.name, w.slug, w.status, w.created_at, w.created_by, w.google_oauth_client_id,
+SELECT w.id, w.name, w.slug, w.status, w.created_at, w.created_by,
        w.setup_checklist_dismissed_at, w.setup_test_email_sent_at, wa.role
 FROM workspace_admins wa
 JOIN workspaces w ON w.id = wa.workspace_id
@@ -102,7 +102,7 @@ ORDER BY w.created_at DESC
 	for rows.Next() {
 		var m WorkspaceMembership
 		if err := rows.Scan(
-			&m.ID, &m.Name, &m.Slug, &m.Status, &m.CreatedAt, &m.CreatedBy, &m.GoogleOAuthClientID,
+			&m.ID, &m.Name, &m.Slug, &m.Status, &m.CreatedAt, &m.CreatedBy,
 			&m.SetupChecklistDismissedAt, &m.SetupTestEmailSentAt, &m.Role,
 		); err != nil {
 			return nil, err

@@ -13,13 +13,12 @@ const (
 )
 
 type Workspace struct {
-	ID                  uuid.UUID       `json:"id"`
-	Name                string          `json:"name"`
-	Slug                string          `json:"slug"`
-	Status              WorkspaceStatus `json:"status"`
-	CreatedAt           time.Time       `json:"createdAt"`
-	CreatedBy           *uuid.UUID      `json:"-"`
-	GoogleOAuthClientID *string         `json:"googleOAuthClientId,omitempty"`
+	ID        uuid.UUID       `json:"id"`
+	Name      string          `json:"name"`
+	Slug      string          `json:"slug"`
+	Status    WorkspaceStatus `json:"status"`
+	CreatedAt time.Time       `json:"createdAt"`
+	CreatedBy *uuid.UUID      `json:"-"`
 
 	// CookieDomain controls the Domain attribute on session cookies
 	// set for any app in this workspace. Typically a parent-domain
