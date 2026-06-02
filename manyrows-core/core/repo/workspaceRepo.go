@@ -25,7 +25,6 @@ func scanWorkspace(s rowScanner) (*core.Workspace, error) {
 		&status,
 		&ws.CreatedAt,
 		&ws.CreatedBy,
-		&ws.GoogleOAuthClientID,
 		&ws.CookieDomain,
 		&ws.SetupChecklistDismissedAt,
 		&ws.SetupTestEmailSentAt,
@@ -60,7 +59,6 @@ select
   status,
   created_at,
   created_by,
-  google_oauth_client_id,
   cookie_domain,
   setup_checklist_dismissed_at,
   setup_test_email_sent_at
@@ -89,7 +87,6 @@ select
   status,
   created_at,
   created_by,
-  google_oauth_client_id,
   cookie_domain,
   setup_checklist_dismissed_at,
   setup_test_email_sent_at
@@ -111,16 +108,16 @@ limit 1;
 
 func (r *Repo) InsertWorkspace(ctx context.Context, ws *core.Workspace, tx pgx.Tx) error {
 	const q = `
-insert into workspaces (id, name, slug, created_by, google_oauth_client_id)
-values ($1, $2, $3, $4, $5);
+insert into workspaces (id, name, slug, created_by)
+values ($1, $2, $3, $4);
 `
-	_, err := tx.Exec(ctx, q, ws.ID, ws.Name, ws.Slug, ws.CreatedBy, ws.GoogleOAuthClientID)
+	_, err := tx.Exec(ctx, q, ws.ID, ws.Name, ws.Slug, ws.CreatedBy)
 	return err
 }
 
 func (r *Repo) UpdateWorkspace(ctx context.Context, ws *core.Workspace) error {
-	const q = `update workspaces set name=$1, slug=$2, google_oauth_client_id=$3 where id=$4`
-	_, err := r.db.Pool().Exec(ctx, q, ws.Name, ws.Slug, ws.GoogleOAuthClientID, ws.ID)
+	const q = `update workspaces set name=$1, slug=$2 where id=$3`
+	_, err := r.db.Pool().Exec(ctx, q, ws.Name, ws.Slug, ws.ID)
 	return err
 }
 
@@ -180,7 +177,6 @@ select
   status,
   created_at,
   created_by,
-  google_oauth_client_id,
   cookie_domain,
   setup_checklist_dismissed_at,
   setup_test_email_sent_at

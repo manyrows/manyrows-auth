@@ -560,8 +560,7 @@ CREATE TABLE workspaces (
     setup_checklist_dismissed_at timestamp with time zone,
     setup_test_email_sent_at timestamp with time zone,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
-    created_by uuid,
-    google_oauth_client_id text
+    created_by uuid
 );
 
 ALTER TABLE ONLY account_email_change_otps
