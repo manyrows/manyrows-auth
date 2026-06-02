@@ -1,5 +1,9 @@
 #!/bin/bash
 
+# Ensure dependencies are installed (workspaces: appkit-ui + manyrows-ui; appkit-react is standalone)
+[ -d node_modules ] || npm install
+[ -d appkit-react/node_modules ] || (cd appkit-react && npm install)
+
 cd appkit-ui
 npm run build
 cd ..
