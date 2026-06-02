@@ -19,9 +19,6 @@ import (
 const (
 	minAdminPasswordLen = 10
 
-	// Rate limit windows (reuse the same shape as magic link)
-	adminPasswordAuthWindow = 10 * time.Minute
-
 	// Separate purposes so you can tune independently
 	attemptPurposeAdminRegister = "admin_register_pw"
 	attemptPurposeAdminLogin    = "admin_login_pw"

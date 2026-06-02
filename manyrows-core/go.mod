@@ -14,7 +14,6 @@ require (
 	github.com/pquerna/otp v1.5.0
 	github.com/pressly/goose/v3 v3.27.1
 	github.com/rs/zerolog v1.35.1
-	github.com/shopspring/decimal v1.4.0
 	github.com/skip2/go-qrcode v0.0.0-20200617195104-da1b6568686e
 	github.com/trustelem/zxcvbn v1.0.1
 	golang.org/x/crypto v0.51.0

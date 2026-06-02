@@ -150,21 +150,6 @@ func (r *Repo) UpdateRotatedRefreshTokenReplacement(ctx context.Context, oldID, 
 	return err
 }
 
-// RevokeClientRefreshToken marks a refresh token as revoked by hash.
-func (r *Repo) RevokeClientRefreshToken(ctx context.Context, tokenHash string, revokedAt time.Time) error {
-	if tokenHash == "" {
-		return nil
-	}
-
-	const q = `
-update client_refresh_tokens
-set revoked_at = $2
-where token_hash = $1 and revoked_at is null;
-`
-	_, err := r.db.Pool().Exec(ctx, q, tokenHash, revokedAt)
-	return err
-}
-
 // RevokeAllRefreshTokensForSession revokes all refresh tokens for a session.
 func (r *Repo) RevokeAllRefreshTokensForSession(ctx context.Context, sessionID uuid.UUID, revokedAt time.Time) error {
 	if sessionID == uuid.Nil {

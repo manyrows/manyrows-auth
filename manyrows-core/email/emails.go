@@ -264,38 +264,6 @@ func sendCustomSMTP(e *Email, cfg *SMTPConfig) error {
 	return c.Quit()
 }
 
-// SendLoginToWorkspaceEmail todo: optional project name to give email context (but always log into workspace)
-func (s *Service) SendLoginToWorkspaceEmail(toEmail string, magicLink string, workspaceName string, lang string) error {
-	subject := fmt.Sprintf(T(lang, "workspace.login.subject"), workspaceName)
-	body := fmt.Sprintf(T(lang, "workspace.login.body"), workspaceName, magicLink, workspaceName)
-
-	email := Email{
-		To:      toEmail,
-		From:    WorkspaceFrom(workspaceName),
-		Subject: subject,
-		Body:    body,
-	}
-	return s.Send(&email)
-}
-
-func (s *Service) SendWorkspaceOTPEmail(toEmail string, code string, workspaceName string, lang string) error {
-	toEmail = strings.TrimSpace(toEmail)
-	code = strings.TrimSpace(code)
-	workspaceName = strings.TrimSpace(workspaceName)
-	if toEmail == "" || code == "" {
-		return errors.New("missing email or code")
-	}
-	subject := fmt.Sprintf(T(lang, "workspace.otp.subject"), workspaceName)
-	body := fmt.Sprintf(T(lang, "workspace.otp.body"), workspaceName, code)
-	email := Email{
-		To:      toEmail,
-		From:    WorkspaceFrom(workspaceName),
-		Subject: subject,
-		Body:    body,
-	}
-	return s.Send(&email)
-}
-
 func (s *Service) SendAdminEmailValidationCode(toEmail string, code string, lang string) error {
 	toEmail = strings.TrimSpace(toEmail)
 	code = strings.TrimSpace(code)
@@ -328,29 +296,6 @@ func (s *Service) SendAdminPasswordResetCode(toEmail string, code string, lang s
 	email := Email{
 		To:      toEmail,
 		From:    defaultFromEmail(),
-		Subject: subject,
-		Body:    body,
-	}
-	return s.Send(&email)
-}
-
-func (s *Service) SendWorkspacePasswordResetCode(toEmail string, code string, workspaceName string, lang string) error {
-	toEmail = strings.TrimSpace(toEmail)
-	code = strings.TrimSpace(code)
-	workspaceName = strings.TrimSpace(workspaceName)
-	if toEmail == "" || code == "" {
-		return errors.New("missing email or code")
-	}
-	if workspaceName == "" {
-		workspaceName = "your workspace"
-	}
-
-	subject := fmt.Sprintf(T(lang, "workspace.password_reset.subject"), workspaceName)
-	body := fmt.Sprintf(T(lang, "workspace.password_reset.body"), workspaceName, code)
-
-	email := Email{
-		To:      toEmail,
-		From:    WorkspaceFrom(workspaceName),
 		Subject: subject,
 		Body:    body,
 	}

@@ -19,10 +19,6 @@ func init() {
 		"admin.login.subject": "{brand} 로그인 링크",
 		"admin.login.body":    "안녕하세요,\n\n이 매직 링크를 사용하여 {brand}에 로그인하세요:\n\n%s\n\n요청하지 않으셨다면 이 이메일을 무시하셔도 됩니다.\n",
 
-		// Workspace login
-		"workspace.login.subject": "%s 로그인 링크",
-		"workspace.login.body":    "안녕하세요,\n\n이 매직 링크를 사용하여 %s에 로그인하세요:\n\n%s\n\n조직: %s\n\n요청하지 않으셨다면 이 이메일을 무시하셔도 됩니다.\n",
-
 		// Workspace OTP
 		"workspace.otp.subject": "%s 로그인 코드",
 		"workspace.otp.body":    "%s의 로그인 코드입니다:\n\n%s\n\n이 코드는 10분 후에 만료됩니다.\n요청하지 않으셨다면 이 이메일을 무시하셔도 됩니다.",
