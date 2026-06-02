@@ -1,0 +1,8 @@
+{
+  "name": "manyrows",
+  "private": true,
+  "workspaces": [
+    "manyrows-ui",
+    "appkit-ui"
+  ]
+}

@@ -1,0 +1,74 @@
+# Self-host ManyRows in one command:
+#
+#   cp .env.example .env       # edit the values
+#   docker compose up -d
+#   open http://localhost:8080  # first registrant becomes super-admin
+#
+# Two services: ManyRows itself + Postgres. TLS is your reverse proxy's
+# job — terminate at Caddy, Traefik, nginx, Cloudflare, or whatever
+# your platform provides, and forward HTTPS to this container.
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-manyrows}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-manyrows}
+      POSTGRES_DB: ${POSTGRES_DB:-manyrows}
+    volumes:
+      - manyrows-db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-manyrows} -d ${POSTGRES_DB:-manyrows}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  web:
+    build:
+      context: .
+      args:
+        # Stamped into the binary (shown in /health and the admin UI).
+        # Pass a real value: VERSION=$(git describe --tags --always --dirty) docker compose up -d --build
+        VERSION: ${VERSION:-dev}
+    image: manyrows
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      # host:container — container always listens on 8080 (the binary
+      # default). MANYROWS_PORT overrides the host side only, so you
+      # can pick a free port on the laptop without rebuilding.
+      - "${MANYROWS_PORT:-8080}:8080"
+    environment:
+      # Required.
+      DATABASE_URL: postgres://${POSTGRES_USER:-manyrows}:${POSTGRES_PASSWORD:-manyrows}@db:5432/${POSTGRES_DB:-manyrows}?sslmode=disable
+
+      # Sender address on outbound mail. Required before the install
+      # can send anything (admin register, password reset, magic
+      # links). Use a real address on your own domain — DKIM/SPF on
+      # the SMTP provider side need it to match for delivery.
+      MANYROWS_FROM_EMAIL: ${MANYROWS_FROM_EMAIL:-}
+
+      # Pinned by the first /admin/register if unset; set explicitly
+      # when sitting behind a reverse proxy on a known hostname.
+      MANYROWS_BASE_URL: ${MANYROWS_BASE_URL:-}
+
+      # Optional. Each defaults sensibly when unset:
+      #   - MANYROWS_DB_SCHEMA defaults to "manyrows"
+      #   - HMAC keys / encryption key / OTP pepper auto-generate
+      #     into system_secrets on first boot
+      #   - SMTP unset → mail logs to stdout (set MANYROWS_SMTP_HOST
+      #     etc. to actually deliver)
+      MANYROWS_DB_SCHEMA: ${MANYROWS_DB_SCHEMA:-}
+      MANYROWS_SMTP_HOST: ${MANYROWS_SMTP_HOST:-}
+      MANYROWS_SMTP_PORT: ${MANYROWS_SMTP_PORT:-}
+      MANYROWS_SMTP_USERNAME: ${MANYROWS_SMTP_USERNAME:-}
+      MANYROWS_SMTP_PASSWORD: ${MANYROWS_SMTP_PASSWORD:-}
+      MANYROWS_TURNSTILE_ENABLED: ${MANYROWS_TURNSTILE_ENABLED:-false}
+      MANYROWS_TURNSTILE_SITE_KEY: ${MANYROWS_TURNSTILE_SITE_KEY:-}
+      MANYROWS_TURNSTILE_SECRET_KEY: ${MANYROWS_TURNSTILE_SECRET_KEY:-}
+
+volumes:
+  manyrows-db:

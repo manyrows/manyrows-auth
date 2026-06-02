@@ -1,0 +1,1851 @@
+openapi: 3.0.3
+info:
+  title: ManyRows Server-to-Server API
+  version: "1.0.0"
+  description: >
+    The customer backend (server-to-server) API. Authenticate every request
+    with a workspace API key in the `X-API-Key` header (or
+    `Authorization: Bearer <key>`). Every endpoint is scoped to **members of the
+    calling app**: the user pool only shares credentials across apps (SSO), it is
+    not an access boundary, so a key for one app only sees and acts on users who
+    have joined that app. For isolation between apps, give them separate pools.
+
+    Requests are rate limited per API key (HTTP 429 + `Retry-After` when
+    exceeded). Errors are returned as JSON `{ "error": "<code>", "message": "..." }`.
+servers:
+  - url: https://{host}/x/{workspaceSlug}/api/v1
+    description: A workspace's server API base.
+    variables:
+      host:
+        default: auth.example.com
+        description: Your ManyRows host.
+      workspaceSlug:
+        default: your-workspace
+        description: The workspace slug.
+
+security:
+  - ApiKeyAuth: []
+
+tags:
+  - name: Delivery
+    description: Runtime config and feature flags for the app.
+  - name: Authorization
+    description: Permission checks and the role/permission catalog.
+  - name: Users
+    description: Provision, look up, modify, and remove app members.
+  - name: User fields
+    description: Read and write per-user metadata.
+  - name: Config and flags
+    description: Manage config values and feature-flag overrides (read via delivery).
+  - name: Webhooks
+    description: Manage the endpoints ManyRows POSTs auth events to.
+
+paths:
+  /apps/{appId}:
+    parameters:
+      - $ref: "#/components/parameters/AppId"
+    get:
+      tags: [Delivery]
+      summary: Runtime delivery
+      description: >
+        All config values and feature flags for the app. Supports `ETag` /
+        `If-None-Match` (returns `304 Not Modified` when unchanged).
+      operationId: getDelivery
+      responses:
+        "200":
+          description: Config and flags.
+          headers:
+            ETag:
+              schema: { type: string }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DeliveryResponse" }
+        "304": { description: Not modified (matched `If-None-Match`). }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+
+  /apps/{appId}/check-permission:
+    parameters:
+      - $ref: "#/components/parameters/AppId"
+    get:
+      tags: [Authorization]
+      summary: Check a user's permission
+      operationId: checkPermission
+      parameters:
+        - name: accountId
+          in: query
+          required: true
+          description: The user ID (a member of this app) to check.
+          schema: { type: string, format: uuid }
+        - name: permission
+          in: query
+          required: true
+          description: Permission slug, e.g. `posts:read`.
+          schema: { type: string }
+      responses:
+        "200":
+          description: Whether the user has the permission.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CheckPermissionResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /apps/{appId}/roles:
+    parameters:
+      - $ref: "#/components/parameters/AppId"
+    get:
+      tags: [Authorization]
+      summary: List roles
+      description: The project's roles, each with the permission slugs it grants.
+      operationId: listRoles
+      responses:
+        "200":
+          description: Role catalog.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RolesListResponse" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+    post:
+      tags: [Authorization]
+      summary: Define a role
+      description: Create a role in the project, optionally with permission slugs.
+      operationId: createRole
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateRoleRequest" }
+      responses:
+        "201":
+          description: The created role.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RoleSummary" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "409":
+          description: A role with that slug already exists.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /apps/{appId}/roles/{slug}:
+    parameters:
+      - $ref: "#/components/parameters/AppId"
+      - name: slug
+        in: path
+        required: true
+        schema: { type: string }
+    get:
+      tags: [Authorization]
+      summary: Get a role
+      description: One role with its granted permission slugs.
+      operationId: getRole
+      responses:
+        "200":
+          description: The role.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RoleSummary" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    patch:
+      tags: [Authorization]
+      summary: Update a role
+      description: Update the role's name and/or its granted permission slugs (omit a field to leave it unchanged).
+      operationId: updateRole
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UpdateRoleRequest" }
+      responses:
+        "200":
+          description: The updated role.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RoleSummary" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+    delete:
+      tags: [Authorization]
+      summary: Delete a role
+      operationId: deleteRole
+      responses:
+        "204": { description: Deleted. }
+        "400": { $ref: "#/components/responses/BadRequest" }
+
+  /apps/{appId}/permissions:
+    parameters:
+      - $ref: "#/components/parameters/AppId"
+    get:
+      tags: [Authorization]
+      summary: List permissions
+      operationId: listPermissions
+      responses:
+        "200":
+          description: Permission catalog.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PermissionsListResponse" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+    post:
+      tags: [Authorization]
+      summary: Define a permission
+      operationId: createPermission
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreatePermissionRequest" }
+      responses:
+        "201":
+          description: The created permission.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PermissionSummary" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "409":
+          description: A permission with that slug already exists.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /apps/{appId}/permissions/{slug}:
+    parameters:
+      - $ref: "#/components/parameters/AppId"
+      - name: slug
+        in: path
+        required: true
+        schema: { type: string }
+    get:
+      tags: [Authorization]
+      summary: Get a permission
+      operationId: getPermission
+      responses:
+        "200":
+          description: The permission.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PermissionSummary" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    patch:
+      tags: [Authorization]
+      summary: Rename a permission
+      operationId: updatePermission
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UpdatePermissionRequest" }
+      responses:
+        "200":
+          description: The updated permission.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PermissionSummary" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+    delete:
+      tags: [Authorization]
+      summary: Delete a permission
+      operationId: deletePermission
+      responses:
+        "204": { description: Deleted. }
+        "400": { $ref: "#/components/responses/BadRequest" }
+
+  /apps/{appId}/config/{configKey}:
+    parameters:
+      - $ref: "#/components/parameters/AppId"
+      - name: configKey
+        in: path
+        required: true
+        description: The config key's string identifier.
+        schema: { type: string }
+    get:
+      tags: [Config and flags]
+      summary: Get a config value
+      description: This app's raw value for the key (for read-modify-write). Secret keys 400; no value set 404.
+      operationId: getConfigValue
+      responses:
+        "200":
+          description: The app's value for the key.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ConfigValueResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    put:
+      tags: [Config and flags]
+      summary: Set a config value
+      description: >
+        Set this app's value for a public or private config key. Secret keys are
+        rejected (their values are sealed client-side; set them in the dashboard).
+        Read values back via the delivery endpoint (`GET /`).
+      operationId: setConfigValue
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SetConfigValueRequest" }
+      responses:
+        "200":
+          description: The stored value.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ConfigValueResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      tags: [Config and flags]
+      summary: Clear a config value
+      operationId: deleteConfigValue
+      responses:
+        "204": { description: Cleared (idempotent). }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /apps/{appId}/features/{flagKey}:
+    parameters:
+      - $ref: "#/components/parameters/AppId"
+      - name: flagKey
+        in: path
+        required: true
+        description: The feature flag's string identifier.
+        schema: { type: string }
+    get:
+      tags: [Config and flags]
+      summary: Get a feature-flag override
+      description: This app's override for the flag (enabled, targeted role slugs, status). 404 if no override is set.
+      operationId: getFeatureFlagOverride
+      responses:
+        "200":
+          description: The app's override for the flag.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/FeatureFlagOverrideResponse" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    put:
+      tags: [Config and flags]
+      summary: Set a feature-flag override
+      description: Enable/disable a flag for this app, optionally targeting a set of role slugs.
+      operationId: setFeatureFlagOverride
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SetFeatureFlagRequest" }
+      responses:
+        "200":
+          description: The resulting override.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/FeatureFlagOverrideResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      tags: [Config and flags]
+      summary: Clear a feature-flag override
+      description: Removes the override so the flag falls back to its default.
+      operationId: clearFeatureFlagOverride
+      responses:
+        "204": { description: Cleared (idempotent). }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /apps/{appId}/config-keys:
+    parameters:
+      - $ref: "#/components/parameters/AppId"
+    get:
+      tags: [Config and flags]
+      summary: List config-key definitions
+      operationId: listConfigKeys
+      responses:
+        "200":
+          description: The project's config-key definitions.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ConfigKeysListResponse" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+    post:
+      tags: [Config and flags]
+      summary: Define a config key
+      description: Create a config key (the schema). Per-app values are set via PUT /config/{key}.
+      operationId: createConfigKey
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateConfigKeyRequest" }
+      responses:
+        "201":
+          description: The created config key.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ConfigKeyDef" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "409":
+          description: A config key with that key already exists.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /apps/{appId}/config-keys/{key}:
+    parameters:
+      - $ref: "#/components/parameters/AppId"
+      - name: key
+        in: path
+        required: true
+        schema: { type: string }
+    get:
+      tags: [Config and flags]
+      summary: Get a config-key definition
+      operationId: getConfigKey
+      responses:
+        "200":
+          description: The config-key definition.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ConfigKeyDef" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    patch:
+      tags: [Config and flags]
+      summary: Update a config key
+      operationId: updateConfigKey
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UpdateConfigKeyRequest" }
+      responses:
+        "200":
+          description: The updated config key.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ConfigKeyDef" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      tags: [Config and flags]
+      summary: Delete a config key
+      description: Deletes the key and its per-app values.
+      operationId: deleteConfigKey
+      responses:
+        "204": { description: Deleted. }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /apps/{appId}/feature-flags:
+    parameters:
+      - $ref: "#/components/parameters/AppId"
+    get:
+      tags: [Config and flags]
+      summary: List feature-flag definitions
+      operationId: listFeatureFlags
+      responses:
+        "200":
+          description: The project's feature-flag definitions.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/FeatureFlagsListResponse" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+    post:
+      tags: [Config and flags]
+      summary: Define a feature flag
+      description: Create a feature flag (the schema). Per-app overrides are set via PUT /features/{key}.
+      operationId: createFeatureFlag
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateFeatureFlagDefRequest" }
+      responses:
+        "201":
+          description: The created feature flag.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/FeatureFlagDef" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "409":
+          description: A feature flag with that key already exists.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /apps/{appId}/feature-flags/{key}:
+    parameters:
+      - $ref: "#/components/parameters/AppId"
+      - name: key
+        in: path
+        required: true
+        schema: { type: string }
+    get:
+      tags: [Config and flags]
+      summary: Get a feature-flag definition
+      operationId: getFeatureFlag
+      responses:
+        "200":
+          description: The feature-flag definition.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/FeatureFlagDef" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    patch:
+      tags: [Config and flags]
+      summary: Update a feature flag
+      operationId: updateFeatureFlag
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UpdateFeatureFlagDefRequest" }
+      responses:
+        "200":
+          description: The updated feature flag.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/FeatureFlagDef" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      tags: [Config and flags]
+      summary: Delete a feature flag
+      description: Deletes the flag and its per-app overrides.
+      operationId: deleteFeatureFlag
+      responses:
+        "204": { description: Deleted. }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /apps/{appId}/users:
+    parameters:
+      - $ref: "#/components/parameters/AppId"
+    get:
+      tags: [Users]
+      summary: List members or look one up by email
+      description: >
+        With no `email`, lists the app's members (paginated, `search` substring
+        filter) and returns a `MembersListResponse`. With `email=<addr>`, returns
+        that single member as a `ServerUserResponse`.
+      operationId: listOrLookupUsers
+      parameters:
+        - name: email
+          in: query
+          description: Exact email — returns a single deep user instead of a list.
+          schema: { type: string, format: email }
+        - name: search
+          in: query
+          description: Email substring filter for the list.
+          schema: { type: string }
+        - name: page
+          in: query
+          schema: { type: integer, default: 0, minimum: 0 }
+        - name: pageSize
+          in: query
+          schema: { type: integer, default: 50, maximum: 200 }
+      responses:
+        "200":
+          description: A member list, or a single user when `email` is given.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: "#/components/schemas/MembersListResponse"
+                  - $ref: "#/components/schemas/ServerUserResponse"
+        "404": { $ref: "#/components/responses/NotFound" }
+    post:
+      tags: [Users]
+      summary: Provision a user
+      description: >
+        Create-or-find a user by email in the app's pool and add them to the app,
+        in one idempotent call. Returns `201` for a new identity, `200` when an
+        existing one was reused.
+      operationId: createUser
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateUserRequest" }
+      responses:
+        "201":
+          description: A new identity was created.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CreateUserResponse" }
+        "200":
+          description: An existing identity was reused (now a member).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CreateUserResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+
+  /apps/{appId}/users:batch:
+    parameters:
+      - $ref: "#/components/parameters/AppId"
+    post:
+      tags: [Users]
+      summary: Provision many users at once
+      description: >
+        Provision up to 100 users in one call, all with the same optional role
+        set. Roles are resolved once (a bad slug fails the whole request); each
+        email is then provisioned independently and reported in `results`, so
+        one bad email doesn't sink the rest. Idempotent per email.
+      operationId: batchCreateUsers
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/BatchCreateUsersRequest" }
+      responses:
+        "200":
+          description: Per-email results.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/BatchCreateUsersResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+
+  /apps/{appId}/users/{userId}:
+    parameters:
+      - $ref: "#/components/parameters/AppId"
+      - $ref: "#/components/parameters/UserId"
+    get:
+      tags: [Users]
+      summary: Get a user by ID
+      operationId: getUser
+      responses:
+        "200":
+          description: The user with roles, permissions, and field values.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ServerUserResponse" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    patch:
+      tags: [Users]
+      summary: Suspend or re-enable a user
+      description: >
+        Set the user's status in this app. `disabled` blocks sign-in to this app
+        and revokes its active sessions; `active` restores access. Per-app — a
+        user shared across apps in one pool is unaffected elsewhere.
+      operationId: setUserStatus
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SetUserStatusRequest" }
+      responses:
+        "200":
+          description: Updated status.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/UserStatusResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      tags: [Users]
+      summary: Remove a user from the app
+      description: >
+        Drops the user's membership, roles, permission overrides, and sessions
+        for this app. If that leaves the user in no other app, the pool identity
+        is deleted too; otherwise it's kept.
+      operationId: removeUser
+      responses:
+        "200":
+          description: Removed; says whether the identity was also deleted.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RemoveUserResponse" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /apps/{appId}/users/{userId}/roles:
+    parameters:
+      - $ref: "#/components/parameters/AppId"
+      - $ref: "#/components/parameters/UserId"
+    put:
+      tags: [Users]
+      summary: Replace a user's roles
+      description: >
+        Full replace (not merge), by role slug. An empty array clears all roles
+        and revokes the user's sessions for the app.
+      operationId: replaceUserRoles
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ReplaceRolesRequest" }
+      responses:
+        "200":
+          description: The resulting role slugs.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RolesResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /apps/{appId}/users/{userId}/roles/{slug}:
+    parameters:
+      - $ref: "#/components/parameters/AppId"
+      - $ref: "#/components/parameters/UserId"
+      - name: slug
+        in: path
+        required: true
+        description: Role slug.
+        schema: { type: string }
+    post:
+      tags: [Users]
+      summary: Grant one role
+      description: Add a single role without disturbing the user's other roles (idempotent). Returns the resulting role slugs.
+      operationId: addUserRole
+      responses:
+        "200":
+          description: The resulting role slugs.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RolesResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      tags: [Users]
+      summary: Revoke one role
+      description: Remove a single role (idempotent). Returns the resulting role slugs.
+      operationId: removeUserRole
+      responses:
+        "200":
+          description: The resulting role slugs.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RolesResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /apps/{appId}/users/{userId}/permissions:
+    parameters:
+      - $ref: "#/components/parameters/AppId"
+      - $ref: "#/components/parameters/UserId"
+    get:
+      tags: [Users]
+      summary: List a user's direct permission overrides
+      description: Per-user grants, separate from the permissions inherited via roles.
+      operationId: getUserPermissions
+      responses:
+        "200":
+          description: Direct permission slugs.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/UserPermissionsResponse" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    put:
+      tags: [Users]
+      summary: Replace a user's direct permission overrides
+      operationId: setUserPermissions
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SetPermissionsRequest" }
+      responses:
+        "200":
+          description: The resulting permission slugs.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/UserPermissionsResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /apps/{appId}/users/{userId}/sessions:
+    parameters:
+      - $ref: "#/components/parameters/AppId"
+      - $ref: "#/components/parameters/UserId"
+    get:
+      tags: [Users]
+      summary: List a user's sessions for this app
+      operationId: listUserSessions
+      responses:
+        "200":
+          description: The user's active sessions in this app.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SessionsListResponse" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      tags: [Users]
+      summary: Revoke all a user's sessions (force-logout)
+      operationId: revokeUserSessions
+      responses:
+        "200":
+          description: Count of sessions revoked.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RevokeSessionsResponse" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /apps/{appId}/users/{userId}/sessions/{sessionId}:
+    parameters:
+      - $ref: "#/components/parameters/AppId"
+      - $ref: "#/components/parameters/UserId"
+      - name: sessionId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    delete:
+      tags: [Users]
+      summary: Revoke a single session
+      operationId: revokeUserSession
+      responses:
+        "204": { description: Revoked. }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /apps/{appId}/users/{userId}/password:
+    parameters:
+      - $ref: "#/components/parameters/AppId"
+      - $ref: "#/components/parameters/UserId"
+    put:
+      tags: [Users]
+      summary: Set a user's password
+      description: >
+        Set or replace the member's password. Enforced against the app's
+        password policy (length + zxcvbn strength). Existing sessions are left
+        intact — revoke them separately to force re-login.
+      operationId: setUserPassword
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SetPasswordRequest" }
+      responses:
+        "204": { description: Password set. }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      tags: [Users]
+      summary: Clear a user's password
+      description: >
+        Remove the member's password; they can't sign in with email+password
+        until a new one is set (OAuth/passkey still work).
+      operationId: clearUserPassword
+      responses:
+        "204": { description: Password cleared. }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /apps/{appId}/users/{userId}/enabled:
+    parameters:
+      - $ref: "#/components/parameters/AppId"
+      - $ref: "#/components/parameters/UserId"
+    put:
+      tags: [Users]
+      summary: Enable/disable a user pool-wide (ban)
+      description: >
+        Sets the identity's global enabled flag — distinct from per-app suspend
+        (PATCH /users/{userId}). Disabling blocks sign-in to EVERY app sharing
+        the pool and revokes all the user's sessions.
+      operationId: setUserEnabled
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SetEnabledRequest" }
+      responses:
+        "200":
+          description: The resulting enabled state.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/UserEnabledResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /apps/{appId}/users/{userId}/email:
+    parameters:
+      - $ref: "#/components/parameters/AppId"
+      - $ref: "#/components/parameters/UserId"
+    put:
+      tags: [Users]
+      summary: Change a user's email
+      description: >
+        Set the user's email and mark it verified (the caller vouches for it;
+        no re-verification round-trip). The new address must be unique within
+        the pool.
+      operationId: changeUserEmail
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ChangeEmailRequest" }
+      responses:
+        "200":
+          description: The updated email.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ChangeEmailResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409":
+          description: The email is already in use in this pool.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /apps/{appId}/users/{userId}/email-verified:
+    parameters:
+      - $ref: "#/components/parameters/AppId"
+      - $ref: "#/components/parameters/UserId"
+    put:
+      tags: [Users]
+      summary: Mark a user's email verified or unverified
+      description: >
+        Set the verified state of the member's email (a pool-level attribute, so
+        it applies across every app sharing the pool). Use when your own flow has
+        confirmed or invalidated the address.
+      operationId: setUserEmailVerified
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SetEmailVerifiedRequest" }
+      responses:
+        "204": { description: Updated. }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /apps/{appId}/webhooks:
+    parameters:
+      - $ref: "#/components/parameters/AppId"
+    get:
+      tags: [Webhooks]
+      summary: List webhook subscriptions
+      description: The app's registered webhook endpoints. Signing secrets are redacted.
+      operationId: listWebhooks
+      responses:
+        "200":
+          description: The app's webhooks.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/WebhooksListResponse" }
+    post:
+      tags: [Webhooks]
+      summary: Register a webhook
+      description: >
+        Register an endpoint to receive auth events. The response includes the
+        signing secret **once** — store it; it's redacted on every later read.
+        Up to 10 per app.
+      operationId: createWebhook
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateWebhookRequest" }
+      responses:
+        "201":
+          description: Created (includes the signing secret).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Webhook" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "409":
+          description: Per-app webhook limit reached.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /apps/{appId}/webhooks/{webhookId}:
+    parameters:
+      - $ref: "#/components/parameters/AppId"
+      - name: webhookId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      tags: [Webhooks]
+      summary: Get a webhook
+      operationId: getWebhook
+      responses:
+        "200":
+          description: The webhook (secret redacted).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Webhook" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    patch:
+      tags: [Webhooks]
+      summary: Update a webhook
+      description: Patch the URL, subscribed events, status, or description.
+      operationId: updateWebhook
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UpdateWebhookRequest" }
+      responses:
+        "200":
+          description: The updated webhook (secret redacted).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Webhook" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      tags: [Webhooks]
+      summary: Delete a webhook
+      operationId: deleteWebhook
+      responses:
+        "204": { description: Deleted. }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /apps/{appId}/webhooks/{webhookId}/rotate-secret:
+    parameters:
+      - $ref: "#/components/parameters/AppId"
+      - name: webhookId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      tags: [Webhooks]
+      summary: Rotate a webhook's signing secret
+      description: Issues a fresh signing secret; the response includes it once (redacted everywhere else).
+      operationId: rotateWebhookSecret
+      responses:
+        "200":
+          description: The webhook with its new secret.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Webhook" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /apps/{appId}/auth-logs:
+    parameters:
+      - $ref: "#/components/parameters/AppId"
+    get:
+      tags: [Users]
+      summary: App-wide authentication-event history
+      description: >
+        All users' auth events for the app, newest first — for ingesting into a
+        SIEM/analytics pipeline. Use `since`/`until` for incremental pulls.
+      operationId: listAppAuthLogs
+      parameters:
+        - name: since
+          in: query
+          description: RFC3339 lower bound (inclusive).
+          schema: { type: string, format: date-time }
+        - name: until
+          in: query
+          description: RFC3339 upper bound (exclusive).
+          schema: { type: string, format: date-time }
+        - name: outcome
+          in: query
+          schema: { type: string, enum: [success, failure] }
+        - name: page
+          in: query
+          schema: { type: integer, default: 0, minimum: 0 }
+        - name: pageSize
+          in: query
+          schema: { type: integer, default: 50, maximum: 200 }
+        - name: format
+          in: query
+          description: "`csv` returns the same page as a CSV download (default `json`)."
+          schema: { type: string, enum: [json, csv], default: json }
+      responses:
+        "200":
+          description: A page of auth-log entries (JSON, or CSV when `format=csv`).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AuthLogsResponse" }
+            text/csv:
+              schema: { type: string }
+        "400": { $ref: "#/components/responses/BadRequest" }
+
+  /apps/{appId}/users/{userId}/auth-logs:
+    parameters:
+      - $ref: "#/components/parameters/AppId"
+      - $ref: "#/components/parameters/UserId"
+    get:
+      tags: [Users]
+      summary: A user's authentication-event history
+      description: Sign-ins, password changes, status changes, etc. for this app, newest first.
+      operationId: getUserAuthLogs
+      parameters:
+        - name: page
+          in: query
+          schema: { type: integer, default: 0, minimum: 0 }
+        - name: pageSize
+          in: query
+          schema: { type: integer, default: 50, maximum: 200 }
+        - name: format
+          in: query
+          description: "`csv` returns the same page as a CSV download (default `json`)."
+          schema: { type: string, enum: [json, csv], default: json }
+      responses:
+        "200":
+          description: A page of auth-log entries (JSON, or CSV when `format=csv`).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AuthLogsResponse" }
+            text/csv:
+              schema: { type: string }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /apps/{appId}/users/{userId}/totp:
+    parameters:
+      - $ref: "#/components/parameters/AppId"
+      - $ref: "#/components/parameters/UserId"
+    delete:
+      tags: [Users]
+      summary: Reset (disable) a user's 2FA
+      description: Clears the member's TOTP so a user who lost their authenticator can re-enroll.
+      operationId: resetUserTotp
+      responses:
+        "204": { description: TOTP cleared. }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /apps/{appId}/users/{userId}/unlock:
+    parameters:
+      - $ref: "#/components/parameters/AppId"
+      - $ref: "#/components/parameters/UserId"
+    post:
+      tags: [Users]
+      summary: Clear a failed-login lockout
+      description: Restores sign-in immediately for a member locked out by repeated failed logins.
+      operationId: unlockUser
+      responses:
+        "204": { description: Unlocked. }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /apps/{appId}/users/{userId}/identities:
+    parameters:
+      - $ref: "#/components/parameters/AppId"
+      - $ref: "#/components/parameters/UserId"
+    get:
+      tags: [Users]
+      summary: List linked SSO identities
+      description: The member's connected SSO/OAuth providers (pool-level).
+      operationId: listUserIdentities
+      responses:
+        "200":
+          description: Linked identities.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/IdentitiesResponse" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /apps/{appId}/users/{userId}/identities/{provider}:
+    parameters:
+      - $ref: "#/components/parameters/AppId"
+      - $ref: "#/components/parameters/UserId"
+      - name: provider
+        in: path
+        required: true
+        description: Provider key, e.g. google, apple, microsoft, github.
+        schema: { type: string }
+    delete:
+      tags: [Users]
+      summary: Unlink an SSO identity
+      operationId: deleteUserIdentity
+      responses:
+        "204": { description: Unlinked (idempotent). }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /apps/{appId}/users/{userId}/passkeys:
+    parameters:
+      - $ref: "#/components/parameters/AppId"
+      - $ref: "#/components/parameters/UserId"
+    get:
+      tags: [Users]
+      summary: List a user's passkeys
+      operationId: listUserPasskeys
+      responses:
+        "200":
+          description: The member's WebAuthn credentials for this app.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PasskeysResponse" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /apps/{appId}/users/{userId}/passkeys/{passkeyId}:
+    parameters:
+      - $ref: "#/components/parameters/AppId"
+      - $ref: "#/components/parameters/UserId"
+      - name: passkeyId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    delete:
+      tags: [Users]
+      summary: Remove a passkey
+      operationId: deleteUserPasskey
+      responses:
+        "204": { description: Removed (idempotent). }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /apps/{appId}/users/{userId}/magic-link:
+    parameters:
+      - $ref: "#/components/parameters/AppId"
+      - $ref: "#/components/parameters/UserId"
+    post:
+      tags: [Users]
+      summary: Generate a one-time sign-in link
+      description: >
+        Returns a single-use, 15-minute passwordless sign-in URL for the member,
+        to deliver out-of-band. Requires the app's primary auth method to be
+        Magic Link with an App URL set. Issuing a new link invalidates any prior
+        unconsumed one for the same user.
+      operationId: createMagicLink
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/MagicLinkRequest" }
+      responses:
+        "200":
+          description: The sign-in URL and its expiry.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MagicLinkResponse" }
+        "403":
+          description: App is not configured for magic-link sign-in.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /apps/{appId}/user-fields:
+    parameters:
+      - $ref: "#/components/parameters/AppId"
+    get:
+      tags: [User fields]
+      summary: List user-field definitions
+      operationId: listUserFields
+      responses:
+        "200":
+          description: The pool's user-field schema.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/UserFieldsResponse" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /apps/{appId}/user-fields/users/{userId}:
+    parameters:
+      - $ref: "#/components/parameters/AppId"
+      - $ref: "#/components/parameters/UserId"
+    get:
+      tags: [User fields]
+      summary: Get a user's field values
+      operationId: getUserFieldValues
+      responses:
+        "200":
+          description: The user's field values.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/UserFieldValuesResponse" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /apps/{appId}/user-fields/{userFieldId}/users/{userId}:
+    parameters:
+      - $ref: "#/components/parameters/AppId"
+      - name: userFieldId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+      - $ref: "#/components/parameters/UserId"
+    put:
+      tags: [User fields]
+      summary: Set a user's field value
+      operationId: setUserFieldValue
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UpsertFieldValueRequest" }
+      responses:
+        "200":
+          description: The stored value.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/UserFieldValueResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      tags: [User fields]
+      summary: Clear a user's field value
+      operationId: deleteUserFieldValue
+      responses:
+        "204": { description: Cleared. }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+components:
+  securitySchemes:
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+
+  parameters:
+    AppId:
+      name: appId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    UserId:
+      name: userId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+
+  responses:
+    Unauthorized:
+      description: Missing or invalid API key.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    BadRequest:
+      description: Invalid request.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    NotFound:
+      description: Not found, or the user is not a member of this app.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    RateLimited:
+      description: Rate limit exceeded.
+      headers:
+        Retry-After:
+          schema: { type: integer }
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+
+  schemas:
+    Error:
+      type: object
+      properties:
+        error: { type: string, description: "Stable error code, e.g. error.notFound." }
+        message: { type: string, description: Human-readable message. }
+      required: [error, message]
+
+    UserResource:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        email: { type: string, format: email }
+        enabled: { type: boolean }
+        emailVerifiedAt: { type: string, format: date-time, nullable: true }
+        passwordSetAt: { type: string, format: date-time, nullable: true }
+        totpEnabled: { type: boolean }
+        source: { type: string, description: "invited | registered | google | apple | microsoft | github | external" }
+
+    ServerUserResponse:
+      type: object
+      properties:
+        user: { $ref: "#/components/schemas/UserResource" }
+        roles: { type: array, items: { type: string } }
+        permissions: { type: array, items: { type: string } }
+        fields: { type: array, items: { $ref: "#/components/schemas/UserFieldValue" } }
+
+    Member:
+      type: object
+      properties:
+        userId: { type: string, format: uuid }
+        email: { type: string, format: email }
+        name: { type: string }
+        enabled: { type: boolean }
+        emailVerifiedAt: { type: string, format: date-time, nullable: true }
+        passwordSetAt: { type: string, format: date-time, nullable: true }
+        lastLoginAt: { type: string, format: date-time, nullable: true }
+        source: { type: string }
+        addedAt: { type: string, format: date-time }
+        roles: { type: array, items: { type: string } }
+
+    MembersListResponse:
+      type: object
+      properties:
+        members: { type: array, items: { $ref: "#/components/schemas/Member" } }
+        total: { type: integer }
+        page: { type: integer }
+        pageSize: { type: integer }
+
+    CheckPermissionResponse:
+      type: object
+      properties:
+        allowed: { type: boolean }
+        permission: { type: string }
+        accountId: { type: string, format: uuid }
+
+    RoleSummary:
+      type: object
+      properties:
+        slug: { type: string }
+        name: { type: string }
+        permissions:
+          type: array
+          items: { type: string }
+          description: Permission slugs this role grants.
+
+    CreateRoleRequest:
+      type: object
+      required: [slug, name]
+      properties:
+        slug: { type: string }
+        name: { type: string }
+        permissions: { type: array, items: { type: string }, description: Permission slugs to grant. }
+
+    UpdateRoleRequest:
+      type: object
+      properties:
+        name: { type: string }
+        permissions:
+          type: array
+          items: { type: string }
+          description: If present, replaces the role's granted permission slugs.
+
+    CreatePermissionRequest:
+      type: object
+      required: [slug, name]
+      properties:
+        slug: { type: string }
+        name: { type: string }
+
+    UpdatePermissionRequest:
+      type: object
+      required: [name]
+      properties:
+        name: { type: string }
+
+    RolesListResponse:
+      type: object
+      properties:
+        roles: { type: array, items: { $ref: "#/components/schemas/RoleSummary" } }
+
+    PermissionSummary:
+      type: object
+      properties:
+        slug: { type: string }
+        name: { type: string }
+
+    SetConfigValueRequest:
+      type: object
+      required: [value]
+      properties:
+        value:
+          description: The config value as JSON, matching the key's value type.
+
+    SetFeatureFlagRequest:
+      type: object
+      required: [enabled]
+      properties:
+        enabled: { type: boolean }
+        roles:
+          type: array
+          items: { type: string }
+          description: Optional role slugs to target; empty/omitted applies to everyone.
+
+    ConfigKeyDef:
+      type: object
+      properties:
+        key: { type: string }
+        exposure: { type: string, enum: [public, private, secret] }
+        valueType: { type: string, description: "string | int | decimal | bool | string[] | … | json" }
+        status: { type: string, enum: [active, archived] }
+        description: { type: string }
+
+    ConfigKeysListResponse:
+      type: object
+      properties:
+        configKeys:
+          type: array
+          items: { $ref: "#/components/schemas/ConfigKeyDef" }
+
+    ConfigValueResponse:
+      type: object
+      properties:
+        key: { type: string }
+        value:
+          description: The stored value as JSON (string/number/bool/array/object).
+
+    FeatureFlagOverrideResponse:
+      type: object
+      properties:
+        enabled: { type: boolean }
+        roles:
+          type: array
+          items: { type: string }
+          description: Targeted role slugs; empty applies to everyone.
+        status: { type: string }
+
+    FeatureFlagsListResponse:
+      type: object
+      properties:
+        featureFlags:
+          type: array
+          items: { $ref: "#/components/schemas/FeatureFlagDef" }
+
+    CreateConfigKeyRequest:
+      type: object
+      required: [key, exposure, valueType]
+      properties:
+        key: { type: string }
+        exposure: { type: string, enum: [public, private, secret] }
+        valueType: { type: string }
+        description: { type: string }
+
+    UpdateConfigKeyRequest:
+      type: object
+      properties:
+        description: { type: string }
+        exposure: { type: string, enum: [public, private, secret] }
+        valueType: { type: string }
+        status: { type: string, enum: [active, archived] }
+
+    FeatureFlagDef:
+      type: object
+      properties:
+        key: { type: string }
+        scope: { type: string, enum: [server, client] }
+        defaultEnabled: { type: boolean }
+        status: { type: string, enum: [active, archived] }
+        description: { type: string }
+
+    CreateFeatureFlagDefRequest:
+      type: object
+      required: [key, scope]
+      properties:
+        key: { type: string }
+        scope: { type: string, enum: [server, client] }
+        defaultEnabled: { type: boolean }
+        description: { type: string }
+
+    UpdateFeatureFlagDefRequest:
+      type: object
+      properties:
+        description: { type: string }
+        scope: { type: string, enum: [server, client] }
+        defaultEnabled: { type: boolean }
+        status: { type: string, enum: [active, archived] }
+
+    PermissionsListResponse:
+      type: object
+      properties:
+        permissions: { type: array, items: { $ref: "#/components/schemas/PermissionSummary" } }
+
+    CreateUserRequest:
+      type: object
+      required: [email]
+      properties:
+        email: { type: string, format: email }
+        emailVerified:
+          type: boolean
+          description: Mark the address verified (you vouch for it). Defaults to false.
+        roles:
+          type: array
+          items: { type: string }
+          description: Role slugs to assign in this app.
+        sendInvite:
+          type: boolean
+          description: Email the user a branded invitation after provisioning. Requires an App URL configured (400 otherwise).
+
+    CreateUserResponse:
+      type: object
+      properties:
+        user: { $ref: "#/components/schemas/UserResource" }
+        created: { type: boolean, description: True when a new identity was created. }
+        roles: { type: array, items: { type: string } }
+        invited: { type: boolean, description: True when sendInvite was requested and the email was sent. }
+
+    BatchCreateUsersRequest:
+      type: object
+      required: [emails]
+      properties:
+        emails: { type: array, items: { type: string, format: email }, description: "Up to 100 addresses." }
+        emailVerified: { type: boolean, description: Mark all addresses verified. Defaults to false. }
+        roles: { type: array, items: { type: string }, description: Role slugs applied to every user. }
+
+    BatchUserResult:
+      type: object
+      properties:
+        email: { type: string }
+        userId: { type: string, format: uuid }
+        created: { type: boolean }
+        error: { type: string, description: Set when this email failed; the rest still succeed. }
+
+    BatchCreateUsersResponse:
+      type: object
+      properties:
+        results: { type: array, items: { $ref: "#/components/schemas/BatchUserResult" } }
+
+    SetUserStatusRequest:
+      type: object
+      required: [status]
+      properties:
+        status: { type: string, enum: [active, disabled] }
+
+    UserStatusResponse:
+      type: object
+      properties:
+        userId: { type: string, format: uuid }
+        status: { type: string, enum: [active, disabled] }
+
+    RemoveUserResponse:
+      type: object
+      properties:
+        removedFromApp: { type: boolean }
+        identityDeleted: { type: boolean, description: True when the pool identity was also deleted (user was orphaned). }
+
+    RevokeSessionsResponse:
+      type: object
+      properties:
+        revoked: { type: integer }
+
+    SetPasswordRequest:
+      type: object
+      required: [password]
+      properties:
+        password: { type: string, description: "Validated against the app's password policy." }
+
+    SetEnabledRequest:
+      type: object
+      required: [enabled]
+      properties:
+        enabled: { type: boolean }
+
+    UserEnabledResponse:
+      type: object
+      properties:
+        userId: { type: string, format: uuid }
+        enabled: { type: boolean }
+
+    ChangeEmailRequest:
+      type: object
+      required: [email]
+      properties:
+        email: { type: string, format: email }
+
+    ChangeEmailResponse:
+      type: object
+      properties:
+        userId: { type: string, format: uuid }
+        email: { type: string, format: email }
+
+    SetEmailVerifiedRequest:
+      type: object
+      required: [verified]
+      properties:
+        verified: { type: boolean }
+
+    Session:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        createdAt: { type: string, format: date-time }
+        lastSeenAt: { type: string, format: date-time }
+        expiresAt: { type: string, format: date-time }
+        userAgent: { type: string }
+        ip: { type: string }
+
+    SessionsListResponse:
+      type: object
+      properties:
+        sessions: { type: array, items: { $ref: "#/components/schemas/Session" } }
+
+    AuthLogEntry:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        createdAt: { type: string, format: date-time }
+        event: { type: string, description: "e.g. login.success, password.set" }
+        method: { type: string }
+        outcome: { type: string, description: "success | failure" }
+        failureReason: { type: string }
+        actorType: { type: string, description: "self | api_key | admin | system" }
+        ip: { type: string }
+        userAgent: { type: string }
+        requestId: { type: string }
+
+    Identity:
+      type: object
+      properties:
+        provider: { type: string, description: "google | apple | microsoft | github | …" }
+        providerSubject: { type: string }
+        providerEmail: { type: string }
+        createdAt: { type: string, format: date-time }
+        lastLoginAt: { type: string, format: date-time }
+
+    IdentitiesResponse:
+      type: object
+      properties:
+        identities: { type: array, items: { $ref: "#/components/schemas/Identity" } }
+
+    Passkey:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        transports: { type: array, items: { type: string } }
+        createdAt: { type: string, format: date-time }
+        lastUsedAt: { type: string, format: date-time }
+
+    PasskeysResponse:
+      type: object
+      properties:
+        passkeys: { type: array, items: { $ref: "#/components/schemas/Passkey" } }
+
+    Webhook:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        appId: { type: string, format: uuid }
+        url: { type: string, format: uri }
+        secret: { type: string, description: "HMAC signing secret — present only in the create response." }
+        events: { type: array, items: { type: string } }
+        status: { type: string, enum: [active, disabled] }
+        description: { type: string }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        createdBy: { type: string, format: uuid }
+
+    WebhooksListResponse:
+      type: object
+      properties:
+        webhooks: { type: array, items: { $ref: "#/components/schemas/Webhook" } }
+
+    CreateWebhookRequest:
+      type: object
+      required: [url, events]
+      properties:
+        url: { type: string, format: uri }
+        events:
+          type: array
+          items: { type: string }
+          description: "Events to subscribe to — e.g. user.created, user.login, user.password_change."
+        description: { type: string }
+
+    UpdateWebhookRequest:
+      type: object
+      properties:
+        url: { type: string, format: uri }
+        events: { type: array, items: { type: string } }
+        status: { type: string, enum: [active, disabled] }
+        description: { type: string }
+
+    AuthLogsResponse:
+      type: object
+      properties:
+        logs: { type: array, items: { $ref: "#/components/schemas/AuthLogEntry" } }
+        total: { type: integer }
+        page: { type: integer }
+        pageSize: { type: integer }
+
+    UserPermissionsResponse:
+      type: object
+      properties:
+        permissions: { type: array, items: { type: string } }
+
+    SetPermissionsRequest:
+      type: object
+      required: [permissions]
+      properties:
+        permissions: { type: array, items: { type: string }, description: "Full set of direct permission slugs (replace, not merge)." }
+
+    ReplaceRolesRequest:
+      type: object
+      required: [roles]
+      properties:
+        roles: { type: array, items: { type: string }, description: "Full set of role slugs (replace, not merge)." }
+
+    RolesResponse:
+      type: object
+      properties:
+        roles: { type: array, items: { type: string } }
+
+    MagicLinkRequest:
+      type: object
+      properties:
+        rememberMe: { type: boolean, description: Issue a longer-lived session when the link is consumed. }
+
+    MagicLinkResponse:
+      type: object
+      properties:
+        url: { type: string, format: uri }
+        expiresAt: { type: string, format: date-time }
+
+    UserField:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        userPoolId: { type: string, format: uuid }
+        key: { type: string }
+        valueType: { type: string, enum: [string, bool, date] }
+        visibility: { type: string, enum: [client, server] }
+        userEditable: { type: boolean }
+        label: { type: string }
+        status: { type: string, description: "active | archived" }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        createdBy: { type: string, format: uuid }
+
+    UserFieldValue:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        userId: { type: string, format: uuid }
+        userFieldId: { type: string, format: uuid }
+        value:
+          description: The field value (string, boolean, or date string per the field's type).
+        updatedAt: { type: string, format: date-time }
+        updatedBy: { type: string, format: uuid }
+
+    UserFieldsResponse:
+      type: object
+      properties:
+        userFields: { type: array, items: { $ref: "#/components/schemas/UserField" } }
+
+    UserFieldValuesResponse:
+      type: object
+      properties:
+        values: { type: array, items: { $ref: "#/components/schemas/UserFieldValue" } }
+
+    UserFieldValueResponse:
+      type: object
+      properties:
+        value: { $ref: "#/components/schemas/UserFieldValue" }
+
+    UpsertFieldValueRequest:
+      type: object
+      required: [value]
+      properties:
+        value:
+          description: The value to store; validated against the field's type.
+
+    DeliveryResponse:
+      type: object
+      properties:
+        workspaceId: { type: string, format: uuid }
+        projectId: { type: string, format: uuid }
+        appId: { type: string, format: uuid }
+        updatedAt: { type: string, format: date-time }
+        config: { $ref: "#/components/schemas/DeliveryConfigBuckets" }
+        flags: { $ref: "#/components/schemas/DeliveryFlagBuckets" }
+
+    DeliveryConfigBuckets:
+      type: object
+      properties:
+        public: { type: array, items: { $ref: "#/components/schemas/DeliveryConfigItem" } }
+        private: { type: array, items: { $ref: "#/components/schemas/DeliveryConfigItem" } }
+        secrets: { type: array, items: { $ref: "#/components/schemas/DeliveryConfigItem" } }
+
+    DeliveryConfigItem:
+      type: object
+      properties:
+        key: { type: string }
+        type: { type: string }
+        value:
+          description: Present for public/private items.
+        isSet: { type: boolean, description: Present for secret items. }
+        envelope:
+          description: Encrypted payload, present for secret items.
+
+    DeliveryFlagBuckets:
+      type: object
+      properties:
+        client: { type: array, items: { $ref: "#/components/schemas/DeliveryFlagItem" } }
+        server: { type: array, items: { $ref: "#/components/schemas/DeliveryFlagItem" } }
+
+    DeliveryFlagItem:
+      type: object
+      properties:
+        key: { type: string }
+        enabled: { type: boolean }
+        roleIds:
+          type: array
+          items: { type: string, format: uuid }
+          description: If set, the flag applies only to users with one of these roles.

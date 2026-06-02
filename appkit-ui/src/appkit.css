@@ -1,0 +1,840 @@
+/* ========================================
+   AppKit CSS — Plain CSS with ak- prefix
+   ======================================== */
+
+/* Reset (scoped to .ak-root) */
+.ak-root {
+  font-family: var(--ak-font-family);
+  font-size: var(--ak-font-size-base);
+  color: var(--ak-color-text);
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+.ak-root *,
+.ak-root *::before,
+.ak-root *::after {
+  box-sizing: border-box;
+}
+
+/* ========================================
+   Typography
+   ======================================== */
+
+.ak-h5 {
+  font-size: var(--ak-font-size-h5);
+  font-weight: 900;
+  line-height: 1.3;
+  margin: 0;
+  letter-spacing: -0.5px;
+}
+
+.ak-h6 {
+  font-size: var(--ak-font-size-h6);
+  font-weight: 600;
+  line-height: 1.4;
+  margin: 0;
+}
+
+.ak-body1 {
+  font-size: var(--ak-font-size-base);
+  line-height: 1.5;
+  margin: 0;
+}
+
+.ak-body2 {
+  font-size: var(--ak-font-size-sm);
+  line-height: 1.5;
+  margin: 0;
+}
+
+.ak-caption {
+  font-size: var(--ak-font-size-xs);
+  line-height: 1.4;
+  margin: 0;
+}
+
+.ak-overline {
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  line-height: 1.4;
+  margin: 0;
+}
+
+.ak-text-secondary {
+  color: var(--ak-color-text-secondary);
+}
+
+.ak-text-disabled {
+  color: var(--ak-color-text-disabled);
+}
+
+.ak-font-bold {
+  font-weight: 600;
+}
+
+.ak-text-center {
+  text-align: center;
+}
+
+.ak-text-mono {
+  font-family: var(--ak-font-family-mono);
+}
+
+/* ========================================
+   Layout
+   ======================================== */
+
+.ak-stack {
+  display: flex;
+  flex-direction: column;
+}
+
+.ak-stack-row {
+  display: flex;
+  flex-direction: row;
+}
+
+.ak-items-center {
+  align-items: center;
+}
+
+.ak-items-start {
+  align-items: flex-start;
+}
+
+.ak-justify-between {
+  justify-content: space-between;
+}
+
+.ak-justify-center {
+  justify-content: center;
+}
+
+.ak-flex-1 {
+  flex: 1;
+}
+
+.ak-flex-wrap {
+  flex-wrap: wrap;
+}
+
+.ak-min-w-0 {
+  min-width: 0;
+}
+
+.ak-w-full {
+  width: 100%;
+}
+
+.ak-gap-1 { gap: var(--ak-spacing-1); }
+.ak-gap-2 { gap: var(--ak-spacing-2); }
+.ak-gap-3 { gap: var(--ak-spacing-3); }
+.ak-gap-4 { gap: var(--ak-spacing-4); }
+.ak-gap-5 { gap: var(--ak-spacing-5); }
+.ak-gap-6 { gap: var(--ak-spacing-6); }
+
+/* ========================================
+   Container
+   ======================================== */
+
+.ak-container {
+  width: 100%;
+  max-width: 600px;
+  margin: 0 auto;
+  padding: 40px 16px;
+}
+
+@media (min-width: 600px) {
+  .ak-container {
+    padding: 64px 16px;
+  }
+}
+
+/* ========================================
+   Card
+   ======================================== */
+
+.ak-card {
+  background: var(--ak-color-card-bg, var(--ak-color-surface));
+  border: 1px solid var(--ak-color-divider);
+  border-radius: var(--ak-radius-lg);
+  box-shadow: var(--ak-shadow-card);
+  overflow: hidden;
+}
+
+.ak-card-content {
+  padding: 24px;
+}
+
+@media (min-width: 600px) {
+  .ak-card-content {
+    padding: 32px;
+  }
+}
+
+.ak-card-actions {
+  padding: 0 24px 24px;
+}
+
+@media (min-width: 600px) {
+  .ak-card-actions {
+    padding: 0 32px 32px;
+  }
+}
+
+.ak-card-footer {
+  padding: 16px 24px;
+  background: var(--ak-color-grey-50);
+  border-top: 1px solid var(--ak-color-divider);
+  text-align: center;
+  font-size: var(--ak-font-size-sm);
+  color: var(--ak-color-text-secondary);
+}
+
+@media (min-width: 600px) {
+  .ak-card-footer {
+    padding: 18px 32px;
+  }
+}
+
+/* Field label with inline trailing action (e.g. "Forgot password?") */
+.ak-field-label-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--ak-spacing-3);
+}
+
+/* Compact OAuth grid — wraps responsively */
+.ak-oauth-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+  gap: var(--ak-spacing-2);
+}
+
+.ak-oauth-row .ak-btn {
+  padding: 10px var(--ak-spacing-3);
+  font-size: var(--ak-font-size-sm);
+  min-width: 0;
+}
+
+/* ========================================
+   Button
+   ======================================== */
+
+.ak-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--ak-spacing-2);
+  font-family: inherit;
+  font-size: var(--ak-font-size-sm);
+  font-weight: 600;
+  line-height: 1.5;
+  padding: var(--ak-spacing-2) var(--ak-spacing-4);
+  border-radius: var(--ak-radius-md);
+  border: none;
+  cursor: pointer;
+  text-decoration: none;
+  text-transform: none;
+  transition: background-color 0.15s, border-color 0.15s, color 0.15s, opacity 0.15s;
+  white-space: nowrap;
+}
+
+.ak-btn:focus-visible {
+  outline: 2px solid var(--ak-color-primary);
+  outline-offset: 2px;
+}
+
+.ak-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.ak-btn-contained {
+  background: var(--ak-color-primary);
+  color: #fff;
+  border: 1px solid transparent;
+}
+
+.ak-btn-contained:hover:not(:disabled) {
+  opacity: 0.9;
+}
+
+.ak-btn-outlined {
+  background: transparent;
+  color: var(--ak-color-primary);
+  border: 1px solid var(--ak-color-primary);
+}
+
+.ak-btn-outlined:hover:not(:disabled) {
+  background: var(--ak-color-primary-hover);
+}
+
+.ak-btn-text {
+  background: transparent;
+  color: var(--ak-color-primary);
+  border: 1px solid transparent;
+  padding: 6px 8px;
+}
+
+.ak-btn-text:hover:not(:disabled) {
+  background: var(--ak-color-primary-hover);
+}
+
+.ak-btn-error {
+  color: var(--ak-color-error);
+  border-color: var(--ak-color-error);
+}
+
+.ak-btn-error.ak-btn-contained {
+  background: var(--ak-color-error);
+  color: #fff;
+}
+
+.ak-btn-sm {
+  font-size: var(--ak-font-size-xs);
+  padding: var(--ak-spacing-1) 10px;
+}
+
+.ak-btn-lg {
+  font-size: var(--ak-font-size-base);
+  font-weight: 800;
+  padding: 11px 22px;
+  border-radius: var(--ak-radius-lg);
+}
+
+.ak-btn-full {
+  width: 100%;
+}
+
+/* ========================================
+   Icon Button
+   ======================================== */
+
+.ak-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  border-radius: 50%;
+  cursor: pointer;
+  padding: 8px;
+  color: var(--ak-color-text-secondary);
+  transition: background-color 0.15s;
+}
+
+.ak-icon-btn:hover:not(:disabled) {
+  background: var(--ak-color-action-hover);
+}
+
+.ak-icon-btn:focus-visible {
+  outline: 2px solid var(--ak-color-primary);
+  outline-offset: 2px;
+}
+
+.ak-icon-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.ak-icon-btn-sm {
+  padding: 4px;
+}
+
+.ak-icon-btn-primary {
+  color: var(--ak-color-primary);
+}
+
+/* ========================================
+   TextField
+   ======================================== */
+
+.ak-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 100%;
+}
+
+.ak-field-label {
+  font-size: var(--ak-font-size-xs);
+  font-weight: 500;
+  color: var(--ak-color-text-secondary);
+}
+
+.ak-field-input-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.ak-field-input {
+  width: 100%;
+  font-family: inherit;
+  font-size: var(--ak-font-size-base);
+  line-height: 1.5;
+  padding: 10px 14px;
+  border: 1px solid var(--ak-color-divider);
+  border-radius: var(--ak-radius-md);
+  background: var(--ak-color-input-bg, var(--ak-color-card-bg, var(--ak-color-surface)));
+  color: var(--ak-color-text);
+  outline: none;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.ak-field-input::placeholder {
+  color: var(--ak-color-text-disabled);
+}
+
+.ak-field-input:focus {
+  border-color: var(--ak-color-primary);
+  box-shadow: 0 0 0 2px var(--ak-color-primary-hover);
+}
+
+.ak-field-input:focus-visible {
+  outline: none;
+}
+
+.ak-field-input:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.ak-field-input-sm {
+  font-size: var(--ak-font-size-sm);
+  padding: var(--ak-spacing-2) var(--ak-spacing-3);
+}
+
+.ak-field-input-error {
+  border-color: var(--ak-color-error);
+}
+
+.ak-field-input-error:focus {
+  border-color: var(--ak-color-error);
+  box-shadow: 0 0 0 2px rgba(211, 47, 47, 0.15);
+}
+
+.ak-field-helper {
+  font-size: var(--ak-font-size-xs);
+  color: var(--ak-color-text-secondary);
+  margin: 0;
+}
+
+.ak-field-helper-error {
+  color: var(--ak-color-error);
+}
+
+.ak-field-adornment {
+  position: absolute;
+  right: 4px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+}
+
+.ak-field-input-with-adornment {
+  padding-right: 40px;
+}
+
+/* ========================================
+   Alert
+   ======================================== */
+
+.ak-alert {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--ak-spacing-3);
+  padding: var(--ak-spacing-3) var(--ak-spacing-4);
+  border-radius: var(--ak-radius-md);
+  font-size: var(--ak-font-size-sm);
+  line-height: 1.5;
+}
+
+.ak-alert-error {
+  background: var(--ak-color-error-bg);
+  color: var(--ak-color-error-text);
+}
+
+.ak-alert-success {
+  background: var(--ak-color-success-bg);
+  color: var(--ak-color-success-text);
+}
+
+.ak-alert-info {
+  background: var(--ak-color-info-bg);
+  color: var(--ak-color-info-text);
+}
+
+.ak-alert-warning {
+  background: var(--ak-color-warning-bg);
+  color: var(--ak-color-warning-text);
+}
+
+.ak-alert-filled-error {
+  background: var(--ak-color-error);
+  color: #fff;
+}
+
+.ak-alert-filled-success {
+  background: var(--ak-color-success);
+  color: #fff;
+}
+
+.ak-alert-filled-info {
+  background: var(--ak-color-info);
+  color: #fff;
+}
+
+.ak-alert-filled-warning {
+  background: var(--ak-color-warning);
+  color: #fff;
+}
+
+.ak-alert-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.ak-alert-close {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 2px;
+  color: inherit;
+  opacity: 0.7;
+  font-size: 1rem;
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.ak-alert-close:hover {
+  opacity: 1;
+}
+
+.ak-alert-close:focus-visible {
+  outline: 2px solid var(--ak-color-primary);
+  outline-offset: 2px;
+}
+
+/* ========================================
+   Dialog (native <dialog>)
+   ======================================== */
+
+.ak-dialog {
+  border: none;
+  border-radius: var(--ak-radius-lg);
+  padding: 0;
+  max-width: 400px;
+  width: calc(100% - 32px);
+  background: var(--ak-color-card-bg, var(--ak-color-surface));
+  color: var(--ak-color-text);
+  box-shadow: var(--ak-shadow-card);
+}
+
+.ak-dialog::backdrop {
+  background: rgba(0, 0, 0, 0.5);
+}
+
+.ak-dialog-title {
+  padding: 20px 24px 8px;
+}
+
+.ak-dialog-content {
+  padding: 0 24px 24px;
+}
+
+/* ========================================
+   Avatar
+   ======================================== */
+
+.ak-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  font-weight: 600;
+  color: #fff;
+  flex-shrink: 0;
+  user-select: none;
+}
+
+/* ========================================
+   Chip
+   ======================================== */
+
+.ak-chip {
+  display: inline-flex;
+  align-items: center;
+  font-size: var(--ak-font-size-xs);
+  line-height: 1;
+  padding: var(--ak-spacing-1) 10px;
+  border-radius: 16px;
+  white-space: nowrap;
+}
+
+.ak-chip-outlined {
+  background: transparent;
+  border: 1px solid var(--ak-color-divider);
+  color: var(--ak-color-text);
+}
+
+.ak-chip-success {
+  background: var(--ak-color-success);
+  color: #fff;
+  border: none;
+}
+
+.ak-chip-default {
+  background: transparent;
+  border: 1px solid var(--ak-color-divider);
+  color: var(--ak-color-text-secondary);
+}
+
+/* ========================================
+   Divider
+   ======================================== */
+
+.ak-divider {
+  border: none;
+  border-top: 1px solid var(--ak-color-divider);
+  margin: 0;
+}
+
+.ak-divider-with-text {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  color: var(--ak-color-text-secondary);
+  font-size: 0.75rem;
+}
+
+.ak-divider-with-text::before,
+.ak-divider-with-text::after {
+  content: "";
+  flex: 1;
+  border-top: 1px solid var(--ak-color-divider);
+}
+
+/* ========================================
+   Spinner
+   ======================================== */
+
+.ak-spinner {
+  display: inline-block;
+  border: 2px solid var(--ak-color-divider);
+  border-top-color: var(--ak-color-primary);
+  border-radius: 50%;
+  animation: ak-spin 0.7s linear infinite;
+}
+
+.ak-spinner-white {
+  border-color: rgba(255, 255, 255, 0.3);
+  border-top-color: #fff;
+}
+
+@keyframes ak-spin {
+  to { transform: rotate(360deg); }
+}
+
+/* ========================================
+   Snackbar / Toast
+   ======================================== */
+
+.ak-snackbar-container {
+  position: fixed;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 10000;
+  display: flex;
+  flex-direction: column-reverse;
+  gap: 8px;
+  pointer-events: none;
+}
+
+.ak-snackbar {
+  pointer-events: auto;
+  min-width: 280px;
+  max-width: 500px;
+  border-radius: var(--ak-radius-md);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  animation: ak-snackbar-in 0.2s ease-out;
+}
+
+@keyframes ak-snackbar-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* ========================================
+   Collapse
+   ======================================== */
+
+.ak-collapse {
+  overflow: hidden;
+  transition: max-height 0.22s ease, opacity 0.22s ease;
+}
+
+.ak-collapse-enter {
+  max-height: 0;
+  opacity: 0;
+}
+
+.ak-collapse-entered {
+  opacity: 1;
+}
+
+/* ========================================
+   Skeleton / Shimmer
+   ======================================== */
+
+.ak-skeleton {
+  background: var(--ak-color-divider);
+  border-radius: var(--ak-radius-sm);
+  position: relative;
+  overflow: hidden;
+}
+
+.ak-skeleton::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.4) 50%,
+    transparent 100%
+  );
+  animation: ak-shimmer 1.5s infinite;
+}
+
+@keyframes ak-shimmer {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
+}
+
+/* ========================================
+   Checkbox
+   ======================================== */
+
+.ak-checkbox-label {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--ak-spacing-2);
+  cursor: pointer;
+  font-size: var(--ak-font-size-sm);
+  color: var(--ak-color-text);
+}
+
+.ak-checkbox-label input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--ak-color-primary);
+  cursor: pointer;
+}
+
+.ak-checkbox-label input[type="checkbox"]:focus-visible {
+  outline: 2px solid var(--ak-color-primary);
+  outline-offset: 2px;
+}
+
+/* ========================================
+   Misc
+   ======================================== */
+
+.ak-code-block {
+  background: var(--ak-color-grey-100);
+  padding: var(--ak-spacing-3);
+  border-radius: var(--ak-radius-md);
+  font-family: var(--ak-font-family-mono);
+  font-size: 13px;
+  user-select: all;
+  word-break: break-all;
+}
+
+.ak-icon-circle {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: var(--ak-color-action-hover);
+}
+
+.ak-truncate {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ========================================
+   Theme Variables (defaults - light)
+   ======================================== */
+
+.ak-root {
+  /* Typography */
+  --ak-font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --ak-font-family-mono: "SF Mono", "Fira Code", "Fira Mono", "Roboto Mono", monospace;
+  --ak-font-size-xs: 0.75rem;
+  --ak-font-size-sm: 0.875rem;
+  --ak-font-size-base: 1rem;
+  --ak-font-size-h6: 1.25rem;
+  --ak-font-size-h5: 1.5rem;
+
+  /* Spacing */
+  --ak-spacing-1: 4px;
+  --ak-spacing-2: 8px;
+  --ak-spacing-3: 12px;
+  --ak-spacing-4: 16px;
+  --ak-spacing-5: 20px;
+  --ak-spacing-6: 24px;
+
+  /* Border radius */
+  --ak-radius-sm: 4px;
+  --ak-radius-md: 8px;
+  --ak-radius-lg: 16px;
+
+  /* Shadows */
+  --ak-shadow-card: 0 1px 3px rgba(0, 0, 0, 0.08);
+
+  /* Colors */
+  --ak-color-primary: #1976d2;
+  --ak-color-primary-hover: rgba(25, 118, 210, 0.08);
+  --ak-color-bg: #fff;
+  --ak-color-surface: #fff;
+  /* --ak-color-card-bg: falls back to --ak-color-surface if unset */
+  --ak-color-text: #212121;
+  --ak-color-text-secondary: #666;
+  --ak-color-text-disabled: #9e9e9e;
+  --ak-color-divider: #e0e0e0;
+  --ak-color-action-hover: rgba(0, 0, 0, 0.04);
+
+  --ak-color-error: #d32f2f;
+  --ak-color-error-bg: #fdecea;
+  --ak-color-error-text: #611a15;
+
+  --ak-color-success: #2e7d32;
+  --ak-color-success-bg: #edf7ed;
+  --ak-color-success-text: #1e4620;
+
+  --ak-color-info: #0288d1;
+  --ak-color-info-bg: #e1f5fe;
+  --ak-color-info-text: #014361;
+
+  --ak-color-warning: #ed6c02;
+  --ak-color-warning-bg: #fff4e5;
+  --ak-color-warning-text: #663c00;
+
+  --ak-color-grey-50: #fafafa;
+  --ak-color-grey-100: #f5f5f5;
+  --ak-color-grey-500: #9e9e9e;
+  --ak-color-grey-900: #212121;
+}

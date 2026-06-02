@@ -1,0 +1,131 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  # The Go binary embeds the built UI bundles (manyrows-core/appkit/appkit
+  # and manyrows-core/web/* via //go:embed). Those bundles are build
+  # artifacts, not committed, so every Go job below — vet, build, test —
+  # would fail with "pattern ...: no matching files found" without them.
+  # Build the bundles once here (mirroring the Dockerfile's ui-build stage)
+  # and hand them to the Go jobs as an artifact.
+  ui-build:
+    name: Build UI bundles
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+
+      # No root lockfile (each workspace manages its own deps), so cache
+      # ~/.npm keyed on the package manifests rather than using setup-node's
+      # lockfile-based cache.
+      - uses: actions/cache@v5
+        with:
+          path: ~/.npm
+          key: npm-${{ hashFiles('package.json', 'appkit-ui/package.json', 'manyrows-ui/package.json') }}
+          restore-keys: npm-
+
+      - name: Install workspace deps
+        run: npm install --workspaces --include-workspace-root --no-audit --no-fund
+
+      - name: Build bundles
+        run: |
+          npm run build --workspace=appkit-ui
+          npm run build --workspace=manyrows-ui
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: ui-dist
+          path: |
+            appkit-ui/dist
+            manyrows-ui/dist
+          if-no-files-found: error
+          retention-days: 1
+
+  go-static:
+    name: Go static checks (gofmt / vet / build)
+    needs: ui-build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: manyrows-core/go.mod
+          cache-dependency-path: manyrows-core/go.sum
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: ui-dist
+      # Drop the built bundles into the locations the //go:embed directives
+      # expect (mirrors build-ui.sh / the Dockerfile go-build stage).
+      - name: Place embedded UI bundles
+        run: |
+          cp -r appkit-ui/dist/.  manyrows-core/appkit/
+          cp -r manyrows-ui/dist/. manyrows-core/web/
+
+      - name: gofmt
+        run: |
+          unformatted=$(gofmt -l manyrows-core)
+          if [ -n "$unformatted" ]; then
+            echo "::error::These files are not gofmt-clean. Run: gofmt -w manyrows-core"
+            echo "$unformatted"
+            exit 1
+          fi
+
+      - name: vet + build (manyrows-core)
+        working-directory: manyrows-core
+        run: |
+          go vet ./...
+          go build ./...
+
+  go-test:
+    name: Go tests (Postgres)
+    needs: ui-build
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: manyrows
+          POSTGRES_PASSWORD: manyrows
+          POSTGRES_DB: manyrows_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U manyrows"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      # The suite refuses to run against DATABASE_URL; it requires a
+      # dedicated test DB. Migrations are applied automatically by db.New
+      # (embedded goose) on first connection.
+      TEST_DATABASE_URL: postgres://manyrows:manyrows@localhost:5432/manyrows_test?sslmode=disable
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: manyrows-core/go.mod
+          cache-dependency-path: manyrows-core/go.sum
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: ui-dist
+      # Same embed bundles the build needs: go test ./... compiles every
+      # package, including appkit and web.
+      - name: Place embedded UI bundles
+        run: |
+          cp -r appkit-ui/dist/.  manyrows-core/appkit/
+          cp -r manyrows-ui/dist/. manyrows-core/web/
+
+      - name: test
+        working-directory: manyrows-core
+        run: go test ./...

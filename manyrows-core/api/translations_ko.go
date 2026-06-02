@@ -1,0 +1,208 @@
+package api
+
+// Korean (ko) API error message translations. Registered into the
+// package-level apiTranslations map at init time so the existing English
+// catalog (translations.go) stays untouched. Keys MUST match the "en" map
+// byte-for-byte: T() falls back to English per key, and any drift would
+// silently surface English (or the raw key) to Korean users.
+//
+// printf placeholders (%s, %d, %[1]s, …) are preserved exactly. Where
+// Korean word order diverges from English, explicit-index verbs
+// (%[1]s, %[2]d) keep fmt.Sprintf arg order valid.
+func init() {
+	apiTranslations["ko"] = map[string]string{
+		// Generic errors
+		"error.unauthorized":    "인증되지 않음",
+		"error.forbidden":       "권한 없음",
+		"error.notFound":        "찾을 수 없음",
+		"error.badRequest":      "잘못된 요청",
+		"error.internalError":   "서버 내부 오류",
+		"error.tooManyRequests": "요청이 너무 많습니다. 잠시 후 다시 시도해 주세요.",
+		"error.limitReached":    "%s의 최대 개수(제한 %d개)에 도달했습니다.",
+		"error.invalidJson":     "잘못된 JSON",
+		// Admin handler error keys (previously undefined → rendered as the raw key).
+		"error.invalidRPID":                 "잘못된 RP ID입니다: %s",
+		"error.invalidAuthDomain":           "잘못된 인증 도메인입니다",
+		"error.invalidCookieDomain":         "잘못된 쿠키 도메인입니다",
+		"error.invalidTransportMode":        "잘못된 세션 전송 방식입니다",
+		"error.invalidSameSiteMode":         "잘못된 SameSite 모드입니다",
+		"error.strictRequiresNoMagicLinks":  "엄격 전송 방식을 사용하려면 매직 링크 로그인을 비활성화해야 합니다",
+		"error.strictRequiresNoOAuth":       "엄격 전송 방식을 사용하려면 OAuth 로그인을 비활성화해야 합니다",
+		"error.userPoolNotFound":            "사용자 풀을 찾을 수 없습니다",
+		"error.userNotFound":                "사용자를 찾을 수 없습니다",
+		"error.invalidInactiveDays":         "잘못된 비활성 일수 값입니다",
+		"error.invalidRoleFilter":           "잘못된 역할 필터입니다",
+		"error.originAlreadyExists":         "이미 허용된 출처입니다",
+		"error.invalidMetric":               "잘못된 지표입니다",
+		"error.invalidRequest":              "잘못된 요청입니다",
+		"error.googleClientSecretRequired":  "Google 클라이언트 시크릿이 필요합니다",
+		"error.oidcRedirectUrisRequired":    "OIDC 리디렉션 URI가 하나 이상 필요합니다",
+		"error.oidcRequiresCookieTransport": "OIDC는 쿠키 세션 전송 방식이 필요합니다",
+		"error.qrSignInRequiresAppURL":      "QR 로그인을 사용하려면 앱 URL을 설정해야 합니다",
+		"error.invalidRole":                 "잘못된 역할입니다",
+		// Client auth-flow error keys (passkey / TOTP / captcha) — also previously undefined.
+		"error.captchaFailed":             "캡차 인증에 실패했습니다",
+		"error.identityConflict":          "이 ID는 이미 다른 계정에 연결되어 있습니다",
+		"error.invalidDPoPProof":          "잘못된 DPoP 증명입니다",
+		"error.pairingNotFound":           "페어링을 찾을 수 없거나 만료되었습니다",
+		"error.passkeyAlreadyRegistered":  "이미 등록된 패스키입니다",
+		"error.passkeyBeginFailed":        "패스키 등록을 시작할 수 없습니다",
+		"error.passkeyChallengeInvalid":   "패스키 챌린지가 잘못되었거나 만료되었습니다",
+		"error.passkeyCloneSuspected":     "이 패스키를 확인할 수 없어 거부되었습니다",
+		"error.passkeyLimitReached":       "패스키의 최대 개수에 도달했습니다",
+		"error.passkeyResponseInvalid":    "잘못된 패스키 응답입니다",
+		"error.passkeyUVRequired":         "패스키 사용자 확인이 필요합니다",
+		"error.passkeyVerifyFailed":       "패스키 인증에 실패했습니다",
+		"error.passkeysDisabled":          "이 앱에서는 패스키가 활성화되어 있지 않습니다",
+		"error.passwordSetRequiresOTP":    "비밀번호를 설정하려면 인증 코드가 필요합니다",
+		"error.reauthRequired":            "계속하려면 다시 인증해 주세요",
+		"error.registrationDisabled":      "회원가입이 비활성화되어 있습니다",
+		"error.totpSetupChallengeExpired": "2단계 인증 설정 세션이 만료되었습니다. 다시 시작해 주세요",
+		"error.totpSetupChallengeInvalid": "잘못된 2단계 인증 설정 세션입니다",
+		"error.invalidCode":               "잘못된 코드입니다",
+		"error.currentPasswordRequired":   "현재 비밀번호를 입력해 주세요",
+		"error.invalidCurrentPassword":    "현재 비밀번호가 올바르지 않습니다",
+		"error.invalidTOTPCode":           "잘못된 코드입니다. 다시 시도해 주세요.",
+		"error.totpAlreadyEnabled":        "2단계 인증이 이미 활성화되어 있습니다",
+		"error.totpNotSetUp":              "2단계 인증이 아직 설정되지 않았습니다",
+		"error.totpNotEnabled":            "2단계 인증이 활성화되어 있지 않습니다",
+		"error.totpChallengeExpired":      "인증이 만료되었습니다. 다시 로그인해 주세요.",
+
+		// Validation errors
+		"error.nameRequired":           "이름을 입력해 주세요",
+		"error.nameEmpty":              "이름은 비워 둘 수 없습니다",
+		"error.emailRequired":          "이메일을 입력해 주세요",
+		"error.emailInvalid":           "잘못된 이메일 주소입니다",
+		"error.emailTaken":             "이미 사용 중인 이메일입니다",
+		"error.emailAlreadyRegistered": "이미 등록된 이메일입니다. 로그인해 주세요.",
+		"error.passwordRequired":       "비밀번호를 입력해 주세요",
+		"error.passwordTooShort":       "비밀번호는 최소 %[1]d자 이상이어야 합니다",
+		"error.passwordTooWeak":        "비밀번호가 너무 취약합니다. 추측하기 어려운 비밀번호를 사용해 주세요(흔한 단어, 키보드 패턴, 개인정보를 피하세요).",
+		"error.passwordIncorrect":      "비밀번호가 올바르지 않습니다",
+		"error.slugRequired":           "슬러그를 입력해 주세요",
+		"error.slugEmpty":              "슬러그는 비워 둘 수 없습니다",
+		"error.slugInvalid":            "잘못된 슬러그 형식입니다",
+		"error.statusRequired":         "상태를 입력해 주세요",
+		"error.statusEmpty":            "상태는 비워 둘 수 없습니다",
+		"error.statusInvalid":          "잘못된 상태입니다",
+		"error.languageInvalid":        "지원하지 않는 언어입니다",
+		"error.fieldTooLong":           "%[1]s은(는) 최대 %[2]d자까지 입력할 수 있습니다",
+		"error.fieldTooShort":          "%[1]s은(는) 최소 %[2]d자 이상이어야 합니다",
+		"error.fieldLength":            "%[1]s은(는) %[2]d자에서 %[3]d자 사이여야 합니다",
+
+		// Resource errors
+		"error.accountNotFound":       "계정을 찾을 수 없습니다",
+		"error.workspaceNotFound":     "워크스페이스를 찾을 수 없습니다",
+		"error.projectNotFound":       "프로덕트를 찾을 수 없습니다",
+		"error.projectDisabled":       "프로덕트가 비활성화되어 있습니다",
+		"error.projectNotInWorkspace": "프로덕트가 워크스페이스에 속해 있지 않습니다",
+		"error.roleNotFound":          "역할을 찾을 수 없습니다",
+		"error.permissionNotFound":    "권한을 찾을 수 없습니다",
+		"error.apiKeyNotFound":        "API 키를 찾을 수 없습니다",
+		"error.sessionNotFound":       "세션을 찾을 수 없습니다",
+		"error.appNotFound":           "앱을 찾을 수 없습니다",
+		"error.appDisabled":           "앱이 비활성화되어 있습니다",
+		"error.invalidStatus":         "잘못된 상태입니다(\"active\" 또는 \"disabled\"여야 합니다)",
+		"error.permissionsInvalid":    "하나 이상의 권한이 잘못되었습니다",
+		"error.invalidEmail":          "잘못된 이메일 주소입니다",
+		"error.batchTooLarge":         "일괄 처리 크기가 너무 큽니다(요청당 최대 %d명)",
+		"error.appUrlRequired":        "초대 이메일을 보내려면 앱 URL을 설정해야 합니다",
+
+		// ID errors
+		"error.missingProjectId":     "프로덕트 ID가 없습니다",
+		"error.missingWorkspaceId":   "워크스페이스 ID가 없습니다",
+		"error.missingWorkspaceSlug": "워크스페이스 슬러그가 없습니다",
+		"error.missingAccountId":     "계정 ID가 없습니다",
+		"error.invalidProjectId":     "잘못된 프로덕트 ID입니다",
+		"error.invalidWorkspaceId":   "잘못된 워크스페이스 ID입니다",
+		"error.invalidAccountId":     "잘못된 계정 ID입니다",
+		"error.invalidPage":          "잘못된 페이지입니다",
+		"error.invalidPageSize":      "잘못된 페이지 크기입니다",
+		"error.invalidAppId":         "잘못된 앱 ID입니다",
+		"error.invalidFeatureFlagId": "잘못된 기능 플래그 ID입니다",
+		"error.invalidConfigKeyId":   "잘못된 설정 키 ID입니다",
+		"error.invalidRoleId":        "잘못된 역할 ID입니다",
+		"error.invalidPermissionId":  "잘못된 권한 ID입니다",
+		"error.invalidApiKeyId":      "잘못된 API 키 ID입니다",
+		"error.invalidUserId":        "잘못된 사용자 ID입니다",
+
+		// Auth errors
+		"error.invalidCredentials": "이메일 또는 비밀번호가 올바르지 않습니다",
+		"error.invalidToken":       "잘못되었거나 만료된 토큰입니다",
+		"error.alreadyLoggedIn":    "이미 로그인되어 있습니다",
+		"error.notLoggedIn":        "로그인되어 있지 않습니다",
+		"error.emailNotVerified":   "이메일이 인증되지 않았습니다",
+		"error.accountDisabled":    "계정이 비활성화되었습니다",
+
+		// Feature-specific errors
+		"error.featureFlagNotFound":       "기능 플래그를 찾을 수 없습니다",
+		"error.configKeyNotFound":         "설정 키를 찾을 수 없습니다",
+		"error.configValueNotFound":       "설정 값을 찾을 수 없습니다",
+		"error.encryptionKeyNotFound":     "암호화 키를 찾을 수 없습니다",
+		"error.keyInvalid":                "잘못된 키 형식입니다",
+		"error.keyExists":                 "이미 존재하는 키입니다",
+		"error.conflict":                  "리소스 충돌이 발생했습니다",
+		"error.secretsNotSupportedViaAPI": "시크릿 설정 값은 관리자 UI에서 설정해야 합니다",
+
+		// Workspace account errors
+		"error.workspaceAccountNotFound": "워크스페이스 계정을 찾을 수 없습니다",
+		"error.workspaceAccountExists":   "워크스페이스 계정이 이미 존재합니다",
+
+		// Auth method errors
+		"error.noSignInMethodEnabled":           "로그인 방법을 하나 이상 활성화된 상태로 유지해야 합니다. 다른 방법을 비활성화하기 전에 로그인 방법(이메일, Google, Apple, Microsoft, GitHub 중 하나)을 활성화해 주세요.",
+		"error.authMethodDisabled":              "이 로그인 방법은 이 앱에서 활성화되어 있지 않습니다.",
+		"error.magicLinkRequiresAppUrl":         "매직 링크 로그인을 사용하려면 앱에 앱 URL이 설정되어 있어야 합니다.",
+		"error.googleClientIdRequired":          "Google 로그인을 활성화하려면 Google OAuth 클라이언트 ID가 필요합니다.",
+		"error.appleConfigIncomplete":           "활성화하기 전에 Apple 자격 증명 네 개 항목(Services ID, Team ID, Key ID, .p8 키)을 모두 설정해 주세요.",
+		"error.appleKeyInvalid":                 "Apple .p8 비공개 키가 유효한 PKCS8 EC 키가 아닙니다.",
+		"error.appleNotConfigured":              "이 앱에는 Apple 로그인이 설정되어 있지 않습니다.",
+		"error.microsoftConfigIncomplete":       "활성화하기 전에 Microsoft 클라이언트 ID와 클라이언트 시크릿을 모두 설정해 주세요.",
+		"error.microsoftNotConfigured":          "이 앱에는 Microsoft 로그인이 설정되어 있지 않습니다.",
+		"error.microsoftTenantInvalid":          "Microsoft 테넌트는 'common', 'organizations', 'consumers' 또는 테넌트 UUID여야 합니다.",
+		"error.microsoftEmailDomainNotVerified": "설정 문제로 로그인할 수 없습니다. 앱 관리자에게 문의해 주세요.",
+		"error.githubConfigIncomplete":          "활성화하기 전에 GitHub 클라이언트 ID와 클라이언트 시크릿을 모두 설정해 주세요.",
+		"error.githubNotConfigured":             "이 앱에는 GitHub 로그인이 설정되어 있지 않습니다.",
+		"error.githubNoVerifiedEmail":           "GitHub 계정에 인증된 기본 이메일이 없습니다. GitHub 설정에서 기본 이메일을 인증한 후 다시 시도해 주세요.",
+		"error.googleOAuthNotConfigured":        "이 앱에는 Google OAuth가 설정되어 있지 않습니다.",
+		"error.emailNotProvided":                "로그인 제공자가 이메일 주소를 반환하지 않았습니다.",
+		"error.invalidOrigin":                   "이 앱에서는 허용되지 않는 opener 출처입니다.",
+
+		// Generic external IdP (OIDC / OAuth2) admin config errors
+		"error.externalIdpInvalidSlug":          "슬러그는 소문자, 숫자, 하이픈으로 구성되어야 합니다(문자 또는 숫자로 시작).",
+		"error.externalIdpDisplayNameRequired":  "표시 이름을 입력해 주세요.",
+		"error.externalIdpInvalidMode":          "모드는 OIDC 또는 OAuth2여야 합니다.",
+		"error.externalIdpClientIdRequired":     "클라이언트 ID를 입력해 주세요.",
+		"error.externalIdpClientSecretRequired": "클라이언트 시크릿을 입력해 주세요.",
+		"error.externalIdpIssuerRequired":       "OIDC 제공자에는 발급자 URL이 필요합니다.",
+		"error.externalIdpEndpointsRequired":    "OAuth2 제공자에는 authorize, token, userinfo URL이 모두 필요합니다.",
+		"error.externalIdpInsecureUrl":          "제공자 URL은 https를 사용해야 합니다.",
+		"error.externalIdpSlugTaken":            "이 앱에 같은 슬러그를 사용하는 제공자가 이미 존재합니다.",
+
+		// CORS/IP errors
+		"error.corsOriginNotFound":    "CORS 출처를 찾을 수 없습니다",
+		"error.ipNotAllowed":          "허용되지 않은 IP 주소입니다",
+		"error.invalidOriginUrl":      "잘못된 출처 URL입니다",
+		"error.ipRangeRequired":       "IP 범위를 입력해 주세요",
+		"error.invalidIpRange":        "잘못된 IP 주소 또는 CIDR 범위입니다",
+		"error.ipRangeExists":         "이미 존재하는 IP 범위입니다",
+		"error.messageRequired":       "메시지를 입력해 주세요",
+		"error.messageTooLong":        "메시지가 너무 깁니다",
+		"error.rolesInvalid":          "하나 이상의 역할이 잘못되었습니다",
+		"error.appIdRequired":         "앱 ID를 입력해 주세요",
+		"error.originRequiresScheme":  "출처는 http:// 또는 https://로 시작해야 합니다",
+		"error.originRequiresHost":    "출처에는 호스트가 포함되어야 합니다",
+		"error.originNoPath":          "출처에는 경로가 포함되면 안 됩니다",
+		"error.originNoQueryFragment": "출처에는 쿼리나 프래그먼트가 포함되면 안 됩니다",
+		"error.originNoUserInfo":      "출처에는 사용자 정보가 포함되면 안 됩니다",
+		"error.smtpTestFailed":        "SMTP 테스트에 실패했습니다: %s",
+
+		// Team errors
+		"error.team.notFound":              "계정을 찾을 수 없습니다",
+		"error.team.cannotRemoveSelf":      "팀에서 자기 자신을 제거할 수 없습니다",
+		"error.team.cannotRemoveLastOwner": "마지막 소유자는 제거할 수 없습니다",
+		"error.team.alreadyInvited":        "이 이메일로 이미 초대를 보냈습니다",
+
+		// Lockout errors
+		"error.accountLocked": "로그인 시도가 너무 많아 계정이 일시적으로 잠겼습니다. 잠시 후 다시 시도해 주세요.",
+	}
+}

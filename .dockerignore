@@ -1,0 +1,36 @@
+# Anything not needed inside the build context. Keeps the image small
+# and avoids leaking local-only state into the build.
+
+# Git + IDE state
+.git
+.gitignore
+.idea
+.vscode
+
+# Local secrets and operator-managed config
+.env
+.env.local
+
+# Stray scratch
+slug.tgz
+app/
+*.log
+
+# Node artefacts — installed inside the build stage anyway
+**/node_modules
+**/dist
+**/.turbo
+
+# Pre-built UI bundles in the embed dirs (the build re-creates them)
+manyrows-core/web/assets
+manyrows-core/web/index.html
+manyrows-core/web/*.png
+manyrows-core/web/*.ico
+manyrows-core/web/*.txt
+manyrows-core/web/*.webmanifest
+manyrows-core/appkit/appkit/assets
+manyrows-core/appkit/index.html
+manyrows-core/appkit/version.txt
+
+# Memory / agent leftovers
+.claude
