@@ -1,4 +1,4 @@
-# ManyRows
+# ManyRows Auth
 
 Self-hostable user authentication you can drop in front of your apps.
 Sign-in, password reset, email verification, magic links, OAuth (Google,
@@ -12,8 +12,8 @@ credentials, and roles.
 
 > **Honest status.** ManyRows is built by one developer. It runs
 > in production today - it powers sign-in for
-> [DrumKingdom.com](https://drumkingdom.com) and
-> [JerryLingo.com](https://jerrylingo.com) - but there's no QA team, no SLA, and no claim it's
+> [DrumKingdom.com](https://drumkingdom.com)
+> - but there's no QA team, no SLA, and no claim it's
 > bug-free. Run it, kick the tyres, and satisfy yourself it holds up
 > before you put it in front of anything that matters. If something
 > breaks or feels wrong, that's a bug I want to hear about.
