@@ -259,11 +259,3 @@ func (handler *RequestHandler) roleIDFromURL(w http.ResponseWriter, r *http.Requ
 	}
 	return id, true
 }
-
-func strPtr(s string) *string {
-	if strings.TrimSpace(s) == "" {
-		return nil
-	}
-	v := s
-	return &v
-}

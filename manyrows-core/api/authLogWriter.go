@@ -129,34 +129,6 @@ func buildAuthLog(in AuthLogInput) core.AuthLog {
 	return row
 }
 
-// authMethodFromLoginMethod bridges the legacy core.LoginMethod (a holdover
-// from the pre-rebuild user_login_events.method enum) to the new
-// AuthLogMethod constants. Most values share a wire format; magic_link
-// becomes email_otp because the underlying flow has been email-OTP for a
-// while now and "magic link" was a misnomer. core.LoginMethod is slated
-// for deletion once every call site passes AuthLogMethod directly.
-func authMethodFromLoginMethod(m core.LoginMethod) core.AuthLogMethod {
-	switch m {
-	case core.LoginMethodPassword:
-		return core.AuthMethodPassword
-	case core.LoginMethodGoogle:
-		return core.AuthMethodGoogle
-	case core.LoginMethodApple:
-		return core.AuthMethodApple
-	case core.LoginMethodMicrosoft:
-		return core.AuthMethodMicrosoft
-	case core.LoginMethodGithub:
-		return core.AuthMethodGithub
-	case core.LoginMethodTOTP:
-		return core.AuthMethodTOTP
-	case core.LoginMethodMagicLink:
-		return core.AuthMethodEmailOTP
-	case core.LoginMethodPasskey:
-		return core.AuthMethodPasskey
-	}
-	return ""
-}
-
 // authFailFromLoginFailure bridges legacy core.LoginFailure* string codes
 // (used by the old user_login_events.failure_reason column) to the typed
 // AuthLogFailureReason constants. Slated for deletion once every call

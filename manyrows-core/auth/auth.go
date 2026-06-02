@@ -336,34 +336,9 @@ func newTokenClaims() (core.TokenClaims, []byte, error) {
 	}, secretHash, nil
 }
 
-// effectiveClientIPKey carries an authenticated client IP set by an
-// upstream middleware. Currently unused, but kept as the escape hatch
-// for future trusted middlewares that need to override the wire-level
-// client IP.
-type effectiveClientIPKey struct{}
-
-// WithClientIP returns a context that carries an authenticated client
-// IP. Only middleware that has already verified the source of the
-// request should call this; ClientIP trusts the value unconditionally
-// when present.
-func WithClientIP(ctx context.Context, ip string) context.Context {
-	return context.WithValue(ctx, effectiveClientIPKey{}, ip)
-}
-
-func clientIPFromContext(ctx context.Context) string {
-	v, _ := ctx.Value(effectiveClientIPKey{}).(string)
-	return v
-}
-
 func ClientIP(r *http.Request) string {
 	if r == nil {
 		return ""
-	}
-
-	// Authenticated override from an upstream middleware — wins over
-	// headers because the middleware already vetted the source.
-	if ip := clientIPFromContext(r.Context()); ip != "" {
-		return ip
 	}
 
 	// Forwarding headers (CF-Connecting-IP, X-Forwarded-For, X-Real-IP)

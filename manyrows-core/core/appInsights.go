@@ -1,34 +1,5 @@
 package core
 
-import (
-	"time"
-
-	"github.com/gofrs/uuid/v5"
-)
-
-// LoginMethod identifies which auth path produced a login event.
-type LoginMethod string
-
-const (
-	LoginMethodPassword  LoginMethod = "password"
-	LoginMethodGoogle    LoginMethod = "google"
-	LoginMethodApple     LoginMethod = "apple"
-	LoginMethodMicrosoft LoginMethod = "microsoft"
-	LoginMethodGithub    LoginMethod = "github"
-	LoginMethodTOTP      LoginMethod = "totp"
-	LoginMethodMagicLink LoginMethod = "magic_link"
-	LoginMethodPasskey   LoginMethod = "passkey"
-	LoginMethodOther     LoginMethod = "other"
-)
-
-// LoginEventStatus is "success" or "failed".
-type LoginEventStatus string
-
-const (
-	LoginEventSuccess LoginEventStatus = "success"
-	LoginEventFailed  LoginEventStatus = "failed"
-)
-
 // LoginFailureReason categorizes why a login attempt failed. Free-form
 // strings, but we use a small set of canonical values for charting.
 const (
@@ -41,20 +12,6 @@ const (
 	LoginFailureTOTPRequired = "totp_required"
 	LoginFailureTOTPInvalid  = "totp_invalid"
 )
-
-// UserLoginEvent is one row of the per-app login attempt log.
-type UserLoginEvent struct {
-	ID             uuid.UUID
-	AppID          uuid.UUID
-	UserID         *uuid.UUID
-	Status         LoginEventStatus
-	FailureReason  string
-	Method         LoginMethod
-	EmailAttempted string
-	IP             string
-	UserAgent      string
-	CreatedAt      time.Time
-}
 
 // ===== Insights response types =====
 

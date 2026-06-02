@@ -55,10 +55,6 @@ var translations = map[string]map[string]string{
 		"admin.login.subject": "Your {brand} sign-in link",
 		"admin.login.body":    "Hi,\n\nUse this magic link to sign in to {brand}:\n\n%s\n\nIf you didn't request this, you can ignore this email.\n",
 
-		// Workspace login
-		"workspace.login.subject": "Your %s sign-in link",
-		"workspace.login.body":    "Hi,\n\nUse this magic link to sign in to %s:\n\n%s\n\nOrganization: %s\n\nIf you didn't request this, you can ignore this email.\n",
-
 		// Workspace OTP
 		"workspace.otp.subject": "Your %s login code",
 		"workspace.otp.body":    "Your login code for %s is:\n\n%s\n\nThis code expires in 10 minutes.\nIf you didn't request this, you can ignore this email.",

@@ -1,9 +1,7 @@
 package api
 
 import (
-	"context"
 	"manyrows-core/core"
-	"manyrows-core/core/repo"
 	"manyrows-core/core/validation"
 	"manyrows-core/utils"
 	"net/http"
@@ -13,8 +11,6 @@ import (
 )
 
 const (
-	attemptPurposeMagicLink = "magic_link"
-
 	maxAttemptsPerIP10Min      = 30
 	maxAttemptsPerSubject10Min = 10
 	attemptWindow              = 10 * time.Minute
@@ -81,28 +77,6 @@ func (handler *RequestHandler) AdminLogout(w http.ResponseWriter, r *http.Reques
 		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 		return
 	}
-}
-
-func (handler *RequestHandler) createMagicToken(ctx context.Context, purpose string, toEmail string) (string, error) {
-	// Create magic link token (raw) + hash (stored)
-	rawToken, tokenHash, err := handler.adminAuthService.NewMagicToken()
-	if err != nil {
-		log.Err(err).Msg("Could not generate magic token")
-		return "", err
-	}
-
-	expiresAt := time.Now().Add(15 * time.Minute)
-
-	if err := handler.repo.CreateMagicLink(ctx, repo.CreateMagicLinkParams{
-		Purpose:   purpose,
-		Email:     toEmail,
-		TokenHash: tokenHash,
-		ExpiresAt: expiresAt,
-	}); err != nil {
-		log.Err(err).Msg("Could not persist magic link")
-		return "", err
-	}
-	return rawToken, nil
 }
 
 func (handler *RequestHandler) AdminProcessMagicLink(w http.ResponseWriter, r *http.Request) {

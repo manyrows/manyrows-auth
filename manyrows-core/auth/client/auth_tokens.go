@@ -391,14 +391,6 @@ func (a *AuthService) RefreshTokenPair(
 	}, nil
 }
 
-// RevokeRefreshToken revokes a specific refresh token.
-func (a *AuthService) RevokeRefreshToken(ctx context.Context, refreshToken string) error {
-	if refreshToken == "" {
-		return nil
-	}
-	return a.repo.RevokeClientRefreshToken(ctx, hashToken(refreshToken), time.Now().UTC())
-}
-
 // RevokeAllSessionTokens revokes all refresh tokens for a session.
 func (a *AuthService) RevokeAllSessionTokens(ctx context.Context, sessionID uuid.UUID) error {
 	return a.repo.RevokeAllRefreshTokensForSession(ctx, sessionID, time.Now().UTC())

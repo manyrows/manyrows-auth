@@ -23,13 +23,6 @@ import (
 // Response shapes
 // =====================
 
-// WorkspaceMeResponse is the workspace-scoped identity response.
-// Route: GET /x/{workspaceSlug}/a/me
-type WorkspaceMeResponse struct {
-	User          *core.UserResource `json:"user,omitempty"`
-	WorkspaceName string             `json:"workspaceName"`
-}
-
 // AppMeResponse is the combined identity response: workspace user + app
 // claims in one payload. Replaces the previous /a/me + /a/app/me split.
 // Route: GET /x/{workspaceSlug}/apps/{appId}/a/app/me
@@ -222,29 +215,6 @@ func (handler *RequestHandler) resolveRolesAndPermissions(
 // =====================
 // Handlers
 // =====================
-
-// GetWorkspaceMe returns identity (workspace-scoped).
-// GET /x/{workspaceSlug}/a/me
-func (handler *RequestHandler) GetWorkspaceMe(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-
-	ses, identity, ws, ok := handler.requireActiveClientSession(w, r)
-	if !ok {
-		return
-	}
-
-	out := WorkspaceMeResponse{
-		WorkspaceName: ws.Name,
-		User:          core.ToUserResource(identity.User),
-	}
-
-	// Touch client session last_seen (no app context at workspace level)
-	if _, err := handler.repo.TouchClientSessionLastSeen(ctx, ses.ID); err != nil {
-		log.Err(err).Msg("Could not touch client session last seen")
-	}
-
-	utils.WriteJson(w, out)
-}
 
 // GetAppMe returns the combined identity response: workspace user info +
 // app-scoped claims (roles, permissions). Replaces the previous /a/me +

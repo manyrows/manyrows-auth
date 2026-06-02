@@ -29,12 +29,6 @@ type updateWorkspaceRequest struct {
 	Slug string `json:"slug"`
 }
 
-// create request accepts name+slug from UI
-type createWorkspaceRequest struct {
-	Name string `json:"name"`
-	Slug string `json:"slug"`
-}
-
 // ----------------------------
 // Slug rules (workspace)
 // ----------------------------
