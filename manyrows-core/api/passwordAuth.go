@@ -67,10 +67,13 @@ func validateAppPasswordCredentials(
 		return PasswordAuthResult{Outcome: PWAuthNoUser}, nil
 	}
 
-	// Lockout: report and stop. Email-verified and password checks
-	// are intentionally NOT run during a lockout — the response is
-	// the same whether the password would have been right or wrong.
-	if user.LockedUntil != nil && time.Until(*user.LockedUntil) > 0 {
+	// Lockout gate: when BruteForceProtectionEnabled is on, a user inside
+	// their lockout window is rejected immediately WITHOUT running the
+	// email-verified or password checks — the response is the same
+	// regardless of whether the password would have been correct, so no
+	// information is leaked. When protection is off the lockout window is
+	// ignored and the request proceeds to the normal verify path.
+	if app.BruteForceProtectionEnabled && user.LockedUntil != nil && time.Until(*user.LockedUntil) > 0 {
 		return PasswordAuthResult{Outcome: PWAuthLocked, User: user}, nil
 	}
 

@@ -126,6 +126,7 @@ func setupClientAPIRouter(t *testing.T) *chi.Mux {
 			authR.Get("/magic-link", requestHandler.WorkspaceConsumeMagicLink)
 			authR.Post("/totp/setup-init", requestHandler.HandleWorkspaceTOTPSetupInit)
 			authR.Post("/totp/setup-complete", requestHandler.HandleWorkspaceTOTPSetupComplete)
+			authR.Post("/totp/verify", requestHandler.HandleWorkspaceTOTPVerify)
 		})
 
 		// Authed endpoints
