@@ -56,7 +56,8 @@ services:
       MANYROWS_BASE_URL: ${MANYROWS_BASE_URL:-}
 
       # Optional. Each defaults sensibly when unset:
-      #   - MANYROWS_DB_SCHEMA defaults to "manyrows"
+      #   - MANYROWS_DB_SCHEMA defaults to "manyrowsauth" (pre-rename
+      #     installs are migrated from "manyrows" automatically on boot)
       #   - HMAC keys / encryption key / OTP pepper auto-generate
       #     into system_secrets on first boot
       #   - SMTP unset → mail logs to stdout (set MANYROWS_SMTP_HOST

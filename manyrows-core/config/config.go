@@ -281,7 +281,7 @@ func (conf *Config) getConnectTimeoutSeconds() (bool, int32) {
 }
 
 // GetDBSchema returns the Postgres schema all ManyRows tables live in.
-// Defaults to "manyrows" when MANYROWS_DB_SCHEMA is unset, so the
+// Defaults to "manyrowsauth" when MANYROWS_DB_SCHEMA is unset, so the
 // install can share a Postgres with the operator's other apps without
 // dumping its tables into public. One ManyRows instance per database
 // is the supported topology — this isn't a multi-tenancy hatch.
