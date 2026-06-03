@@ -70,7 +70,9 @@ func validateAppPasswordCredentials(
 	// Lockout: report and stop. Email-verified and password checks
 	// are intentionally NOT run during a lockout — the response is
 	// the same whether the password would have been right or wrong.
-	if user.LockedUntil != nil && time.Until(*user.LockedUntil) > 0 {
+	// Gated by the per-app brute-force-protection toggle: when off, the
+	// lockout window is ignored so the login proceeds normally.
+	if app.BruteForceProtectionEnabled && user.LockedUntil != nil && time.Until(*user.LockedUntil) > 0 {
 		return PasswordAuthResult{Outcome: PWAuthLocked, User: user}, nil
 	}
 
