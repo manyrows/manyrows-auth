@@ -11,6 +11,7 @@ import type { App } from "./AppAuthMethods.tsx";
 import AppCorsOrigins from "./AppCorsOrigins.tsx";
 import AppIPAllowlist from "./AppIPAllowlist.tsx";
 import AppPasswordPolicyCard from "./AppPasswordPolicyCard.tsx";
+import AppBruteForceCard from "./AppBruteForceCard.tsx";
 import AppDomainPoolTab from "./AppDomainPoolTab.tsx";
 import { SessionTransportTab, SessionLifetimeTab } from "./AppSessionsCard.tsx";
 
@@ -77,6 +78,7 @@ export default function AppSecurity({ project, workspace, appId }: Props) {
           <Tab label={t("appSecurity.tab.cors", { defaultValue: "CORS" })} />
           <Tab label={t("appSecurity.tab.ipAllowlist", { defaultValue: "IP allowlist" })} />
           <Tab label={t("appSecurity.tab.passwords", { defaultValue: "Passwords" })} />
+          <Tab label={t("appSecurity.tab.bruteForce", { defaultValue: "Brute force protection" })} />
         </Tabs>
       </Box>
 
@@ -130,6 +132,15 @@ export default function AppSecurity({ project, workspace, appId }: Props) {
       )}
       {tab === 5 && (
         <AppPasswordPolicyCard
+          app={app}
+          cardURL={cardURL}
+          onSaved={onSaved}
+          onSuccess={onSuccess}
+          onError={onError}
+        />
+      )}
+      {tab === 6 && (
+        <AppBruteForceCard
           app={app}
           cardURL={cardURL}
           onSaved={onSaved}

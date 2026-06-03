@@ -101,6 +101,7 @@ export type App = {
   // Server-computed QR sign-in URL (AppBaseURL + workspace slug +
   // app id + /qr-sign-in). Present whenever BASE_URL is pinned.
   qrSignInUrl?: string;
+  bruteForceProtectionEnabled?: boolean;
 };
 
 type RolesResponse = { roles: Role[] };
