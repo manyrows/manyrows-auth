@@ -227,6 +227,15 @@ type App struct {
 	// regardless, so enabling later doesn't false-alarm on known devices).
 	NewDeviceAlertsEnabled bool `json:"newDeviceAlertsEnabled"`
 
+	// BruteForceProtectionEnabled gates the credential-guessing defenses on
+	// this app's workspace-user login: progressive account lockout and the
+	// login-specific per-IP / per-subject rate limit. On by default. Failed
+	// attempts are recorded regardless; this only gates enforcement, so
+	// toggling it off lets currently locked users back in and toggling it
+	// back on resumes protection immediately. Does NOT affect admin-console
+	// login or non-login rate limits (reset / magic-link / TOTP / email caps).
+	BruteForceProtectionEnabled bool `json:"bruteForceProtectionEnabled"`
+
 	// Session TTL in minutes (nil = default 7 days). Absolute lifetime
 	// — the session dies at CreatedAt + this regardless of activity.
 	SessionTTLMinutes *int `json:"sessionTtlMinutes,omitempty"`
