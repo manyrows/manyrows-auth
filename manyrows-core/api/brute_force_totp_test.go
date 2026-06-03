@@ -83,7 +83,10 @@ func TestBFPTOTP_LockoutCheckGated(t *testing.T) {
 	}
 
 	cfg := GetTestConfig()
-	totpKey, _ := cfg.GetSessionAuthKey()
+	totpKey, err := cfg.GetSessionAuthKey()
+	if err != nil {
+		t.Fatalf("GetSessionAuthKey: %v", err)
+	}
 	challengeToken := auth.SignTOTPChallengeWithFlags([]byte(totpKey), user.ID, 5*time.Minute, false)
 
 	// Protection ON (default): locked → 403 even with a valid code (the
