@@ -1216,9 +1216,11 @@ func (handler *RequestHandler) WorkspaceLoginPassword(w http.ResponseWriter, r *
 		})
 	}
 
-	if !handler.checkAttemptRateLimit(w, r, attemptPurposeWorkspaceLoginPassword, ip, toEmail, "workspace password login",
-		func() { pwLoginFailed(core.AuthFailRateLimited, nil) }) {
-		return
+	if ctxApp.BruteForceProtectionEnabled {
+		if !handler.checkAttemptRateLimit(w, r, attemptPurposeWorkspaceLoginPassword, ip, toEmail, "workspace password login",
+			func() { pwLoginFailed(core.AuthFailRateLimited, nil) }) {
+			return
+		}
 	}
 
 	// Validate credentials. The helper does the security-critical
@@ -1270,7 +1272,9 @@ func (handler *RequestHandler) WorkspaceLoginPassword(w http.ResponseWriter, r *
 	case PWAuthWrongPassword:
 		// best-effort: rate-limit bookkeeping (see PWAuthNoUser).
 		_ = handler.repo.InsertAttempt(r.Context(), attemptPurposeWorkspaceLoginPassword, toEmail, ip)
-		handler.maybeApplyUserLockout(r, user.ID, attemptPurposeWorkspaceLoginPassword, toEmail)
+		if ctxApp.BruteForceProtectionEnabled {
+			handler.maybeApplyUserLockout(r, user.ID, attemptPurposeWorkspaceLoginPassword, toEmail)
+		}
 		pwLoginFailed(core.AuthFailWrongPassword, subjectIDIfKnown())
 		WriteError(w, r, "error.invalidCredentials", http.StatusUnauthorized)
 		return

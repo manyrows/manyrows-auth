@@ -396,6 +396,13 @@ func (handler *RequestHandler) HandleWorkspaceTOTPVerify(w http.ResponseWriter, 
 	// App context is set by the /x/{slug}/apps/{appId}/... route. Pull it
 	// once so failure-event recording at every exit can attribute correctly.
 	ctxApp, _ := core.AppFromContext(r.Context())
+
+	// Brute-force protection gates the same three enforcement points here as
+	// in the password-login step (rate-limit check, lockout check, lockout
+	// apply), because TOTP is the second factor of the same workspace-user
+	// login. A nil app (shouldn't happen on this route) defaults to protected.
+	bfpEnabled := ctxApp == nil || ctxApp.BruteForceProtectionEnabled
+
 	recordTOTPFailure := func(reason, email string) {
 		if ctxApp == nil {
 			return
@@ -429,9 +436,11 @@ func (handler *RequestHandler) HandleWorkspaceTOTPVerify(w http.ResponseWriter, 
 	// Rate limit (shares counter with workspace password login)
 	ip := auth.ClientIP(r)
 
-	if !handler.checkAttemptRateLimit(w, r, attemptPurposeWorkspaceLoginPassword, ip, "", "workspace TOTP verify",
-		func() { recordTOTPFailure(core.LoginFailureRateLimit, "") }) {
-		return
+	if bfpEnabled {
+		if !handler.checkAttemptRateLimit(w, r, attemptPurposeWorkspaceLoginPassword, ip, "", "workspace TOTP verify",
+			func() { recordTOTPFailure(core.LoginFailureRateLimit, "") }) {
+			return
+		}
 	}
 
 	userID, rememberMe, err := auth.VerifyTOTPChallenge(handler.totpKey, req.ChallengeToken)
@@ -466,8 +475,8 @@ func (handler *RequestHandler) HandleWorkspaceTOTPVerify(w http.ResponseWriter, 
 		return
 	}
 
-	// Check account lockout
-	if handler.checkAccountLocked(w, r, userWithTOTP.LockedUntil) {
+	// Check account lockout (gated; see bfpEnabled above)
+	if bfpEnabled && handler.checkAccountLocked(w, r, userWithTOTP.LockedUntil) {
 		recordTOTPFailure(core.LoginFailureLocked, maskEmail(userWithTOTP.Email))
 		return
 	}
@@ -521,7 +530,9 @@ func (handler *RequestHandler) HandleWorkspaceTOTPVerify(w http.ResponseWriter, 
 
 	// Both failed — record attempt
 	_ = handler.repo.InsertAttempt(r.Context(), attemptPurposeWorkspaceLoginPassword, subject, ip)
-	handler.maybeApplyUserLockout(r, userWithTOTP.ID, attemptPurposeWorkspaceLoginPassword, subject)
+	if bfpEnabled {
+		handler.maybeApplyUserLockout(r, userWithTOTP.ID, attemptPurposeWorkspaceLoginPassword, subject)
+	}
 	recordTOTPFailure(core.LoginFailureTOTPInvalid, maskEmail(userWithTOTP.Email))
 	WriteError(w, r, "error.invalidTOTPCode", http.StatusUnauthorized)
 }
