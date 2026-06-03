@@ -136,6 +136,7 @@ func TestBFPLogin_RateLimitGated(t *testing.T) {
 // window (otherwise the rate limit would short-circuit before lockout-apply).
 func TestBFPLogin_LockoutApplyGated(t *testing.T) {
 	router := setupClientAPIRouter(t)
+	testEnv.ClearRateLimitAttempts(t)
 	ctx := context.Background()
 
 	// Read users.locked_until directly so the assertion doesn't depend on
