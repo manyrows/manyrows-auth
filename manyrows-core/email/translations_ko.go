@@ -57,6 +57,10 @@ func init() {
 		"email_change.notice.subject":           "{brand} 이메일 주소가 변경되었습니다",
 		"email_change.notice.body":              "{brand} 계정의 이메일 주소가 방금 변경되었습니다.\n\n본인이 변경하셨다면 별도의 조치가 필요하지 않습니다.\n\n본인이 변경하지 않으셨다면 이 이메일에 회신해 주세요. 계정 접근 복구를 도와드리겠습니다.",
 
+		// New device sign-in alert
+		"new_device.subject": "%s에 새 기기에서 로그인",
+		"new_device.body":    "이전에 본 적 없는 기기에서 %s에 로그인한 것을 확인했습니다:\n\n기기: %s\nIP 주소: %s\n시간: %s\n\n본인이 맞다면 이 이메일을 무시하셔도 됩니다. 본인이 아니라면 즉시 비밀번호를 재설정하고 계정을 확인하세요.",
+
 		// Team invite
 		"team_invite.subject": "{brand}의 %s에 초대되었습니다",
 		"team_invite.body":    "안녕하세요,\n\n%s님이 회원님을 {brand}의 \"%s\" 관리자로 초대했습니다.\n\n아래 링크를 클릭하여 초대를 수락하고 계정을 만드세요:\n\n%s\n\n이 링크는 7일 후에 만료됩니다.\n예상하지 못한 초대라면 이 이메일을 무시하셔도 됩니다.\n",

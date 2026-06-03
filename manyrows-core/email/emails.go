@@ -343,6 +343,33 @@ func (s *Service) SendEmailChangeNotice(oldEmail string, lang string) error {
 	return s.Send(&email)
 }
 
+// buildNewDeviceAlertEmail composes the new-device security alert. Kept
+// separate from SendNewDeviceAlert so the composition (recipient, subject,
+// body substitutions) is unit-testable without a live transport.
+func buildNewDeviceAlertEmail(toEmail, appName, userAgent, ip string, when time.Time, lang string) Email {
+	subject := fmt.Sprintf(T(lang, "new_device.subject"), appName)
+	body := fmt.Sprintf(T(lang, "new_device.body"),
+		appName, userAgent, ip, when.UTC().Format("2006-01-02 15:04 MST"))
+	return Email{
+		To:      toEmail,
+		From:    WorkspaceFrom(appName),
+		Subject: subject,
+		Body:    body,
+	}
+}
+
+// SendNewDeviceAlert notifies an end user that their account was signed in to
+// from a device that hasn't been seen before, so they can react if it wasn't
+// them. Best-effort — callers invoke it off the login path.
+func (s *Service) SendNewDeviceAlert(toEmail, appName, userAgent, ip string, when time.Time, lang string) error {
+	toEmail = strings.TrimSpace(toEmail)
+	if toEmail == "" {
+		return errors.New("missing recipient email")
+	}
+	em := buildNewDeviceAlertEmail(toEmail, appName, userAgent, ip, when, lang)
+	return s.Send(&em)
+}
+
 func (s *Service) SendTeamInviteEmail(toEmail string, inviterName string, workspaceName string, magicLink string, lang string) error {
 	subject := fmt.Sprintf(T(lang, "team_invite.subject"), workspaceName)
 	body := fmt.Sprintf(T(lang, "team_invite.body"), inviterName, workspaceName, magicLink)

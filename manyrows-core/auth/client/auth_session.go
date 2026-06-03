@@ -130,6 +130,12 @@ func (a *AuthService) CreateSessionWithOptions(
 	// (this is the single shared seam), not just OAuth.
 	_ = a.repo.DeleteOtherSessionsBySameDevice(ctx, userID, appID, ses.IP, ses.UserAgent, ses.ID)
 
+	// Record the device for new-device detection and, if it's new to this
+	// account, fire the alert. Fully backgrounded + best-effort — never
+	// blocks or fails the login. Same shared seam, so every login method is
+	// covered. No-op unless the app layer wired a notifier.
+	a.trackDeviceAsync(userID, appID, ses.UserAgent, ses.IP)
+
 	return &ses, nil
 }
 
