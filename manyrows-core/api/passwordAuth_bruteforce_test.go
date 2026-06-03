@@ -51,6 +51,9 @@ func TestValidatePassword_LockoutEnforcedWhenProtectionOn(t *testing.T) {
 	if res.Outcome != PWAuthLocked {
 		t.Fatalf("protection on: expected PWAuthLocked, got %v", res.Outcome)
 	}
+	if res.User == nil {
+		t.Fatal("protection on: PWAuthLocked should carry a non-nil User")
+	}
 }
 
 func TestValidatePassword_LockoutBypassedWhenProtectionOff(t *testing.T) {
