@@ -10,11 +10,15 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
+// testPinnedSchema is a custom schema name used to verify that an operator who
+// pins MANYROWS_DB_SCHEMA gets exactly that schema (and not the default).
+const testPinnedSchema = "pinned_custom"
+
 // migrationTestURL provisions a throwaway database derived from
 // TEST_DATABASE_URL and returns a URL pointing at it.
 //
-// These tests drop, create, and rename the real manyrows/manyrowsauth
-// schemas, so they MUST run in isolation: the api package's tests share
+// These tests drop and create the manyrowsauth (and a custom pinned) schema,
+// so they MUST run in isolation: the api package's tests share
 // TEST_DATABASE_URL's database and the default (manyrowsauth) schema, and
 // `go test ./...` runs packages in parallel — so operating on that shared
 // schema here would clobber api mid-migration. A dedicated database keeps
@@ -100,7 +104,7 @@ func rawPool(t *testing.T, url string) *pgxpool.Pool {
 
 func dropAppSchemas(t *testing.T, pool *pgxpool.Pool) {
 	t.Helper()
-	for _, s := range []string{legacySchema, defaultSchema} {
+	for _, s := range []string{defaultSchema, testPinnedSchema} {
 		if _, err := pool.Exec(context.Background(), "DROP SCHEMA IF EXISTS "+s+" CASCADE"); err != nil {
 			t.Fatalf("drop schema %s: %v", s, err)
 		}
@@ -129,10 +133,10 @@ func newDB(t *testing.T, url, schema string) *DB {
 	return db
 }
 
-func TestLegacySchemaMigration(t *testing.T) {
+func TestSchemaProvisioning(t *testing.T) {
 	url := migrationTestURL(t)
 
-	t.Run("fresh install creates the new default schema", func(t *testing.T) {
+	t.Run("fresh install creates the default schema", func(t *testing.T) {
 		raw := rawPool(t, url)
 		dropAppSchemas(t, raw)
 
@@ -145,87 +149,25 @@ func TestLegacySchemaMigration(t *testing.T) {
 		if !schemaPresent(t, raw, defaultSchema) {
 			t.Errorf("expected schema %q to exist", defaultSchema)
 		}
-		if schemaPresent(t, raw, legacySchema) {
-			t.Errorf("did not expect legacy schema %q to exist on a fresh install", legacySchema)
-		}
 	})
 
-	t.Run("legacy manyrows schema is renamed in place with data preserved", func(t *testing.T) {
+	t.Run("explicit schema pin is honored", func(t *testing.T) {
 		raw := rawPool(t, url)
 		dropAppSchemas(t, raw)
 
-		// Stand up a real, fully-migrated legacy install under "manyrows".
-		legacy := newDB(t, url, legacySchema)
-		// Seed a sentinel object so we can prove the rename carried the data
-		// over, rather than just re-running migrations into a fresh schema.
-		ctx := context.Background()
-		if _, err := legacy.Pool().Exec(ctx, "CREATE TABLE "+legacySchema+".sentinel (note text)"); err != nil {
-			t.Fatalf("create sentinel: %v", err)
-		}
-		if _, err := legacy.Pool().Exec(ctx, "INSERT INTO "+legacySchema+".sentinel VALUES ('keepme')"); err != nil {
-			t.Fatalf("seed sentinel: %v", err)
-		}
-		legacy.Shutdown()
-
-		// Boot on the default — should rename manyrows -> manyrowsauth.
-		db := newDB(t, url, "")
+		// Operator pins a custom schema — migrations land there, and the
+		// default schema is not auto-created.
+		db := newDB(t, url, testPinnedSchema)
 		defer db.Shutdown()
 
-		if schemaPresent(t, raw, legacySchema) {
-			t.Errorf("legacy schema %q should have been renamed away", legacySchema)
+		if db.Schema() != testPinnedSchema {
+			t.Errorf("Schema() = %q, want %q", db.Schema(), testPinnedSchema)
 		}
-		if !schemaPresent(t, raw, defaultSchema) {
-			t.Fatalf("expected schema %q to exist after rename", defaultSchema)
-		}
-		var note string
-		if err := raw.QueryRow(ctx, "SELECT note FROM "+defaultSchema+".sentinel").Scan(&note); err != nil {
-			t.Fatalf("sentinel not carried into %q: %v", defaultSchema, err)
-		}
-		if note != "keepme" {
-			t.Errorf("sentinel note = %q, want %q", note, "keepme")
-		}
-	})
-
-	t.Run("explicit manyrows pin is left untouched", func(t *testing.T) {
-		raw := rawPool(t, url)
-		dropAppSchemas(t, raw)
-
-		legacy := newDB(t, url, legacySchema)
-		legacy.Shutdown()
-
-		// Operator explicitly pins the old name — it must NOT be renamed.
-		db := newDB(t, url, legacySchema)
-		defer db.Shutdown()
-
-		if !schemaPresent(t, raw, legacySchema) {
-			t.Errorf("explicitly pinned schema %q must be preserved", legacySchema)
+		if !schemaPresent(t, raw, testPinnedSchema) {
+			t.Errorf("expected pinned schema %q to exist", testPinnedSchema)
 		}
 		if schemaPresent(t, raw, defaultSchema) {
-			t.Errorf("did not expect %q to be created when pinned to %q", defaultSchema, legacySchema)
-		}
-	})
-
-	t.Run("unrelated schema named manyrows is not hijacked", func(t *testing.T) {
-		raw := rawPool(t, url)
-		dropAppSchemas(t, raw)
-
-		// A schema called "manyrows" that isn't ours (no goose_db_version).
-		ctx := context.Background()
-		if _, err := raw.Exec(ctx, "CREATE SCHEMA "+legacySchema); err != nil {
-			t.Fatalf("create unrelated schema: %v", err)
-		}
-		if _, err := raw.Exec(ctx, "CREATE TABLE "+legacySchema+".not_ours (x int)"); err != nil {
-			t.Fatalf("create unrelated table: %v", err)
-		}
-
-		db := newDB(t, url, "")
-		defer db.Shutdown()
-
-		if !schemaPresent(t, raw, legacySchema) {
-			t.Errorf("unrelated schema %q must not be renamed/hijacked", legacySchema)
-		}
-		if !schemaPresent(t, raw, defaultSchema) {
-			t.Errorf("expected fresh %q to be created alongside it", defaultSchema)
+			t.Errorf("did not expect default %q to be created when pinned to %q", defaultSchema, testPinnedSchema)
 		}
 	})
 }
