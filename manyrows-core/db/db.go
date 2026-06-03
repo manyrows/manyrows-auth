@@ -25,7 +25,33 @@ var migrationsFS embed.FS
 // from colliding with whatever else lives in the same database (the
 // operator's other apps, ad-hoc tooling, etc.). One ManyRows instance per
 // database is still the supported topology — this isn't multi-tenancy.
-const defaultSchema = "manyrows"
+const defaultSchema = "manyrowsauth"
+
+// legacySchema is the pre-rename default. Installs created before the
+// default became "manyrowsauth" keep their tables here; runMigrations
+// renames it in place on first boot so they upgrade transparently — see
+// maybeRenameLegacySchema.
+const legacySchema = "manyrows"
+
+// resolveSchema applies the default-schema fallback to the configured
+// value. Empty (MANYROWS_DB_SCHEMA unset) yields defaultSchema; any
+// explicit value — including the legacy name — is handed through so an
+// operator who pinned a schema keeps exactly what they asked for.
+func resolveSchema(configured string) string {
+	if configured == "" {
+		return defaultSchema
+	}
+	return configured
+}
+
+// shouldRenameLegacySchema reports whether the legacy schema should be
+// renamed to the current default. It fires only for a real, not-yet-migrated
+// ManyRows install: the target must not exist (never clobber) and the legacy
+// schema must exist and be ours (never hijack an unrelated schema that merely
+// shares the name).
+func shouldRenameLegacySchema(targetExists, legacyExists, legacyIsOurs bool) bool {
+	return !targetExists && legacyExists && legacyIsOurs
+}
 
 type DB struct {
 	pool        *pgxpool.Pool
@@ -36,7 +62,9 @@ type DB struct {
 type Config struct {
 	DatabaseURL string
 	// Schema is the Postgres namespace every ManyRows table — and the
-	// goose_db_version tracker — lives in. Empty defaults to "manyrows".
+	// goose_db_version tracker — lives in. Empty defaults to "manyrowsauth"
+	// (installs predating that name are renamed from "manyrows" on first
+	// boot — see maybeRenameLegacySchema).
 	// Override via MANYROWS_DB_SCHEMA when the default name would
 	// collide with something already in the database. Validated to
 	// identifier chars only before being spliced into DDL.
@@ -136,10 +164,7 @@ func (d *DB) initPool(c Config) error {
 		return nil
 	}
 
-	schema := c.Schema
-	if schema == "" {
-		schema = defaultSchema
-	}
+	schema := resolveSchema(c.Schema)
 	if !validSchemaName(schema) {
 		return fmt.Errorf("invalid db schema name %q (alphanumeric + underscore, must not start with a digit, ≤63 chars)", schema)
 	}
@@ -238,6 +263,75 @@ func migrationLockKey(schema string) int64 {
 	return int64(h.Sum64())
 }
 
+// schemaExists reports whether a Postgres schema of the given name is present.
+func schemaExists(ctx context.Context, conn *pgxpool.Conn, name string) (bool, error) {
+	var exists bool
+	err := conn.QueryRow(ctx,
+		"SELECT EXISTS (SELECT 1 FROM information_schema.schemata WHERE schema_name = $1)", name).Scan(&exists)
+	return exists, err
+}
+
+// tableExists reports whether schema.table is present.
+func tableExists(ctx context.Context, conn *pgxpool.Conn, schema, table string) (bool, error) {
+	var exists bool
+	err := conn.QueryRow(ctx,
+		"SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = $1 AND table_name = $2)", schema, table).Scan(&exists)
+	return exists, err
+}
+
+// maybeRenameLegacySchema renames the pre-rename default schema ("manyrows")
+// to the current default ("manyrowsauth") in place, so installs created
+// before the rename upgrade transparently on first boot. ALTER SCHEMA carries
+// every object — tables, the goose tracker, sequences — so the migration is a
+// metadata-only catalog update, not a data copy.
+//
+// Caller must hold the migration advisory lock; this runs inside that critical
+// section so it can't race a concurrent boot. The legacy/default names are
+// compile-time constants, so splicing them into the DDL is safe.
+//
+// Caveat: a rolling deploy with old replicas still pointed at "manyrows" will
+// see those replicas error after the rename until they roll. One instance per
+// database is the supported topology, so that's an accepted upgrade window.
+func (d *DB) maybeRenameLegacySchema(ctx context.Context, conn *pgxpool.Conn) error {
+	// Only auto-migrate installs on the current default. An operator who
+	// pinned MANYROWS_DB_SCHEMA (including to the old "manyrows") keeps
+	// exactly what they configured.
+	if d.schema != defaultSchema {
+		return nil
+	}
+
+	targetExists, err := schemaExists(ctx, conn, defaultSchema)
+	if err != nil {
+		return fmt.Errorf("check target schema: %w", err)
+	}
+	legacyExists, err := schemaExists(ctx, conn, legacySchema)
+	if err != nil {
+		return fmt.Errorf("check legacy schema: %w", err)
+	}
+	legacyIsOurs := false
+	if legacyExists {
+		// goose_db_version is the fingerprint of a ManyRows install; without
+		// it we'd risk hijacking an unrelated schema that shares the name.
+		legacyIsOurs, err = tableExists(ctx, conn, legacySchema, "goose_db_version")
+		if err != nil {
+			return fmt.Errorf("check legacy schema ownership: %w", err)
+		}
+	}
+
+	if !shouldRenameLegacySchema(targetExists, legacyExists, legacyIsOurs) {
+		return nil
+	}
+
+	log.Info().
+		Str("from", legacySchema).
+		Str("to", defaultSchema).
+		Msg("db: renaming legacy schema to the current default name")
+	if _, err := conn.Exec(ctx, fmt.Sprintf("ALTER SCHEMA %s RENAME TO %s", legacySchema, defaultSchema)); err != nil {
+		return fmt.Errorf("rename legacy schema %q to %q: %w", legacySchema, defaultSchema, err)
+	}
+	return nil
+}
+
 // runMigrations creates the schema and applies any pending goose migrations
 // from the embedded migrations/*.sql tree. State is tracked in
 // <schema>.goose_db_version.
@@ -289,6 +383,13 @@ func (d *DB) runMigrations() error {
 			log.Warn().Err(err).Msg("db: failed to release migration advisory lock")
 		}
 	}()
+
+	// Migrate a pre-rename install (schema "manyrows") to the current
+	// default name before we touch the target schema. Runs under the same
+	// advisory lock as the rest of the critical section.
+	if err := d.maybeRenameLegacySchema(ctx, lockConn); err != nil {
+		return fmt.Errorf("goose: %w", err)
+	}
 
 	// Create the namespace now that we hold the lock. This is autocommitted
 	// on lockConn, so goose's connections (which run with search_path set
