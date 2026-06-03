@@ -93,6 +93,10 @@ var translations = map[string]map[string]string{
 		"email_change.notice.subject":           "Your {brand} email address was changed",
 		"email_change.notice.body":              "The email address on your {brand} account was just changed.\n\nIf this was you, no action is needed.\n\nIf you didn't do this, reply to this email and we'll help you recover access.",
 
+		// New device sign-in alert
+		"new_device.subject": "New sign-in to %s",
+		"new_device.body":    "We noticed a sign-in to %s from a device we haven't seen before:\n\nDevice: %s\nIP address: %s\nTime: %s\n\nIf this was you, you can ignore this email. If you don't recognize this activity, reset your password right away and review your account.",
+
 		// Team invite
 		"team_invite.subject": "You've been invited to %s on {brand}",
 		"team_invite.body":    "Hi,\n\n%s has invited you to join \"%s\" as an admin on {brand}.\n\nClick the link below to accept the invitation and create your account:\n\n%s\n\nThis link expires in 7 days.\nIf you didn't expect this, you can ignore this email.\n",

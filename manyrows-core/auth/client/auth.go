@@ -96,6 +96,12 @@ type AuthService struct {
 
 	// session TTL (defaults to 30d if zero)
 	sessionTTL time.Duration
+
+	// newDeviceNotifier, when set, is invoked (off the login path) on a
+	// login from a device the user hasn't been seen on before. Wired by the
+	// app layer to send the alert email; nil in contexts where the feature
+	// isn't assembled (e.g. unit tests), which also disables device tracking.
+	newDeviceNotifier NewDeviceNotifier
 }
 
 // JWKSDocument returns the JWKS payload for /.well-known/jwks.json.

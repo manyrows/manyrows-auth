@@ -221,6 +221,12 @@ type App struct {
 	// and the AppURL host is the allowlisted target).
 	QRSignInEnabled bool `json:"qrSignInEnabled"`
 
+	// NewDeviceAlertsEnabled gates the new-device security alert email:
+	// when on, a login from a device this user hasn't been seen on before
+	// triggers a notification. Off-by-default (devices are still tracked
+	// regardless, so enabling later doesn't false-alarm on known devices).
+	NewDeviceAlertsEnabled bool `json:"newDeviceAlertsEnabled"`
+
 	// Session TTL in minutes (nil = default 7 days). Absolute lifetime
 	// — the session dies at CreatedAt + this regardless of activity.
 	SessionTTLMinutes *int `json:"sessionTtlMinutes,omitempty"`

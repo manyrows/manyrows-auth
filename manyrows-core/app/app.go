@@ -101,6 +101,12 @@ func NewAppService() (*AppService, error) {
 
 	email.SetBrand(app.config.GetBrandName())
 	emailService := email.NewEmailService(app.config.IsDevMode(), secureSecrets)
+
+	// Wire new-device detection: the client auth service records each login's
+	// device and calls back here to send the alert email when it's a device
+	// the user hasn't been seen on before (gated per app).
+	app.clientAuthService.SetNewDeviceNotifier(newDeviceAlertNotifier(repoInstance, emailService))
+
 	app.requestHandler = api.NewRequestHandler(
 		repoInstance,
 		app.adminAuthService,
