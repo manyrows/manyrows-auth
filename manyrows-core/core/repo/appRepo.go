@@ -255,12 +255,13 @@ func scanAppFull(row appRowScanner, a *core.App) error {
 		&a.SessionCookieSameSite,
 		&a.QRSignInEnabled,
 		&a.NewDeviceAlertsEnabled,
+		&a.BruteForceProtectionEnabled,
 		&a.UserPoolID,
 		&a.UserPoolName,
 	)
 }
 
-const appColumnsReturning = `id, workspace_id, project_id, type, (select name from projects where id = apps.project_id) as project_name, enabled, allow_registration, allow_account_deletion, allow_email_change, default_role_id, allowed_email_domains, primary_auth_method, auth_method_google, require_2fa, google_oauth_client_id, google_oauth_client_secret_encrypted, auth_method_apple, apple_services_id, apple_team_id, apple_key_id, apple_private_key_encrypted, auth_method_microsoft, microsoft_client_id, microsoft_client_secret_encrypted, microsoft_tenant, auth_method_github, github_client_id, github_client_secret_encrypted, auth_method_kakao, kakao_client_id, kakao_client_secret_encrypted, auth_method_naver, naver_client_id, naver_client_secret_encrypted, naver_trust_unverified_email, app_url, auth_domain, session_ttl_minutes, idle_timeout_minutes, remember_me_ttl_minutes, access_token_ttl_minutes, max_sessions_per_user, created_at, updated_at, description, password_min_length, password_min_zxcvbn_score, cookie_domain, transport_mode, session_cookie_samesite, qr_sign_in_enabled, new_device_alerts_enabled, user_pool_id, (select name from user_pools where id = apps.user_pool_id) as user_pool_name`
+const appColumnsReturning = `id, workspace_id, project_id, type, (select name from projects where id = apps.project_id) as project_name, enabled, allow_registration, allow_account_deletion, allow_email_change, default_role_id, allowed_email_domains, primary_auth_method, auth_method_google, require_2fa, google_oauth_client_id, google_oauth_client_secret_encrypted, auth_method_apple, apple_services_id, apple_team_id, apple_key_id, apple_private_key_encrypted, auth_method_microsoft, microsoft_client_id, microsoft_client_secret_encrypted, microsoft_tenant, auth_method_github, github_client_id, github_client_secret_encrypted, auth_method_kakao, kakao_client_id, kakao_client_secret_encrypted, auth_method_naver, naver_client_id, naver_client_secret_encrypted, naver_trust_unverified_email, app_url, auth_domain, session_ttl_minutes, idle_timeout_minutes, remember_me_ttl_minutes, access_token_ttl_minutes, max_sessions_per_user, created_at, updated_at, description, password_min_length, password_min_zxcvbn_score, cookie_domain, transport_mode, session_cookie_samesite, qr_sign_in_enabled, new_device_alerts_enabled, brute_force_protection_enabled, user_pool_id, (select name from user_pools where id = apps.user_pool_id) as user_pool_name`
 
 // AppRegistrationUpdate carries self-registration settings + the
 // require-2FA flag (a cross-cutting policy that applies to all sign-in
