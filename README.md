@@ -93,6 +93,9 @@ docker compose down
   workspace/app, filterable in the admin AuthLogs view.
 - **Embeddable end-user UI** (`@manyrows/appkit-react`) - drop in a
   React component, get a fully wired sign-in screen.
+- **Backend SDKs** for Go, Node, Python, and Java - verify end-user
+  JWTs locally and call the server API (users, roles, permissions) from
+  your own backend. See [Server SDKs](#server-sdks).
 - **OpenID Connect provider** - expose any app over standards-
   conformant OIDC. Off-the-shelf libraries (next-auth,
   passport-openidconnect, Spring Security, etc.) integrate by
@@ -476,6 +479,29 @@ loads the hosted (manyrows.com) runtime by default.
 
 The runtime is served by your own binary at
 `/appkit/assets/appkit.js` (embedded - nothing extra to deploy).
+
+---
+
+## Server SDKs
+
+For the **backend** side of your app, official SDKs wrap the
+server-to-server API (user lookup, roles, permissions, config delivery)
+and verify end-user JWTs locally against your install's JWKS - no
+per-request round-trip to ManyRows. The Go SDK also ships webhook
+signature verification.
+
+| Language          | Repository                                                          | Install |
+|-------------------|--------------------------------------------------------------------|---|
+| Go                | [manyrows-auth-go](https://github.com/manyrows/manyrows-auth-go)         | `go get github.com/manyrows/manyrows-auth-go` |
+| Node / TypeScript | [manyrows-auth-node](https://github.com/manyrows/manyrows-auth-node)     | from source - see repo |
+| Python            | [manyrows-auth-python](https://github.com/manyrows/manyrows-auth-python) | `pip install git+https://github.com/manyrows/manyrows-auth-python.git` |
+| Java              | [manyrows-auth-java](https://github.com/manyrows/manyrows-auth-java)     | from source (Java 17+) - see repo |
+
+These are optional: AppKit handles the browser side, and any standard
+OIDC client works too (see below). Reach for an SDK when your backend
+needs to verify tokens or read users, roles, and permissions in its own
+language. Each repo's README has the authoritative install and usage
+docs.
 
 ---
 
