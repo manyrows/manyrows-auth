@@ -181,9 +181,8 @@ How the session token reaches the browser is configured **per app on the server*
 
 - **Local** (default) — JWT in `localStorage`, sent as `Authorization: Bearer`. The historical AppKit shape; works anywhere.
 - **First-party cookie** — `mr_at` / `mr_rt` `HttpOnly; Secure; SameSite=Lax` cookies. The token never reaches JS. Works when the auth host and your app share a registrable domain (same-host deploy or `auth.yourdomain.com` via custom-domain CNAME).
-- **Backend proxy (BFF)** — your backend proxies AppKit calls to ManyRows server-to-server and sets its own session cookie on its own origin. Advanced; surfaced via the API only.
 
-The mode comes back in the boot response (`/a/app/me`'s `transportMode` field) and AppKit configures fetch + storage automatically. There is **no `cookieMode` / `transport` prop** on `<AppKit>` — the operator picks the mode in the admin UI under **Security → Sessions → Transport** and the SDK just does the right thing on the next page load.
+The mode comes back in the boot response (`/a/me`'s `transportMode` field) and AppKit configures fetch + storage automatically. There is **no `cookieMode` / `transport` prop** on `<AppKit>` — the operator picks the mode in the admin UI under **Security → Sessions → Transport** and the SDK just does the right thing on the next page load.
 
 ### Performance: no API call when logged out (since 1.2.0)
 
@@ -191,7 +190,7 @@ In **local** mode, when there's no token in `localStorage` and the user isn't on
 
 This is automatic — you don't need to configure anything. For embedders mounting `<AppKit>` on public marketing pages, it means zero ManyRows traffic on anonymous visits.
 
-In **cookie** and **bff** modes there's no JS-readable signal of an existing session, so AppKit always loads the runtime to check via the cookie. The runtime itself is small and cached after first load.
+In **cookie** mode there's no JS-readable signal of an existing session, so AppKit always loads the runtime to check via the cookie. The runtime itself is small and cached after first load.
 
 ---
 
