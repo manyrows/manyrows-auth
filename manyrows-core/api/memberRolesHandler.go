@@ -137,10 +137,13 @@ func (handler *RequestHandler) HandlerUpdateMemberRoles(w http.ResponseWriter, r
 // membership row, then revokes their sessions for the app. Roles are
 // optional, so clearing roles alone (the prior behaviour) left the
 // user a member with zero roles — still listed, still counted. This
-// actually removes them.
+// actually removes them. If that leaves the user with no remaining app
+// memberships, the pool identity is pruned too (orphan prune), matching
+// the server API's ServerRemoveUser — otherwise the orphaned identity
+// lingers in the pool and blocks re-signup ("already registered").
 // DELETE /admin/workspace/{workspaceId}/projects/{projectId}/members/{userId}?appId=...
 func (handler *RequestHandler) HandleRemoveProjectMember(w http.ResponseWriter, r *http.Request) {
-	_, _, project, ok := handler.adminAndProject(w, r)
+	acc, ws, project, ok := handler.adminAndProject(w, r)
 	if !ok {
 		return
 	}
@@ -156,6 +159,26 @@ func (handler *RequestHandler) HandleRemoveProjectMember(w http.ResponseWriter, 
 		return
 	}
 
+	// Load the app (also validates it belongs to this workspace/project) so
+	// we know which pool to prune the identity from.
+	app, err := handler.repo.GetAppByIDForProject(r.Context(), ws.ID, project.ID, appID)
+	if err != nil {
+		if errors.Is(err, repo.ErrNotFound) {
+			WriteError(w, r, "error.appNotFound", http.StatusNotFound)
+			return
+		}
+		log.Err(err).Msg("Could not load app for member removal")
+		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
+		return
+	}
+
+	// Capture the email before any deletion, for the user.delete webhook
+	// (best-effort — the row is about to potentially go away).
+	var email string
+	if u, _ := handler.repo.GetUserByID(r.Context(), userID); u != nil {
+		email = u.Email
+	}
+
 	if err := handler.removeAppMembership(r.Context(), project.ID, appID, userID); err != nil {
 		if errors.Is(err, repo.ErrBadRequest) {
 			WriteError(w, r, "error.rolesInvalid", http.StatusBadRequest)
@@ -166,7 +189,31 @@ func (handler *RequestHandler) HandleRemoveProjectMember(w http.ResponseWriter, 
 		return
 	}
 
-	utils.WriteJsonWithStatusCode(w, map[string]any{"removed": true}, http.StatusOK)
+	// Orphan prune: delete the identity only if the user now belongs to no
+	// app. The guard lives in the DELETE predicate, so it's atomic against a
+	// concurrent re-add and won't fire while the user is still in another app
+	// sharing the pool.
+	identityDeleted, err := handler.repo.DeleteUserIfOrphanInPool(r.Context(), userID, app.UserPoolID)
+	if err != nil {
+		log.Err(err).Msg("HandleRemoveProjectMember: orphan prune failed")
+		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
+		return
+	}
+
+	if identityDeleted {
+		handler.dispatchWebhook(app.ID, "user.delete", map[string]any{"userId": userID, "email": email, "appId": app.ID})
+		handler.writeAuthLogFromRequest(r, AuthLogInput{
+			WorkspaceID:    ws.ID,
+			AppID:          &app.ID,
+			Event:          core.AuthEventAccountDeleted,
+			Outcome:        core.AuthOutcomeSuccess,
+			SubjectUserID:  &userID,
+			ActorType:      core.AuthActorAdmin,
+			ActorAccountID: &acc.ID,
+		})
+	}
+
+	utils.WriteJsonWithStatusCode(w, map[string]any{"removed": true, "identityDeleted": identityDeleted}, http.StatusOK)
 }
 
 // removeAppMembership detaches a user from one app: it clears the app-scoped

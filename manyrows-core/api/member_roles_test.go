@@ -437,8 +437,90 @@ func TestRemoveProjectMember_Success(t *testing.T) {
 	if n := countRows(t, "SELECT count(*) FROM client_sessions WHERE user_id=$1 AND app_id=$2", userID, appID); n != 0 {
 		t.Errorf("sessions should be revoked, count=%d", n)
 	}
+	if n := countRows(t, "SELECT count(*) FROM users WHERE id=$1", userID); n != 0 {
+		t.Errorf("orphaned pool account must be pruned when in no other app, count=%d", n)
+	}
+}
+
+// TestRemoveProjectMember_PrunesOrphanReportsIt confirms the response signals
+// that the pool identity was deleted, mirroring the server API.
+func TestRemoveProjectMember_PrunesOrphanReportsIt(t *testing.T) {
+	router := setupMemberRolesRouter(t)
+	claims, wsID, projectID, appID, userID, _, cleanup := removeMemberFixture(t, "rpm-prune-")
+	defer cleanup()
+
+	req := httptest.NewRequest(http.MethodDelete,
+		"/admin/workspace/"+wsID.String()+"/projects/"+projectID.String()+"/members/"+userID.String()+"?appId="+appID.String(), nil)
+	testEnv.SetSessionCookie(t, req, claims)
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rr.Code, rr.Body.String())
+	}
+	var resp struct {
+		Removed         bool `json:"removed"`
+		IdentityDeleted bool `json:"identityDeleted"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if !resp.Removed {
+		t.Errorf("expected removed=true")
+	}
+	if !resp.IdentityDeleted {
+		t.Errorf("expected identityDeleted=true when user is in no other app")
+	}
+}
+
+// TestRemoveProjectMember_KeepsIdentityWhenInOtherApp verifies the orphan
+// prune does NOT fire when the user still belongs to another app sharing the
+// pool: the per-app membership is dropped but the pool identity survives.
+func TestRemoveProjectMember_KeepsIdentityWhenInOtherApp(t *testing.T) {
+	router := setupMemberRolesRouter(t)
+	claims, wsID, projectID, appID, userID, _, cleanup := removeMemberFixture(t, "rpm-multi-")
+	defer cleanup()
+	ctx := context.Background()
+
+	// Add a second app in the same pool and make the user a member of it too.
+	var poolID uuid.UUID
+	if err := testEnv.DB.Pool().QueryRow(ctx, `SELECT user_pool_id FROM users WHERE id=$1`, userID).Scan(&poolID); err != nil {
+		t.Fatalf("read pool: %v", err)
+	}
+	// 'staging' (the fixture app is 'dev') — apps are unique per (project, type).
+	app2ID := utils.NewUUID()
+	if _, err := testEnv.DB.Pool().Exec(ctx, `
+		INSERT INTO apps (id, workspace_id, project_id, user_pool_id, type, enabled, created_at, updated_at)
+		VALUES ($1,$2,$3,$4,'staging',true,NOW(),NOW())`, app2ID, wsID, projectID, poolID); err != nil {
+		t.Fatalf("create app2: %v", err)
+	}
+	defer func() {
+		c := context.Background()
+		_, _ = testEnv.DB.Pool().Exec(c, "DELETE FROM app_users WHERE app_id=$1", app2ID)
+		_, _ = testEnv.DB.Pool().Exec(c, "DELETE FROM apps WHERE id=$1", app2ID)
+	}()
+	if _, _, err := testEnv.Repo.EnsureAppMember(ctx, app2ID, userID, core.UserSourceInvited); err != nil {
+		t.Fatalf("add to app2: %v", err)
+	}
+
+	// Remove from the first app only.
+	req := httptest.NewRequest(http.MethodDelete,
+		"/admin/workspace/"+wsID.String()+"/projects/"+projectID.String()+"/members/"+userID.String()+"?appId="+appID.String(), nil)
+	testEnv.SetSessionCookie(t, req, claims)
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rr.Code, rr.Body.String())
+	}
+	if n := countRows(t, "SELECT count(*) FROM app_users WHERE app_id=$1 AND user_id=$2", appID, userID); n != 0 {
+		t.Errorf("membership in removed app should be gone, count=%d", n)
+	}
+	if n := countRows(t, "SELECT count(*) FROM app_users WHERE app_id=$1 AND user_id=$2", app2ID, userID); n != 1 {
+		t.Errorf("membership in the other app must remain, count=%d", n)
+	}
 	if n := countRows(t, "SELECT count(*) FROM users WHERE id=$1", userID); n != 1 {
-		t.Errorf("pool account must be preserved, count=%d", n)
+		t.Errorf("pool identity must be preserved while still in another app, count=%d", n)
 	}
 }
 
