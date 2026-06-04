@@ -1379,7 +1379,12 @@ export default function Auth(props: {
       setPendingTokens(null);
       props.onTokenPair(tokens, keepSignedIn);
     } catch (err: any) {
-      setPendingTokens(null);
+      // Keep pendingTokens so the user can correct a rejected password
+      // (e.g. server-side "too weak") and retry. Clearing it here orphaned
+      // the set-password screen: the button only gates on newPasswordOk /
+      // passwordsMatch so it re-enabled, but onSetPasswordAfterRegister's
+      // own guard short-circuits on the missing handoff token, leaving the
+      // button enabled-but-dead.
       setErrorMsg(extractErrMsg(err));
     } finally {
       setLoading(false);
