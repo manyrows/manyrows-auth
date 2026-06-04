@@ -161,14 +161,13 @@ function AppSubNav({
 }) {
   const { appType, appBasePath, appPage, onOpenSwitcher } = app;
 
-  // Collapsible group state. Data + Authentication start collapsed so opening an
-  // app lands on a compact tree; Configuration stays open. Session-only — resets
-  // on reload, and a manual toggle sticks for the rest of the session.
+  // Collapsible group state. Data starts collapsed so opening an app lands on a
+  // compact tree; Auth + Configuration stay open. Session-only — resets on
+  // reload, and a manual toggle sticks for the rest of the session.
   const [collapsed, setCollapsed] = React.useState<Set<string>>(
     () =>
       new Set([
         t("app.navGroup.data", { defaultValue: "Data" }),
-        t("app.navGroup.authentication", { defaultValue: "Auth" }),
       ]),
   );
   const toggleGroup = (label: string) =>

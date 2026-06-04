@@ -343,7 +343,6 @@ export default function AppDetail({ project, workspace, appId, onAppUpdated }: P
                   desc={t("apps.detail.setupAuthDesc", {
                     defaultValue: "Add sign-in and user accounts — only if your app needs them.",
                   })}
-                  badge={t("apps.detail.optional", { defaultValue: "Optional" })}
                 />
               </Box>
             </Box>
