@@ -20,7 +20,10 @@ export const LogoMark: React.FC = () => {
           textDecoration: "none",
         }}
       >
-        ManyRows
+        ManyRows{" "}
+        <Box component="span" sx={{ color: "primary.main" }}>
+          Auth
+        </Box>
       </Typography>
     </Box>
   );
