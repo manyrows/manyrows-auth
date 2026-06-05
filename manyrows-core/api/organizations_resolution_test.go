@@ -140,3 +140,49 @@ func TestResolveActiveRoles_OrgVsLegacy(t *testing.T) {
 		t.Fatalf("org-enabled must resolve org roles; got roles=%v member=%v", roles2, member3)
 	}
 }
+
+// On an org-enabled app, a user with NO active org must resolve to empty roles
+// AND empty permissions, even if they have leftover legacy user_roles / direct
+// user_permissions. Org membership is the single source of truth.
+func TestResolveActiveRoles_OrgEnabledNoActiveOrg_Empty(t *testing.T) {
+	ctx := context.Background()
+	acc := testEnv.CreateTestAccount(t, "noorg-"+GenerateUniqueSlug("u")+"@example.com")
+	ws := testEnv.CreateTestWorkspace(t, acc, "WS", GenerateUniqueSlug("ws"))
+	app := testEnv.CreateTestApp(t, ws, acc)
+	defer testEnv.CleanupTestData(t, &TestFixtures{Account: acc, Workspace: ws})
+
+	now := time.Now().UTC()
+	user, _, err := testEnv.Repo.GetOrCreateUser(ctx, "m-"+GenerateUniqueSlug("u")+"@example.com", app, core.UserSourceInvited)
+	if err != nil {
+		t.Fatalf("GetOrCreateUser: %v", err)
+	}
+
+	// Give the user a LEGACY per-app role assignment, which must be IGNORED once
+	// orgs are enabled and there is no active org.
+	role, err := testEnv.Repo.CreateRole(ctx, repo.CreateRoleParams{ProjectID: app.ProjectID, Name: "Legacy", Slug: GenerateUniqueSlug("legacy"), Now: now})
+	if err != nil {
+		t.Fatalf("CreateRole: %v", err)
+	}
+	if err := testEnv.Repo.ReplaceUserRoles(ctx, repo.ReplaceUserRolesParams{ProjectID: app.ProjectID, UserID: user.ID, AppID: app.ID, RoleIDs: []uuid.UUID{role.ID}, Now: now}); err != nil {
+		t.Fatalf("ReplaceUserRoles: %v", err)
+	}
+
+	if err := testEnv.Repo.SetAppOrganizationsEnabled(ctx, app.ID, true); err != nil {
+		t.Fatalf("SetAppOrganizationsEnabled: %v", err)
+	}
+	appOn, err := testEnv.Repo.GetAppByID(ctx, app.ID)
+	if err != nil {
+		t.Fatalf("GetAppByID: %v", err)
+	}
+
+	svc := NewTestServices(t)
+	ses := &core.ClientSession{ID: utils.NewUUID(), UserID: user.ID, AppID: &app.ID, CreatedAt: now, ExpiresAt: now.Add(time.Hour), LastSeenAt: now, OrganizationID: nil}
+
+	roles, perms, member, err := svc.Handler.ResolveActiveRolesAndPermissionsForTest(ctx, &appOn, app.ProjectID, user.ID, ses)
+	if err != nil {
+		t.Fatalf("resolve: %v", err)
+	}
+	if len(roles) != 0 || len(perms) != 0 || member != nil {
+		t.Fatalf("org-enabled + no active org must yield empty roles/perms and nil member (single source of truth); got roles=%v perms=%v member=%v", roles, perms, member)
+	}
+}

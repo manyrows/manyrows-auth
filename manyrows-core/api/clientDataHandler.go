@@ -221,7 +221,13 @@ func (handler *RequestHandler) resolveRolesAndPermissions(
 func (handler *RequestHandler) effectiveRoleIDs(
 	ctx context.Context, app *core.App, projectID, userID uuid.UUID, ses *core.ClientSession,
 ) ([]uuid.UUID, *core.OrganizationMember, error) {
-	if app.OrganizationsEnabled && ses.OrganizationID != nil && *ses.OrganizationID != uuid.Nil {
+	if app.OrganizationsEnabled {
+		// Org-enabled: org membership is the single source of truth. No active
+		// org (0-org user, or not yet switched) → no roles. Never fall back to
+		// the legacy per-app user_roles path on an org-enabled app.
+		if ses.OrganizationID == nil || *ses.OrganizationID == uuid.Nil {
+			return nil, nil, nil
+		}
 		member, err := handler.repo.GetOrganizationMember(ctx, *ses.OrganizationID, userID)
 		if err != nil {
 			if errors.Is(err, repo.ErrNotFound) {
@@ -236,6 +242,7 @@ func (handler *RequestHandler) effectiveRoleIDs(
 		return roleIDs, member, nil
 	}
 
+	// Legacy per-app path (org-disabled apps only).
 	memberRoles, err := handler.repo.GetUserRolesByUserAndAppID(ctx, projectID, userID, app.ID)
 	if err != nil {
 		return nil, nil, err
@@ -266,8 +273,10 @@ func (handler *RequestHandler) resolveActiveRolesAndPermissions(
 		}
 	}
 
-	// Legacy branch only: merge direct user_permissions.
-	if member == nil {
+	// Legacy branch only (org-disabled apps): merge direct user_permissions.
+	// Org-enabled apps never merge direct per-app permissions — org membership
+	// is the single source of truth, even when there's no active org.
+	if member == nil && !app.OrganizationsEnabled {
 		directPerms, err := handler.repo.GetDirectPermissionSlugs(ctx, projectID, userID, app.ID)
 		if err != nil {
 			return nil, nil, nil, err
