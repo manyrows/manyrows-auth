@@ -36,6 +36,11 @@ func setupServerOrgRouter(t *testing.T, ws *core.Workspace, app *core.App) *chi.
 		or.Get("/{orgId}", svc.Handler.ServerGetOrganization)
 		or.Patch("/{orgId}", svc.Handler.ServerUpdateOrganization)
 		or.Delete("/{orgId}", svc.Handler.ServerArchiveOrganization)
+		or.Get("/{orgId}/members", svc.Handler.ServerListOrgMembers)
+		or.Post("/{orgId}/members", svc.Handler.ServerAddOrgMember)
+		or.Get("/{orgId}/members/{userId}", svc.Handler.ServerGetOrgMember)
+		or.Patch("/{orgId}/members/{userId}", svc.Handler.ServerSetOrgMemberRole)
+		or.Delete("/{orgId}/members/{userId}", svc.Handler.ServerRemoveOrgMember)
 	})
 	return r
 }
@@ -126,5 +131,112 @@ func TestServerListOrganizationsForUser(t *testing.T) {
 	_ = json.Unmarshal(rr.Body.Bytes(), &resp)
 	if len(resp.Organizations) != 2 {
 		t.Fatalf("expected 2 orgs, got %d", len(resp.Organizations))
+	}
+}
+
+func TestServerAddOrgMember_ByEmailMissing_409(t *testing.T) {
+	ctx := context.Background()
+	acc := testEnv.CreateTestAccount(t, "aem-"+GenerateUniqueSlug("u")+"@example.com")
+	ws := testEnv.CreateTestWorkspace(t, acc, "WS", GenerateUniqueSlug("ws"))
+	app := testEnv.CreateTestApp(t, ws, acc)
+	defer testEnv.CleanupTestData(t, &TestFixtures{Account: acc, Workspace: ws})
+
+	owner, _, _ := testEnv.Repo.GetOrCreateUser(ctx, "own-"+GenerateUniqueSlug("u")+"@example.com", app, core.UserSourceInvited)
+	org, _ := testEnv.Repo.CreateOrganization(ctx, app.ID, "Acme", GenerateUniqueSlug("acme"), &owner.ID)
+	_, _ = testEnv.Repo.AddOrganizationMember(ctx, org.ID, owner.ID, core.OrgRoleOwner)
+
+	router := setupServerOrgRouter(t, ws, app)
+	body, _ := json.Marshal(map[string]string{"email": "nobody-" + GenerateUniqueSlug("x") + "@example.com", "orgRole": "admin"})
+	req := httptest.NewRequest(http.MethodPost, orgBase(app)+"/"+org.ID.String()+"/members", bytes.NewReader(body))
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+	if rr.Code != http.StatusConflict {
+		t.Fatalf("unknown email must be 409, got %d (%s)", rr.Code, rr.Body.String())
+	}
+}
+
+func TestServerAddOrgMember_ByEmailExisting(t *testing.T) {
+	ctx := context.Background()
+	acc := testEnv.CreateTestAccount(t, "aee-"+GenerateUniqueSlug("u")+"@example.com")
+	ws := testEnv.CreateTestWorkspace(t, acc, "WS", GenerateUniqueSlug("ws"))
+	app := testEnv.CreateTestApp(t, ws, acc)
+	defer testEnv.CleanupTestData(t, &TestFixtures{Account: acc, Workspace: ws})
+
+	owner, _, _ := testEnv.Repo.GetOrCreateUser(ctx, "own-"+GenerateUniqueSlug("u")+"@example.com", app, core.UserSourceInvited)
+	org, _ := testEnv.Repo.CreateOrganization(ctx, app.ID, "Acme", GenerateUniqueSlug("acme"), &owner.ID)
+	_, _ = testEnv.Repo.AddOrganizationMember(ctx, org.ID, owner.ID, core.OrgRoleOwner)
+
+	teammateEmail := "tm-" + GenerateUniqueSlug("u") + "@example.com"
+	teammate, _, _ := testEnv.Repo.GetOrCreateUser(ctx, teammateEmail, app, core.UserSourceInvited)
+
+	router := setupServerOrgRouter(t, ws, app)
+	body, _ := json.Marshal(map[string]string{"email": teammateEmail, "orgRole": "admin"})
+	req := httptest.NewRequest(http.MethodPost, orgBase(app)+"/"+org.ID.String()+"/members", bytes.NewReader(body))
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+	if rr.Code != http.StatusCreated {
+		t.Fatalf("add existing: got %d (%s)", rr.Code, rr.Body.String())
+	}
+	m, err := testEnv.Repo.GetOrganizationMember(ctx, org.ID, teammate.ID)
+	if err != nil || m.OrgRole != core.OrgRoleAdmin {
+		t.Fatalf("teammate not added as admin: %v %+v", err, m)
+	}
+}
+
+func TestServerLastOwnerGuard(t *testing.T) {
+	ctx := context.Background()
+	acc := testEnv.CreateTestAccount(t, "log-"+GenerateUniqueSlug("u")+"@example.com")
+	ws := testEnv.CreateTestWorkspace(t, acc, "WS", GenerateUniqueSlug("ws"))
+	app := testEnv.CreateTestApp(t, ws, acc)
+	defer testEnv.CleanupTestData(t, &TestFixtures{Account: acc, Workspace: ws})
+
+	owner, _, _ := testEnv.Repo.GetOrCreateUser(ctx, "own-"+GenerateUniqueSlug("u")+"@example.com", app, core.UserSourceInvited)
+	org, _ := testEnv.Repo.CreateOrganization(ctx, app.ID, "Acme", GenerateUniqueSlug("acme"), &owner.ID)
+	_, _ = testEnv.Repo.AddOrganizationMember(ctx, org.ID, owner.ID, core.OrgRoleOwner)
+
+	router := setupServerOrgRouter(t, ws, app)
+	base := orgBase(app) + "/" + org.ID.String() + "/members/" + owner.ID.String()
+
+	body, _ := json.Marshal(map[string]string{"orgRole": "admin"})
+	req := httptest.NewRequest(http.MethodPatch, base, bytes.NewReader(body))
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+	if rr.Code != http.StatusConflict {
+		t.Fatalf("demote last owner: got %d want 409 (%s)", rr.Code, rr.Body.String())
+	}
+
+	req2 := httptest.NewRequest(http.MethodDelete, base, nil)
+	rr2 := httptest.NewRecorder()
+	router.ServeHTTP(rr2, req2)
+	if rr2.Code != http.StatusConflict {
+		t.Fatalf("remove last owner: got %d want 409 (%s)", rr2.Code, rr2.Body.String())
+	}
+}
+
+func TestServerGetOrgMember_MiddlewareGate(t *testing.T) {
+	ctx := context.Background()
+	acc := testEnv.CreateTestAccount(t, "gom-"+GenerateUniqueSlug("u")+"@example.com")
+	ws := testEnv.CreateTestWorkspace(t, acc, "WS", GenerateUniqueSlug("ws"))
+	app := testEnv.CreateTestApp(t, ws, acc)
+	defer testEnv.CleanupTestData(t, &TestFixtures{Account: acc, Workspace: ws})
+
+	owner, _, _ := testEnv.Repo.GetOrCreateUser(ctx, "own-"+GenerateUniqueSlug("u")+"@example.com", app, core.UserSourceInvited)
+	outsider, _, _ := testEnv.Repo.GetOrCreateUser(ctx, "out-"+GenerateUniqueSlug("u")+"@example.com", app, core.UserSourceInvited)
+	org, _ := testEnv.Repo.CreateOrganization(ctx, app.ID, "Acme", GenerateUniqueSlug("acme"), &owner.ID)
+	_, _ = testEnv.Repo.AddOrganizationMember(ctx, org.ID, owner.ID, core.OrgRoleOwner)
+
+	router := setupServerOrgRouter(t, ws, app)
+
+	req := httptest.NewRequest(http.MethodGet, orgBase(app)+"/"+org.ID.String()+"/members/"+owner.ID.String(), nil)
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("member gate: got %d (%s)", rr.Code, rr.Body.String())
+	}
+	req2 := httptest.NewRequest(http.MethodGet, orgBase(app)+"/"+org.ID.String()+"/members/"+outsider.ID.String(), nil)
+	rr2 := httptest.NewRecorder()
+	router.ServeHTTP(rr2, req2)
+	if rr2.Code != http.StatusNotFound {
+		t.Fatalf("outsider gate: got %d want 404", rr2.Code)
 	}
 }
