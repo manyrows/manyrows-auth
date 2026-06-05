@@ -457,7 +457,7 @@ func (handler *RequestHandler) CheckPermission(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	_, perms, err := handler.resolveRolesAndPermissions(ctx, project.ID, identity.User.ID, app.ID)
+	_, perms, _, err := handler.resolveActiveRolesAndPermissions(ctx, app, project.ID, identity.User.ID, ses)
 	if err != nil {
 		log.Err(err).Msg("Could not resolve permissions")
 		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
