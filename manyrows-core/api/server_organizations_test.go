@@ -299,3 +299,48 @@ func TestServerGetOrgMember_MiddlewareGate(t *testing.T) {
 		t.Fatalf("outsider gate: got %d want 404", rr2.Code)
 	}
 }
+
+func TestServerOrg_CrossApp404(t *testing.T) {
+	ctx := context.Background()
+	acc := testEnv.CreateTestAccount(t, "xa-"+GenerateUniqueSlug("u")+"@example.com")
+	ws := testEnv.CreateTestWorkspace(t, acc, "WS", GenerateUniqueSlug("ws"))
+	app1 := testEnv.CreateTestApp(t, ws, acc)
+	app2 := testEnv.CreateTestApp(t, ws, acc)
+	defer testEnv.CleanupTestData(t, &TestFixtures{Account: acc, Workspace: ws})
+
+	owner, _, _ := testEnv.Repo.GetOrCreateUser(ctx, "o-"+GenerateUniqueSlug("u")+"@example.com", app2, core.UserSourceInvited)
+	org2, err := testEnv.Repo.CreateOrganization(ctx, app2.ID, "Acme", GenerateUniqueSlug("acme"), &owner.ID)
+	if err != nil {
+		t.Fatalf("create org under app2: %v", err)
+	}
+
+	// Reaching app2's org through the app1-scoped router must 404 (no cross-app leak).
+	router := setupServerOrgRouter(t, ws, app1)
+	req := httptest.NewRequest(http.MethodGet, orgBase(app1)+"/"+org2.ID.String(), nil)
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+	if rr.Code != http.StatusNotFound {
+		t.Fatalf("cross-app org must be 404, got %d (%s)", rr.Code, rr.Body.String())
+	}
+}
+
+func TestServerCreateOrganization_ForeignPoolOwner_400(t *testing.T) {
+	ctx := context.Background()
+	acc := testEnv.CreateTestAccount(t, "fp-"+GenerateUniqueSlug("u")+"@example.com")
+	ws := testEnv.CreateTestWorkspace(t, acc, "WS", GenerateUniqueSlug("ws"))
+	app1 := testEnv.CreateTestApp(t, ws, acc)
+	app2 := testEnv.CreateTestApp(t, ws, acc)
+	defer testEnv.CleanupTestData(t, &TestFixtures{Account: acc, Workspace: ws})
+
+	// This user belongs to app2's pool, not app1's.
+	foreign, _, _ := testEnv.Repo.GetOrCreateUser(ctx, "f-"+GenerateUniqueSlug("u")+"@example.com", app2, core.UserSourceInvited)
+
+	router := setupServerOrgRouter(t, ws, app1)
+	body, _ := json.Marshal(map[string]string{"name": "Acme", "ownerUserId": foreign.ID.String()})
+	req := httptest.NewRequest(http.MethodPost, orgBase(app1), bytes.NewReader(body))
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("foreign-pool owner must be 400, got %d (%s)", rr.Code, rr.Body.String())
+	}
+}
