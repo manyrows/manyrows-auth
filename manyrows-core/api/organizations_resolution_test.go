@@ -186,3 +186,215 @@ func TestResolveActiveRoles_OrgEnabledNoActiveOrg_Empty(t *testing.T) {
 		t.Fatalf("org-enabled + no active org must yield empty roles/perms and nil member (single source of truth); got roles=%v perms=%v member=%v", roles, perms, member)
 	}
 }
+
+func TestResolveActiveRoles_DisabledMember_Empty(t *testing.T) {
+	ctx := context.Background()
+	acc := testEnv.CreateTestAccount(t, "disab-"+GenerateUniqueSlug("u")+"@example.com")
+	ws := testEnv.CreateTestWorkspace(t, acc, "WS", GenerateUniqueSlug("ws"))
+	app := testEnv.CreateTestApp(t, ws, acc)
+	defer testEnv.CleanupTestData(t, &TestFixtures{Account: acc, Workspace: ws})
+	now := time.Now().UTC()
+
+	if err := testEnv.Repo.SetAppOrganizationsEnabled(ctx, app.ID, true); err != nil {
+		t.Fatalf("enable orgs: %v", err)
+	}
+	user, _, err := testEnv.Repo.GetOrCreateUser(ctx, "m-"+GenerateUniqueSlug("u")+"@example.com", app, core.UserSourceInvited)
+	if err != nil {
+		t.Fatalf("GetOrCreateUser: %v", err)
+	}
+	role, err := testEnv.Repo.CreateRole(ctx, repo.CreateRoleParams{ProjectID: app.ProjectID, Name: "R", Slug: GenerateUniqueSlug("r"), Now: now})
+	if err != nil {
+		t.Fatalf("CreateRole: %v", err)
+	}
+	org, err := testEnv.Repo.CreateOrganization(ctx, app.ID, "Acme", GenerateUniqueSlug("acme"), &user.ID)
+	if err != nil {
+		t.Fatalf("CreateOrganization: %v", err)
+	}
+	member, err := testEnv.Repo.AddOrganizationMember(ctx, org.ID, user.ID, core.OrgRoleOwner)
+	if err != nil {
+		t.Fatalf("AddOrganizationMember: %v", err)
+	}
+	if err := testEnv.Repo.SetOrganizationMemberRoles(ctx, member.ID, []uuid.UUID{role.ID}); err != nil {
+		t.Fatalf("SetOrganizationMemberRoles: %v", err)
+	}
+	if _, err := testEnv.DB.Pool().Exec(ctx, "UPDATE organization_members SET status='disabled' WHERE id=$1", member.ID); err != nil {
+		t.Fatalf("disable member: %v", err)
+	}
+
+	appOn, err := testEnv.Repo.GetAppByID(ctx, app.ID)
+	if err != nil {
+		t.Fatalf("GetAppByID: %v", err)
+	}
+	svc := NewTestServices(t)
+	ses := &core.ClientSession{ID: utils.NewUUID(), UserID: user.ID, AppID: &app.ID, CreatedAt: now, ExpiresAt: now.Add(time.Hour), LastSeenAt: now, OrganizationID: &org.ID}
+	roles, perms, m, err := svc.Handler.ResolveActiveRolesAndPermissionsForTest(ctx, &appOn, app.ProjectID, user.ID, ses)
+	if err != nil {
+		t.Fatalf("resolve: %v", err)
+	}
+	if len(roles) != 0 || len(perms) != 0 || m != nil {
+		t.Fatalf("disabled member must resolve to no roles/perms/member; got roles=%v perms=%v member=%v", roles, perms, m)
+	}
+}
+
+func TestResolveActiveRoles_ArchivedOrg_Empty(t *testing.T) {
+	ctx := context.Background()
+	acc := testEnv.CreateTestAccount(t, "arch-"+GenerateUniqueSlug("u")+"@example.com")
+	ws := testEnv.CreateTestWorkspace(t, acc, "WS", GenerateUniqueSlug("ws"))
+	app := testEnv.CreateTestApp(t, ws, acc)
+	defer testEnv.CleanupTestData(t, &TestFixtures{Account: acc, Workspace: ws})
+	now := time.Now().UTC()
+
+	if err := testEnv.Repo.SetAppOrganizationsEnabled(ctx, app.ID, true); err != nil {
+		t.Fatalf("enable orgs: %v", err)
+	}
+	user, _, err := testEnv.Repo.GetOrCreateUser(ctx, "m-"+GenerateUniqueSlug("u")+"@example.com", app, core.UserSourceInvited)
+	if err != nil {
+		t.Fatalf("GetOrCreateUser: %v", err)
+	}
+	role, err := testEnv.Repo.CreateRole(ctx, repo.CreateRoleParams{ProjectID: app.ProjectID, Name: "R", Slug: GenerateUniqueSlug("r"), Now: now})
+	if err != nil {
+		t.Fatalf("CreateRole: %v", err)
+	}
+	org, err := testEnv.Repo.CreateOrganization(ctx, app.ID, "Acme", GenerateUniqueSlug("acme"), &user.ID)
+	if err != nil {
+		t.Fatalf("CreateOrganization: %v", err)
+	}
+	member, err := testEnv.Repo.AddOrganizationMember(ctx, org.ID, user.ID, core.OrgRoleOwner)
+	if err != nil {
+		t.Fatalf("AddOrganizationMember: %v", err)
+	}
+	if err := testEnv.Repo.SetOrganizationMemberRoles(ctx, member.ID, []uuid.UUID{role.ID}); err != nil {
+		t.Fatalf("SetOrganizationMemberRoles: %v", err)
+	}
+	if _, err := testEnv.DB.Pool().Exec(ctx, "UPDATE organizations SET status='archived' WHERE id=$1", org.ID); err != nil {
+		t.Fatalf("archive org: %v", err)
+	}
+
+	appOn, err := testEnv.Repo.GetAppByID(ctx, app.ID)
+	if err != nil {
+		t.Fatalf("GetAppByID: %v", err)
+	}
+	svc := NewTestServices(t)
+	ses := &core.ClientSession{ID: utils.NewUUID(), UserID: user.ID, AppID: &app.ID, CreatedAt: now, ExpiresAt: now.Add(time.Hour), LastSeenAt: now, OrganizationID: &org.ID}
+	roles, perms, m, err := svc.Handler.ResolveActiveRolesAndPermissionsForTest(ctx, &appOn, app.ProjectID, user.ID, ses)
+	if err != nil {
+		t.Fatalf("resolve: %v", err)
+	}
+	if len(roles) != 0 || len(perms) != 0 || m != nil {
+		t.Fatalf("archived org must resolve to no roles/perms/member; got roles=%v perms=%v member=%v", roles, perms, m)
+	}
+}
+
+func TestResolveActiveRoles_CrossAppOrgIgnored(t *testing.T) {
+	ctx := context.Background()
+	acc := testEnv.CreateTestAccount(t, "xapp-"+GenerateUniqueSlug("u")+"@example.com")
+	ws := testEnv.CreateTestWorkspace(t, acc, "WS", GenerateUniqueSlug("ws"))
+	app1 := testEnv.CreateTestApp(t, ws, acc)
+	app2 := testEnv.CreateTestApp(t, ws, acc)
+	defer testEnv.CleanupTestData(t, &TestFixtures{Account: acc, Workspace: ws})
+	now := time.Now().UTC()
+
+	if err := testEnv.Repo.SetAppOrganizationsEnabled(ctx, app1.ID, true); err != nil {
+		t.Fatalf("enable orgs: %v", err)
+	}
+	user, _, err := testEnv.Repo.GetOrCreateUser(ctx, "m-"+GenerateUniqueSlug("u")+"@example.com", app1, core.UserSourceInvited)
+	if err != nil {
+		t.Fatalf("GetOrCreateUser: %v", err)
+	}
+	// Org + membership + role live under app2; the session is scoped to app1.
+	org2, err := testEnv.Repo.CreateOrganization(ctx, app2.ID, "Other", GenerateUniqueSlug("o"), nil)
+	if err != nil {
+		t.Fatalf("CreateOrganization app2: %v", err)
+	}
+	m2, err := testEnv.Repo.AddOrganizationMember(ctx, org2.ID, user.ID, core.OrgRoleOwner)
+	if err != nil {
+		t.Fatalf("AddOrganizationMember: %v", err)
+	}
+	roleB, err := testEnv.Repo.CreateRole(ctx, repo.CreateRoleParams{ProjectID: app2.ProjectID, Name: "B", Slug: GenerateUniqueSlug("b"), Now: now})
+	if err != nil {
+		t.Fatalf("CreateRole app2: %v", err)
+	}
+	if err := testEnv.Repo.SetOrganizationMemberRoles(ctx, m2.ID, []uuid.UUID{roleB.ID}); err != nil {
+		t.Fatalf("SetOrganizationMemberRoles: %v", err)
+	}
+
+	appOn1, err := testEnv.Repo.GetAppByID(ctx, app1.ID)
+	if err != nil {
+		t.Fatalf("GetAppByID app1: %v", err)
+	}
+	svc := NewTestServices(t)
+	ses := &core.ClientSession{ID: utils.NewUUID(), UserID: user.ID, AppID: &app1.ID, CreatedAt: now, ExpiresAt: now.Add(time.Hour), LastSeenAt: now, OrganizationID: &org2.ID}
+	roles, perms, m, err := svc.Handler.ResolveActiveRolesAndPermissionsForTest(ctx, &appOn1, app1.ProjectID, user.ID, ses)
+	if err != nil {
+		t.Fatalf("resolve: %v", err)
+	}
+	if len(roles) != 0 || len(perms) != 0 || m != nil {
+		t.Fatalf("an org from a DIFFERENT app must not resolve; got roles=%v perms=%v member=%v", roles, perms, m)
+	}
+}
+
+func TestResolveActiveRoles_PinnedOrgIsolation(t *testing.T) {
+	ctx := context.Background()
+	acc := testEnv.CreateTestAccount(t, "iso-"+GenerateUniqueSlug("u")+"@example.com")
+	ws := testEnv.CreateTestWorkspace(t, acc, "WS", GenerateUniqueSlug("ws"))
+	app := testEnv.CreateTestApp(t, ws, acc)
+	defer testEnv.CleanupTestData(t, &TestFixtures{Account: acc, Workspace: ws})
+	now := time.Now().UTC()
+
+	if err := testEnv.Repo.SetAppOrganizationsEnabled(ctx, app.ID, true); err != nil {
+		t.Fatalf("enable orgs: %v", err)
+	}
+	user, _, err := testEnv.Repo.GetOrCreateUser(ctx, "m-"+GenerateUniqueSlug("u")+"@example.com", app, core.UserSourceInvited)
+	if err != nil {
+		t.Fatalf("GetOrCreateUser: %v", err)
+	}
+	roleA, err := testEnv.Repo.CreateRole(ctx, repo.CreateRoleParams{ProjectID: app.ProjectID, Name: "A", Slug: GenerateUniqueSlug("a"), Now: now})
+	if err != nil {
+		t.Fatalf("CreateRole A: %v", err)
+	}
+	roleB, err := testEnv.Repo.CreateRole(ctx, repo.CreateRoleParams{ProjectID: app.ProjectID, Name: "B", Slug: GenerateUniqueSlug("b"), Now: now})
+	if err != nil {
+		t.Fatalf("CreateRole B: %v", err)
+	}
+	orgA, err := testEnv.Repo.CreateOrganization(ctx, app.ID, "OrgA", GenerateUniqueSlug("a"), &user.ID)
+	if err != nil {
+		t.Fatalf("CreateOrganization A: %v", err)
+	}
+	orgB, err := testEnv.Repo.CreateOrganization(ctx, app.ID, "OrgB", GenerateUniqueSlug("b"), &user.ID)
+	if err != nil {
+		t.Fatalf("CreateOrganization B: %v", err)
+	}
+	mA, err := testEnv.Repo.AddOrganizationMember(ctx, orgA.ID, user.ID, core.OrgRoleOwner)
+	if err != nil {
+		t.Fatalf("AddOrganizationMember A: %v", err)
+	}
+	mB, err := testEnv.Repo.AddOrganizationMember(ctx, orgB.ID, user.ID, core.OrgRoleMember)
+	if err != nil {
+		t.Fatalf("AddOrganizationMember B: %v", err)
+	}
+	if err := testEnv.Repo.SetOrganizationMemberRoles(ctx, mA.ID, []uuid.UUID{roleA.ID}); err != nil {
+		t.Fatalf("SetOrganizationMemberRoles A: %v", err)
+	}
+	if err := testEnv.Repo.SetOrganizationMemberRoles(ctx, mB.ID, []uuid.UUID{roleB.ID}); err != nil {
+		t.Fatalf("SetOrganizationMemberRoles B: %v", err)
+	}
+
+	appOn, err := testEnv.Repo.GetAppByID(ctx, app.ID)
+	if err != nil {
+		t.Fatalf("GetAppByID: %v", err)
+	}
+	svc := NewTestServices(t)
+	ses := &core.ClientSession{ID: utils.NewUUID(), UserID: user.ID, AppID: &app.ID, CreatedAt: now, ExpiresAt: now.Add(time.Hour), LastSeenAt: now, OrganizationID: &orgB.ID}
+	roles, _, m, err := svc.Handler.ResolveActiveRolesAndPermissionsForTest(ctx, &appOn, app.ProjectID, user.ID, ses)
+	if err != nil {
+		t.Fatalf("resolve: %v", err)
+	}
+	if len(roles) != 1 || roles[0] != roleB.Slug || m == nil || m.OrgID != orgB.ID {
+		t.Fatalf("pinned org B must yield only B's role; got roles=%v member=%v", roles, m)
+	}
+	for _, rr := range roles {
+		if rr == roleA.Slug {
+			t.Fatalf("org A role leaked into org B context")
+		}
+	}
+}
