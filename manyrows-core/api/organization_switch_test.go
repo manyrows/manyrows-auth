@@ -2,11 +2,16 @@ package api_test
 
 import (
 	"context"
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
 	"manyrows-core/core"
 	"manyrows-core/utils"
+
+	"github.com/gofrs/uuid/v5"
 )
 
 func TestSetClientSessionOrganization_RoundTrip(t *testing.T) {
@@ -55,5 +60,67 @@ func TestSetClientSessionOrganization_RoundTrip(t *testing.T) {
 	got2, _ := testEnv.Repo.GetClientSessionByID(ctx, ses.ID)
 	if got2.OrganizationID != nil {
 		t.Fatalf("expected cleared org, got %v", got2.OrganizationID)
+	}
+}
+
+func TestSwitchOrganization_RequiresMembership(t *testing.T) {
+	router := setupClientAPIRouter(t)
+
+	acc := testEnv.CreateTestAccount(t, "sw-"+GenerateUniqueSlug("u")+"@example.com")
+	ws := testEnv.CreateTestWorkspace(t, acc, "Test WS", GenerateUniqueSlug("ws"))
+	project := testEnv.CreateTestProject(t, ws, acc, "Test Project", GenerateUniqueSlug("proj"))
+	appID := createTestApp(t, ws.ID, project.ID, uuid.Nil, "Test App")
+
+	fixtures := &TestFixtures{Account: acc, Workspace: ws, Projects: []core.Project{*project}}
+	defer testEnv.CleanupTestData(t, fixtures)
+	defer func() {
+		pool := testEnv.DB.Pool()
+		_, _ = pool.Exec(context.Background(), "DELETE FROM apps WHERE id = $1", appID)
+		_, _ = pool.Exec(context.Background(), "DELETE FROM client_sessions WHERE workspace_id = $1", ws.ID)
+	}()
+
+	ctx := context.Background()
+	if err := testEnv.Repo.SetAppOrganizationsEnabled(ctx, appID, true); err != nil {
+		t.Fatalf("enable orgs: %v", err)
+	}
+
+	user, _, err := testEnv.GetOrCreateUserWithMembership(ctx, acc.Email, &core.App{ID: appID}, core.UserSourceInvited)
+	if err != nil {
+		t.Fatalf("GetOrCreateUserWithMembership: %v", err)
+	}
+
+	orgA, err := testEnv.Repo.CreateOrganization(ctx, appID, "Acme", GenerateUniqueSlug("acme"), &user.ID)
+	if err != nil {
+		t.Fatalf("CreateOrganization A: %v", err)
+	}
+	if _, err := testEnv.Repo.AddOrganizationMember(ctx, orgA.ID, user.ID, core.OrgRoleOwner); err != nil {
+		t.Fatalf("AddOrganizationMember: %v", err)
+	}
+	orgB, err := testEnv.Repo.CreateOrganization(ctx, appID, "Other", GenerateUniqueSlug("other"), nil)
+	if err != nil {
+		t.Fatalf("CreateOrganization B: %v", err)
+	}
+
+	_, accessToken := createTestClientSessionForApp(t, ws, acc, &core.App{ID: appID})
+	switchURL := "/x/" + ws.Slug + "/apps/" + appID.String() + "/a/session/organization"
+
+	// Active member can switch to org A → 200.
+	req := httptest.NewRequest(http.MethodPost, switchURL, strings.NewReader(`{"organizationId":"`+orgA.ID.String()+`"}`))
+	req.Header.Set("Authorization", "Bearer "+accessToken)
+	req.Header.Set("Content-Type", "application/json")
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("member switch: got %d want 200 (body=%s)", rr.Code, rr.Body.String())
+	}
+
+	// Switching to an org the user is NOT a member of → 403.
+	req2 := httptest.NewRequest(http.MethodPost, switchURL, strings.NewReader(`{"organizationId":"`+orgB.ID.String()+`"}`))
+	req2.Header.Set("Authorization", "Bearer "+accessToken)
+	req2.Header.Set("Content-Type", "application/json")
+	rr2 := httptest.NewRecorder()
+	router.ServeHTTP(rr2, req2)
+	if rr2.Code != http.StatusForbidden {
+		t.Fatalf("non-member switch: got %d want 403 (body=%s)", rr2.Code, rr2.Body.String())
 	}
 }

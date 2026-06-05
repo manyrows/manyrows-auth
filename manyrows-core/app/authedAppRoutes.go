@@ -35,6 +35,9 @@ func registerAuthedAppRoutes(r chi.Router, h *api.RequestHandler, rpo *repo.Repo
 	r.Patch("/passkeys/{passkeyId}", h.WorkspaceRenamePasskey)
 	r.Delete("/passkeys/{passkeyId}", h.WorkspaceDeletePasskey)
 
+	// Session / org-switch.
+	r.Post("/session/organization", h.SwitchOrganization)
+
 	// User-info / app-scoped routes (formerly under /app/).
 	r.Get("/me", h.GetAppMe)
 	r.Get("/me/fields", h.GetMyUserFields)
