@@ -276,5 +276,6 @@ func NewAuthService(c *config.Config, repo *repo.Repo, jwtKeyStore jwks.MutableS
 type mrClientJWTClaims struct {
 	SessionID string `json:"sid"`
 	AppID     string `json:"app,omitempty"`
+	OrgID     string `json:"org,omitempty"`
 	jwt.RegisteredClaims
 }

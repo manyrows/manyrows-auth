@@ -66,6 +66,9 @@ func (a *AuthService) IssueAccessToken(s *core.ClientSession, ttl time.Duration,
 		claims.AppID = s.AppID.String()
 		claims.Audience = jwt.ClaimStrings{s.AppID.String()}
 	}
+	if s.OrganizationID != nil && *s.OrganizationID != uuid.Nil {
+		claims.OrgID = s.OrganizationID.String()
+	}
 
 	current := a.jwtKeys.Load().Current
 	tok := jwt.NewWithClaims(jwt.SigningMethodES256, claims)
