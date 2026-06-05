@@ -377,6 +377,63 @@ func TestOrganizationWriteMethods_CreateUniqueUpdateArchive(t *testing.T) {
 	}
 }
 
+func TestOrganizationMemberMethods(t *testing.T) {
+	ctx := context.Background()
+	acc := testEnv.CreateTestAccount(t, "mem-"+GenerateUniqueSlug("u")+"@example.com")
+	ws := testEnv.CreateTestWorkspace(t, acc, "WS", GenerateUniqueSlug("ws"))
+	app := testEnv.CreateTestApp(t, ws, acc)
+	defer testEnv.CleanupTestData(t, &TestFixtures{Account: acc, Workspace: ws})
+
+	owner, _, err := testEnv.Repo.GetOrCreateUser(ctx, "own-"+GenerateUniqueSlug("u")+"@example.com", app, core.UserSourceInvited)
+	if err != nil {
+		t.Fatalf("owner: %v", err)
+	}
+	other, _, err := testEnv.Repo.GetOrCreateUser(ctx, "oth-"+GenerateUniqueSlug("u")+"@example.com", app, core.UserSourceInvited)
+	if err != nil {
+		t.Fatalf("other: %v", err)
+	}
+
+	org, err := testEnv.Repo.CreateOrganization(ctx, app.ID, "Acme", GenerateUniqueSlug("acme"), &owner.ID)
+	if err != nil {
+		t.Fatalf("org: %v", err)
+	}
+	if _, err := testEnv.Repo.AddOrganizationMember(ctx, org.ID, owner.ID, core.OrgRoleOwner); err != nil {
+		t.Fatalf("add owner: %v", err)
+	}
+	if _, err := testEnv.Repo.AddOrganizationMember(ctx, org.ID, other.ID, core.OrgRoleAdmin); err != nil {
+		t.Fatalf("add other: %v", err)
+	}
+
+	members, err := testEnv.Repo.ListOrganizationMembers(ctx, org.ID)
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	if len(members) != 2 {
+		t.Fatalf("expected 2 members, got %d", len(members))
+	}
+
+	owners, err := testEnv.Repo.CountActiveOrgOwners(ctx, org.ID)
+	if err != nil || owners != 1 {
+		t.Fatalf("CountActiveOrgOwners: got %d err %v want 1", owners, err)
+	}
+
+	if err := testEnv.Repo.SetOrganizationMemberRole(ctx, org.ID, other.ID, core.OrgRoleOwner); err != nil {
+		t.Fatalf("set role: %v", err)
+	}
+	owners, _ = testEnv.Repo.CountActiveOrgOwners(ctx, org.ID)
+	if owners != 2 {
+		t.Fatalf("after promote: got %d owners want 2", owners)
+	}
+
+	if err := testEnv.Repo.RemoveOrganizationMember(ctx, org.ID, other.ID); err != nil {
+		t.Fatalf("remove: %v", err)
+	}
+	members, _ = testEnv.Repo.ListOrganizationMembers(ctx, org.ID)
+	if len(members) != 1 {
+		t.Fatalf("after remove: got %d members want 1", len(members))
+	}
+}
+
 func TestResolveActiveRoles_PinnedOrgIsolation(t *testing.T) {
 	ctx := context.Background()
 	acc := testEnv.CreateTestAccount(t, "iso-"+GenerateUniqueSlug("u")+"@example.com")

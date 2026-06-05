@@ -221,3 +221,53 @@ func (r *Repo) ArchiveOrganization(ctx context.Context, id uuid.UUID) error {
 	}
 	return nil
 }
+
+// OrganizationMemberView is one member with their email + tier, for admin listing.
+type OrganizationMemberView struct {
+	UserID  uuid.UUID `json:"userId"`
+	Email   string    `json:"email"`
+	OrgRole string    `json:"orgRole"`
+	Status  string    `json:"status"`
+}
+
+// ListOrganizationMembers returns all members of an org with their email + tier.
+func (r *Repo) ListOrganizationMembers(ctx context.Context, orgID uuid.UUID) ([]OrganizationMemberView, error) {
+	const q = `
+SELECT m.user_id, u.email, m.org_role, m.status
+FROM organization_members m
+JOIN users u ON u.id = m.user_id
+WHERE m.org_id = $1
+ORDER BY u.email ASC;`
+	rows, err := r.db.Pool().Query(ctx, q, orgID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []OrganizationMemberView
+	for rows.Next() {
+		var v OrganizationMemberView
+		if err := rows.Scan(&v.UserID, &v.Email, &v.OrgRole, &v.Status); err != nil {
+			return nil, err
+		}
+		out = append(out, v)
+	}
+	return out, rows.Err()
+}
+
+// SetOrganizationMemberRole updates a member's tier. ErrNotFound if no such member.
+func (r *Repo) SetOrganizationMemberRole(ctx context.Context, orgID, userID uuid.UUID, orgRole string) error {
+	const q = `UPDATE organization_members SET org_role = $3 WHERE org_id = $1 AND user_id = $2;`
+	return r.execAffectingOne(ctx, ErrNotFound, q, orgID, userID, orgRole)
+}
+
+// RemoveOrganizationMember deletes a membership. ErrNotFound if no such member.
+func (r *Repo) RemoveOrganizationMember(ctx context.Context, orgID, userID uuid.UUID) error {
+	const q = `DELETE FROM organization_members WHERE org_id = $1 AND user_id = $2;`
+	return r.execAffectingOne(ctx, ErrNotFound, q, orgID, userID)
+}
+
+// CountActiveOrgOwners counts active owner-tier members — drives the last-owner guard.
+func (r *Repo) CountActiveOrgOwners(ctx context.Context, orgID uuid.UUID) (int, error) {
+	const q = `SELECT count(*) FROM organization_members WHERE org_id = $1 AND org_role = 'owner' AND status = 'active';`
+	return r.scalarCount(ctx, q, orgID)
+}
