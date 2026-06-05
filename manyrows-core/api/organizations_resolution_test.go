@@ -7,6 +7,25 @@ import (
 	"manyrows-core/core"
 )
 
+func TestApp_OrgColumnsDefault(t *testing.T) {
+	ctx := context.Background()
+	acc := testEnv.CreateTestAccount(t, "appcol-"+GenerateUniqueSlug("u")+"@example.com")
+	ws := testEnv.CreateTestWorkspace(t, acc, "WS", GenerateUniqueSlug("ws"))
+	app := testEnv.CreateTestApp(t, ws, acc)
+	defer testEnv.CleanupTestData(t, &TestFixtures{Account: acc, Workspace: ws})
+
+	got, err := testEnv.Repo.GetAppByID(ctx, app.ID)
+	if err != nil {
+		t.Fatalf("GetAppByID: %v", err)
+	}
+	if got.OrganizationsEnabled {
+		t.Errorf("organizationsEnabled should default false")
+	}
+	if got.OrgCreationPolicy != core.OrgCreationInviteOnly {
+		t.Errorf("orgCreationPolicy: got %q want invite_only", got.OrgCreationPolicy)
+	}
+}
+
 func TestOrganization_CreateAddMemberSetRoles(t *testing.T) {
 	ctx := context.Background()
 	acc := testEnv.CreateTestAccount(t, "org-"+GenerateUniqueSlug("u")+"@example.com")
