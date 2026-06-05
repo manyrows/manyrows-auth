@@ -17,6 +17,10 @@ type ClientSession struct {
 	// AppID is the app this session is scoped to.
 	AppID *uuid.UUID `db:"app_id" json:"appId,omitempty"`
 
+	// OrganizationID is the session's active org (org-enabled apps only).
+	// Nil = no active org (0-org user, or org-disabled app).
+	OrganizationID *uuid.UUID `db:"organization_id" json:"organizationId,omitempty"`
+
 	CreatedAt  time.Time `db:"created_at" json:"createdAt"`
 	ExpiresAt  time.Time `db:"expires_at" json:"expiresAt"`
 	LastSeenAt time.Time `db:"last_seen_at" json:"lastSeenAt"`
