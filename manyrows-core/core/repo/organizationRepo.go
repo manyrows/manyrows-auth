@@ -167,6 +167,66 @@ ORDER BY o.name ASC;
 	return out, rows.Err()
 }
 
+// CreateOrganizationWithOwner creates an org AND seeds ownerID as an active
+// owner member atomically (both inserts in one transaction). Slug collisions
+// retry the whole transaction with a -2, -3 … suffix. Used by the server
+// provisioning API so a failed owner-seed can never leave an ownerless org.
+func (r *Repo) CreateOrganizationWithOwner(ctx context.Context, appID uuid.UUID, name, baseSlug string, ownerID uuid.UUID) (*core.Organization, error) {
+	name = strings.TrimSpace(name)
+	baseSlug = strings.TrimSpace(baseSlug)
+	if appID == uuid.Nil || ownerID == uuid.Nil || name == "" {
+		return nil, errors.New("invalid organization")
+	}
+	if baseSlug == "" {
+		baseSlug = "org"
+	}
+	slug := baseSlug
+	for attempt := 2; attempt < 100; attempt++ {
+		org, err := r.createOrgWithOwnerOnce(ctx, appID, name, slug, ownerID)
+		if err == nil {
+			return org, nil
+		}
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+			// Only the org (app_id, slug) unique index can collide here (the
+			// member row is for a brand-new org), so retry with a new slug.
+			slug = fmt.Sprintf("%s-%d", baseSlug, attempt)
+			continue
+		}
+		return nil, err
+	}
+	return nil, errors.New("could not allocate unique organization slug")
+}
+
+func (r *Repo) createOrgWithOwnerOnce(ctx context.Context, appID uuid.UUID, name, slug string, ownerID uuid.UUID) (*core.Organization, error) {
+	tx, err := r.db.Pool().Begin(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	var o core.Organization
+	if err := tx.QueryRow(ctx, `
+INSERT INTO organizations (id, app_id, name, slug, status, created_by, created_at, updated_at)
+VALUES ($1, $2, $3, $4, 'active', $5, now(), now())
+RETURNING id, app_id, name, slug, status, created_by, created_at, updated_at;`,
+		utils.NewUUID(), appID, name, slug, ownerID,
+	).Scan(&o.ID, &o.AppID, &o.Name, &o.Slug, &o.Status, &o.CreatedBy, &o.CreatedAt, &o.UpdatedAt); err != nil {
+		return nil, err
+	}
+	if _, err := tx.Exec(ctx, `
+INSERT INTO organization_members (id, org_id, user_id, org_role, status, joined_at)
+VALUES ($1, $2, $3, 'owner', 'active', now());`,
+		utils.NewUUID(), o.ID, ownerID,
+	); err != nil {
+		return nil, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return nil, err
+	}
+	return &o, nil
+}
+
 // CreateOrganizationWithUniqueSlug creates an org, appending -2, -3 … to the
 // slug on (app_id, slug) collision. The server API derives slugs from a display
 // name that may repeat, so creation must not fail on a duplicate name.

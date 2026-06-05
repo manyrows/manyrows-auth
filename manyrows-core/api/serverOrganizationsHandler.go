@@ -123,19 +123,13 @@ func (handler *RequestHandler) ServerCreateOrganization(w http.ResponseWriter, r
 	if slug == "" {
 		slug = simpleSlug(body.Name)
 	}
-	org, err := handler.repo.CreateOrganizationWithUniqueSlug(ctx, app.ID, strings.TrimSpace(body.Name), slug, &ownerID)
+	org, err := handler.repo.CreateOrganizationWithOwner(ctx, app.ID, strings.TrimSpace(body.Name), slug, ownerID)
 	if err != nil {
 		log.Err(err).Msg("ServerCreateOrganization: create failed")
 		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 		return
 	}
-	if _, err := handler.repo.AddOrganizationMember(ctx, org.ID, ownerID, core.OrgRoleOwner); err != nil {
-		log.Err(err).Msg("ServerCreateOrganization: seed owner failed")
-		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
-		return
-	}
-	w.WriteHeader(http.StatusCreated)
-	utils.WriteJson(w, toServerOrg(org))
+	utils.WriteJsonWithStatusCode(w, toServerOrg(org), http.StatusCreated)
 }
 
 // ServerListOrganizationsForUser: GET /v1/apps/{appId}/organizations?userId=

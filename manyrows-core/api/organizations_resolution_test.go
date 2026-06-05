@@ -434,6 +434,37 @@ func TestOrganizationMemberMethods(t *testing.T) {
 	}
 }
 
+func TestCreateOrganizationWithOwner_AtomicAndUniqueSlug(t *testing.T) {
+	ctx := context.Background()
+	acc := testEnv.CreateTestAccount(t, "cwo-"+GenerateUniqueSlug("u")+"@example.com")
+	ws := testEnv.CreateTestWorkspace(t, acc, "WS", GenerateUniqueSlug("ws"))
+	app := testEnv.CreateTestApp(t, ws, acc)
+	defer testEnv.CleanupTestData(t, &TestFixtures{Account: acc, Workspace: ws})
+
+	owner, _, err := testEnv.Repo.GetOrCreateUser(ctx, "own-"+GenerateUniqueSlug("u")+"@example.com", app, core.UserSourceInvited)
+	if err != nil {
+		t.Fatalf("owner: %v", err)
+	}
+
+	o1, err := testEnv.Repo.CreateOrganizationWithOwner(ctx, app.ID, "Acme", "acme", owner.ID)
+	if err != nil {
+		t.Fatalf("create 1: %v", err)
+	}
+	// Owner membership exists, active owner.
+	m, err := testEnv.Repo.GetOrganizationMember(ctx, o1.ID, owner.ID)
+	if err != nil || m.OrgRole != core.OrgRoleOwner || m.Status != core.OrgMemberStatusActive {
+		t.Fatalf("owner not seeded: %v %+v", err, m)
+	}
+	// Same base slug → second gets -2.
+	o2, err := testEnv.Repo.CreateOrganizationWithOwner(ctx, app.ID, "Acme", "acme", owner.ID)
+	if err != nil {
+		t.Fatalf("create 2: %v", err)
+	}
+	if o1.Slug != "acme" || o2.Slug != "acme-2" {
+		t.Fatalf("slug: %q / %q", o1.Slug, o2.Slug)
+	}
+}
+
 func TestResolveActiveRoles_PinnedOrgIsolation(t *testing.T) {
 	ctx := context.Background()
 	acc := testEnv.CreateTestAccount(t, "iso-"+GenerateUniqueSlug("u")+"@example.com")
