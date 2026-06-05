@@ -213,6 +213,65 @@ func TestServerLastOwnerGuard(t *testing.T) {
 	}
 }
 
+func TestServerAddOrgMember_ByUserId(t *testing.T) {
+	ctx := context.Background()
+	acc := testEnv.CreateTestAccount(t, "abu-"+GenerateUniqueSlug("u")+"@example.com")
+	ws := testEnv.CreateTestWorkspace(t, acc, "WS", GenerateUniqueSlug("ws"))
+	app := testEnv.CreateTestApp(t, ws, acc)
+	defer testEnv.CleanupTestData(t, &TestFixtures{Account: acc, Workspace: ws})
+
+	owner, _, _ := testEnv.Repo.GetOrCreateUser(ctx, "own-"+GenerateUniqueSlug("u")+"@example.com", app, core.UserSourceInvited)
+	teammate, _, _ := testEnv.Repo.GetOrCreateUser(ctx, "tm-"+GenerateUniqueSlug("u")+"@example.com", app, core.UserSourceInvited)
+	org, _ := testEnv.Repo.CreateOrganization(ctx, app.ID, "Acme", GenerateUniqueSlug("acme"), &owner.ID)
+	_, _ = testEnv.Repo.AddOrganizationMember(ctx, org.ID, owner.ID, core.OrgRoleOwner)
+
+	router := setupServerOrgRouter(t, ws, app)
+	body, _ := json.Marshal(map[string]string{"userId": teammate.ID.String(), "orgRole": "member"})
+	req := httptest.NewRequest(http.MethodPost, orgBase(app)+"/"+org.ID.String()+"/members", bytes.NewReader(body))
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+	if rr.Code != http.StatusCreated {
+		t.Fatalf("add by userId: got %d (%s)", rr.Code, rr.Body.String())
+	}
+	m, err := testEnv.Repo.GetOrganizationMember(ctx, org.ID, teammate.ID)
+	if err != nil || m.OrgRole != core.OrgRoleMember {
+		t.Fatalf("teammate not added as member: %v %+v", err, m)
+	}
+}
+
+func TestServerLastOwnerGuard_AllowsWithMultipleOwners(t *testing.T) {
+	ctx := context.Background()
+	acc := testEnv.CreateTestAccount(t, "amo-"+GenerateUniqueSlug("u")+"@example.com")
+	ws := testEnv.CreateTestWorkspace(t, acc, "WS", GenerateUniqueSlug("ws"))
+	app := testEnv.CreateTestApp(t, ws, acc)
+	defer testEnv.CleanupTestData(t, &TestFixtures{Account: acc, Workspace: ws})
+
+	o1, _, _ := testEnv.Repo.GetOrCreateUser(ctx, "o1-"+GenerateUniqueSlug("u")+"@example.com", app, core.UserSourceInvited)
+	o2, _, _ := testEnv.Repo.GetOrCreateUser(ctx, "o2-"+GenerateUniqueSlug("u")+"@example.com", app, core.UserSourceInvited)
+	org, _ := testEnv.Repo.CreateOrganization(ctx, app.ID, "Acme", GenerateUniqueSlug("acme"), &o1.ID)
+	_, _ = testEnv.Repo.AddOrganizationMember(ctx, org.ID, o1.ID, core.OrgRoleOwner)
+	_, _ = testEnv.Repo.AddOrganizationMember(ctx, org.ID, o2.ID, core.OrgRoleOwner) // two owners
+
+	router := setupServerOrgRouter(t, ws, app)
+
+	// Demote o2 while a second owner (o1) exists → allowed (204).
+	body, _ := json.Marshal(map[string]string{"orgRole": "admin"})
+	req := httptest.NewRequest(http.MethodPatch, orgBase(app)+"/"+org.ID.String()+"/members/"+o2.ID.String(), bytes.NewReader(body))
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+	if rr.Code != http.StatusNoContent {
+		t.Fatalf("demote with 2 owners should be 204, got %d (%s)", rr.Code, rr.Body.String())
+	}
+
+	// Now o1 is the only owner → removing o1 → 409.
+	req2 := httptest.NewRequest(http.MethodDelete, orgBase(app)+"/"+org.ID.String()+"/members/"+o1.ID.String(), nil)
+	rr2 := httptest.NewRecorder()
+	router.ServeHTTP(rr2, req2)
+	if rr2.Code != http.StatusConflict {
+		t.Fatalf("remove now-last owner should be 409, got %d (%s)", rr2.Code, rr2.Body.String())
+	}
+}
+
 func TestServerGetOrgMember_MiddlewareGate(t *testing.T) {
 	ctx := context.Background()
 	acc := testEnv.CreateTestAccount(t, "gom-"+GenerateUniqueSlug("u")+"@example.com")

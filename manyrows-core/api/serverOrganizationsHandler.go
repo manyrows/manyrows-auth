@@ -367,9 +367,16 @@ func (handler *RequestHandler) ServerSetOrgMemberRole(w http.ResponseWriter, r *
 		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 		return
 	}
-	// Last-owner guard: never demote the final active owner.
+	// Last-owner guard: never demote the final active owner. Fail closed if the
+	// owner count can't be determined.
 	if current.OrgRole == core.OrgRoleOwner && newRole != core.OrgRoleOwner && current.Status == core.OrgMemberStatusActive {
-		if owners, err := handler.repo.CountActiveOrgOwners(ctx, org.ID); err == nil && owners <= 1 {
+		owners, err := handler.repo.CountActiveOrgOwners(ctx, org.ID)
+		if err != nil {
+			log.Err(err).Msg("ServerSetOrgMemberRole: count owners failed")
+			WriteError(w, r, "error.internalError", http.StatusInternalServerError)
+			return
+		}
+		if owners <= 1 {
 			WriteError(w, r, "error.conflict", http.StatusConflict)
 			return
 		}
@@ -403,9 +410,16 @@ func (handler *RequestHandler) ServerRemoveOrgMember(w http.ResponseWriter, r *h
 		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 		return
 	}
-	// Last-owner guard: never remove the final active owner.
+	// Last-owner guard: never remove the final active owner. Fail closed if the
+	// owner count can't be determined.
 	if current.OrgRole == core.OrgRoleOwner && current.Status == core.OrgMemberStatusActive {
-		if owners, err := handler.repo.CountActiveOrgOwners(ctx, org.ID); err == nil && owners <= 1 {
+		owners, err := handler.repo.CountActiveOrgOwners(ctx, org.ID)
+		if err != nil {
+			log.Err(err).Msg("ServerRemoveOrgMember: count owners failed")
+			WriteError(w, r, "error.internalError", http.StatusInternalServerError)
+			return
+		}
+		if owners <= 1 {
 			WriteError(w, r, "error.conflict", http.StatusConflict)
 			return
 		}
