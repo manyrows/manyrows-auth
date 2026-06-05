@@ -153,6 +153,11 @@ function SessionTransportPane({
                       ManyRows sets an <code>HttpOnly; Secure; SameSite=Lax</code> session cookie on a host that's same-site as your app (e.g. <code>auth.yourdomain.com</code> alongside <code>www.yourdomain.com</code>). The token never touches JS. Works whether ManyRows is reached via a custom-domain CNAME or a same-host deploy. Configure the cookie domain below; setup details for the custom-domain shape are in the dialog.
                     </Trans>
                   </Typography>
+                  <Typography variant="caption" color="text.secondary" sx={{ mt: 0.75, fontStyle: "italic" }}>
+                    <Trans i18nKey="sessionTransport.cookieLocalDevNote" components={{ code: <code /> }}>
+                      Local development: keep <strong>Local (browser storage)</strong>. Cookie mode is same-site only, so it can't authenticate a <code>localhost</code> app against a hosted ManyRows install (they're cross-site). Test cookie mode in a same-site staging deploy instead.
+                    </Trans>
+                  </Typography>
                 </Stack>
               }
               sx={{ alignItems: "flex-start", ml: 0, mt: 1.5 }}
