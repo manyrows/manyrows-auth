@@ -124,3 +124,36 @@ func TestSwitchOrganization_RequiresMembership(t *testing.T) {
 		t.Fatalf("non-member switch: got %d want 403 (body=%s)", rr2.Code, rr2.Body.String())
 	}
 }
+
+func TestCreateSession_DefaultsSingleOrg(t *testing.T) {
+	ctx := context.Background()
+	acc := testEnv.CreateTestAccount(t, "def-"+GenerateUniqueSlug("u")+"@example.com")
+	ws := testEnv.CreateTestWorkspace(t, acc, "WS", GenerateUniqueSlug("ws"))
+	app := testEnv.CreateTestApp(t, ws, acc)
+	defer testEnv.CleanupTestData(t, &TestFixtures{Account: acc, Workspace: ws})
+
+	if err := testEnv.Repo.SetAppOrganizationsEnabled(ctx, app.ID, true); err != nil {
+		t.Fatalf("enable orgs: %v", err)
+	}
+
+	user, _, err := testEnv.Repo.GetOrCreateUser(ctx, "m-"+GenerateUniqueSlug("u")+"@example.com", app, core.UserSourceInvited)
+	if err != nil {
+		t.Fatalf("GetOrCreateUser: %v", err)
+	}
+	org, err := testEnv.Repo.CreateOrganization(ctx, app.ID, "Acme", GenerateUniqueSlug("acme"), &user.ID)
+	if err != nil {
+		t.Fatalf("CreateOrganization: %v", err)
+	}
+	if _, err := testEnv.Repo.AddOrganizationMember(ctx, org.ID, user.ID, core.OrgRoleOwner); err != nil {
+		t.Fatalf("AddOrganizationMember: %v", err)
+	}
+
+	svc := NewTestServices(t)
+	ses, err := svc.ClientAuth.CreateSession(ctx, user.ID, app.ID, "ua", "127.0.0.1")
+	if err != nil {
+		t.Fatalf("CreateSession: %v", err)
+	}
+	if ses.OrganizationID == nil || *ses.OrganizationID != org.ID {
+		t.Fatalf("expected default active org %v, got %v", org.ID, ses.OrganizationID)
+	}
+}
