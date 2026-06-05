@@ -3,6 +3,7 @@ package repo
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"time"
 
@@ -11,6 +12,7 @@ import (
 
 	"github.com/gofrs/uuid/v5"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 )
 
 // CreateOrganization inserts an org under an app and returns the row.
@@ -163,4 +165,59 @@ ORDER BY o.name ASC;
 		out = append(out, v)
 	}
 	return out, rows.Err()
+}
+
+// CreateOrganizationWithUniqueSlug creates an org, appending -2, -3 … to the
+// slug on (app_id, slug) collision. The server API derives slugs from a display
+// name that may repeat, so creation must not fail on a duplicate name.
+func (r *Repo) CreateOrganizationWithUniqueSlug(ctx context.Context, appID uuid.UUID, name, baseSlug string, createdBy *uuid.UUID) (*core.Organization, error) {
+	baseSlug = strings.TrimSpace(baseSlug)
+	if baseSlug == "" {
+		baseSlug = "org"
+	}
+	slug := baseSlug
+	for attempt := 2; attempt < 100; attempt++ {
+		o, err := r.CreateOrganization(ctx, appID, name, slug, createdBy)
+		if err == nil {
+			return o, nil
+		}
+		var pgErr *pgconn.PgError
+		if !errors.As(err, &pgErr) || pgErr.Code != "23505" {
+			return nil, err
+		}
+		slug = fmt.Sprintf("%s-%d", baseSlug, attempt)
+	}
+	return nil, errors.New("could not allocate unique organization slug")
+}
+
+// UpdateOrganization renames/re-slugs an org. ErrNotFound if missing. A slug
+// collision surfaces as a 23505 pgconn error for the caller to map to 409.
+func (r *Repo) UpdateOrganization(ctx context.Context, id uuid.UUID, name, slug string) (*core.Organization, error) {
+	const q = `
+UPDATE organizations SET name = $2, slug = $3, updated_at = now()
+WHERE id = $1
+RETURNING id, app_id, name, slug, status, created_by, created_at, updated_at;`
+	var o core.Organization
+	if err := r.db.Pool().QueryRow(ctx, q, id, name, slug).Scan(
+		&o.ID, &o.AppID, &o.Name, &o.Slug, &o.Status, &o.CreatedBy, &o.CreatedAt, &o.UpdatedAt,
+	); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrNotFound
+		}
+		return nil, err
+	}
+	return &o, nil
+}
+
+// ArchiveOrganization sets status='archived'. ErrNotFound if missing.
+func (r *Repo) ArchiveOrganization(ctx context.Context, id uuid.UUID) error {
+	const q = `UPDATE organizations SET status = 'archived', updated_at = now() WHERE id = $1;`
+	ct, err := r.db.Pool().Exec(ctx, q, id)
+	if err != nil {
+		return err
+	}
+	if ct.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
 }

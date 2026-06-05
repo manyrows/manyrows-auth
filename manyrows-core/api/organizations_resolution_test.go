@@ -333,6 +333,50 @@ func TestResolveActiveRoles_CrossAppOrgIgnored(t *testing.T) {
 	}
 }
 
+func TestOrganizationWriteMethods_CreateUniqueUpdateArchive(t *testing.T) {
+	ctx := context.Background()
+	acc := testEnv.CreateTestAccount(t, "owr-"+GenerateUniqueSlug("u")+"@example.com")
+	ws := testEnv.CreateTestWorkspace(t, acc, "WS", GenerateUniqueSlug("ws"))
+	app := testEnv.CreateTestApp(t, ws, acc)
+	defer testEnv.CleanupTestData(t, &TestFixtures{Account: acc, Workspace: ws})
+
+	user, _, err := testEnv.Repo.GetOrCreateUser(ctx, "m-"+GenerateUniqueSlug("u")+"@example.com", app, core.UserSourceInvited)
+	if err != nil {
+		t.Fatalf("GetOrCreateUser: %v", err)
+	}
+
+	o1, err := testEnv.Repo.CreateOrganizationWithUniqueSlug(ctx, app.ID, "Acme", "acme", &user.ID)
+	if err != nil {
+		t.Fatalf("create 1: %v", err)
+	}
+	o2, err := testEnv.Repo.CreateOrganizationWithUniqueSlug(ctx, app.ID, "Acme", "acme", &user.ID)
+	if err != nil {
+		t.Fatalf("create 2: %v", err)
+	}
+	if o1.Slug != "acme" || o2.Slug != "acme-2" {
+		t.Fatalf("slug uniqueness: got %q and %q", o1.Slug, o2.Slug)
+	}
+
+	upd, err := testEnv.Repo.UpdateOrganization(ctx, o1.ID, "Acme Renamed", "acme-renamed")
+	if err != nil {
+		t.Fatalf("update: %v", err)
+	}
+	if upd.Name != "Acme Renamed" || upd.Slug != "acme-renamed" {
+		t.Fatalf("update result: %+v", upd)
+	}
+
+	if err := testEnv.Repo.ArchiveOrganization(ctx, o1.ID); err != nil {
+		t.Fatalf("archive: %v", err)
+	}
+	got, err := testEnv.Repo.GetOrganizationByID(ctx, o1.ID)
+	if err != nil {
+		t.Fatalf("get after archive: %v", err)
+	}
+	if got.Status != core.OrgStatusArchived {
+		t.Fatalf("status after archive: got %q want archived", got.Status)
+	}
+}
+
 func TestResolveActiveRoles_PinnedOrgIsolation(t *testing.T) {
 	ctx := context.Background()
 	acc := testEnv.CreateTestAccount(t, "iso-"+GenerateUniqueSlug("u")+"@example.com")
