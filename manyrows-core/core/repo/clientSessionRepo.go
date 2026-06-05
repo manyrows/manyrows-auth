@@ -47,8 +47,9 @@ insert into client_sessions (
   last_seen_at,
   user_agent,
   ip,
-  remember_me
-) values ($1,$2,$3,$4,$5,$6,$7,$8,$9);
+  remember_me,
+  organization_id
+) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10);
 `
 	_, err := r.db.Pool().Exec(
 		ctx,
@@ -62,6 +63,7 @@ insert into client_sessions (
 		s.UserAgent,
 		s.IP,
 		s.RememberMe,
+		s.OrganizationID,
 	)
 	return err
 }
@@ -133,7 +135,8 @@ select
   last_seen_at,
   user_agent,
   ip,
-  remember_me
+  remember_me,
+  organization_id
 from client_sessions
 where id = $1
 limit 1;
@@ -150,6 +153,7 @@ limit 1;
 		&s.UserAgent,
 		&s.IP,
 		&s.RememberMe,
+		&s.OrganizationID,
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -503,4 +507,18 @@ func (r *Repo) DeleteClientSessionsByUser(
 		return 0, err
 	}
 	return ct.RowsAffected(), nil
+}
+
+// SetClientSessionOrganization updates a session's active org. Pass nil to
+// clear it. Returns ErrClientSessionNotFound if the session doesn't exist.
+func (r *Repo) SetClientSessionOrganization(ctx context.Context, sessionID uuid.UUID, orgID *uuid.UUID) error {
+	const q = `UPDATE client_sessions SET organization_id = $2 WHERE id = $1;`
+	ct, err := r.db.Pool().Exec(ctx, q, sessionID, orgID)
+	if err != nil {
+		return err
+	}
+	if ct.RowsAffected() == 0 {
+		return ErrClientSessionNotFound
+	}
+	return nil
 }
