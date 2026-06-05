@@ -36,11 +36,13 @@ type AppMeResponse struct {
 // is included so AppKit can configure itself on boot — no separate
 // `cookieMode` prop required on the React adapter.
 type AppMeAppPart struct {
-	Name          string   `json:"name"`
-	HasAccess     bool     `json:"hasAccess"`
-	Roles         []string `json:"roles"`
-	Permissions   []string `json:"permissions"`
-	TransportMode string   `json:"transportMode"`
+	Name          string                            `json:"name"`
+	HasAccess     bool                              `json:"hasAccess"`
+	Roles         []string                          `json:"roles"`
+	Permissions   []string                          `json:"permissions"`
+	TransportMode string                            `json:"transportMode"`
+	Organization  *core.OrganizationMembershipView  `json:"organization,omitempty"`
+	Organizations []core.OrganizationMembershipView `json:"organizations,omitempty"`
 }
 
 // CheckPermissionResponse is returned by the permission-check endpoint.
@@ -212,6 +214,84 @@ func (handler *RequestHandler) resolveRolesAndPermissions(
 	return roles, perms, nil
 }
 
+// effectiveRoleIDs returns the project-role IDs that apply to this user in this
+// app right now: org-member roles when the app is org-enabled and the session
+// has an active org, otherwise the legacy per-app user_roles. The returned
+// member is non-nil only in the org branch (caller uses it for the tier).
+func (handler *RequestHandler) effectiveRoleIDs(
+	ctx context.Context, app *core.App, projectID, userID uuid.UUID, ses *core.ClientSession,
+) ([]uuid.UUID, *core.OrganizationMember, error) {
+	if app.OrganizationsEnabled && ses.OrganizationID != nil && *ses.OrganizationID != uuid.Nil {
+		member, err := handler.repo.GetOrganizationMember(ctx, *ses.OrganizationID, userID)
+		if err != nil {
+			if errors.Is(err, repo.ErrNotFound) {
+				return nil, nil, nil // active org no longer a membership → no roles
+			}
+			return nil, nil, err
+		}
+		roleIDs, err := handler.repo.GetOrgMemberRoleIDs(ctx, member.ID)
+		if err != nil {
+			return nil, nil, err
+		}
+		return roleIDs, member, nil
+	}
+
+	memberRoles, err := handler.repo.GetUserRolesByUserAndAppID(ctx, projectID, userID, app.ID)
+	if err != nil {
+		return nil, nil, err
+	}
+	roleIDs := make([]uuid.UUID, len(memberRoles))
+	for i, mr := range memberRoles {
+		roleIDs[i] = mr.RoleID
+	}
+	return roleIDs, nil, nil
+}
+
+// resolveActiveRolesAndPermissions resolves slugs for the active context. In the
+// org branch, direct per-app user_permissions are NOT merged (org membership is
+// the single source of truth). Legacy branch keeps the existing direct-perm merge.
+func (handler *RequestHandler) resolveActiveRolesAndPermissions(
+	ctx context.Context, app *core.App, projectID, userID uuid.UUID, ses *core.ClientSession,
+) ([]string, []string, *core.OrganizationMember, error) {
+	roleIDs, member, err := handler.effectiveRoleIDs(ctx, app, projectID, userID, ses)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+
+	var roles, perms []string
+	if len(roleIDs) > 0 {
+		roles, perms, err = handler.repo.GetRoleSlugsAndPermissionSlugsForRoleIDs(ctx, projectID, roleIDs)
+		if err != nil {
+			return nil, nil, nil, err
+		}
+	}
+
+	// Legacy branch only: merge direct user_permissions.
+	if member == nil {
+		directPerms, err := handler.repo.GetDirectPermissionSlugs(ctx, projectID, userID, app.ID)
+		if err != nil {
+			return nil, nil, nil, err
+		}
+		seen := make(map[string]struct{}, len(perms))
+		for _, p := range perms {
+			seen[p] = struct{}{}
+		}
+		for _, p := range directPerms {
+			if _, ok := seen[p]; !ok {
+				perms = append(perms, p)
+			}
+		}
+	}
+
+	if roles == nil {
+		roles = []string{}
+	}
+	if perms == nil {
+		perms = []string{}
+	}
+	return roles, perms, member, nil
+}
+
 // =====================
 // Handlers
 // =====================
@@ -228,11 +308,30 @@ func (handler *RequestHandler) GetAppMe(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	roles, perms, err := handler.resolveRolesAndPermissions(ctx, project.ID, identity.User.ID, app.ID)
+	roles, perms, member, err := handler.resolveActiveRolesAndPermissions(ctx, app, project.ID, identity.User.ID, ses)
 	if err != nil {
 		log.Err(err).Msg("Could not resolve roles/permissions")
 		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 		return
+	}
+
+	var activeOrg *core.OrganizationMembershipView
+	var orgList []core.OrganizationMembershipView
+	if app.OrganizationsEnabled {
+		orgList, err = handler.repo.ListOrganizationsForUserInApp(ctx, app.ID, identity.User.ID)
+		if err != nil {
+			log.Err(err).Msg("Could not list organizations")
+			WriteError(w, r, "error.internalError", http.StatusInternalServerError)
+			return
+		}
+		if member != nil {
+			for i := range orgList {
+				if orgList[i].ID == member.OrgID {
+					activeOrg = &orgList[i]
+					break
+				}
+			}
+		}
 	}
 
 	transportMode := app.TransportMode
@@ -248,6 +347,8 @@ func (handler *RequestHandler) GetAppMe(w http.ResponseWriter, r *http.Request) 
 			Roles:         roles,
 			Permissions:   perms,
 			TransportMode: transportMode,
+			Organization:  activeOrg,
+			Organizations: orgList,
 		},
 	}
 
@@ -282,11 +383,15 @@ func (handler *RequestHandler) GetAppData(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	// Get user's role IDs for role-based flag filtering
-	memberRoles, _ := handler.repo.GetUserRolesByUserAndAppID(ctx, project.ID, identity.User.ID, app.ID)
-	userRoleIDs := make(map[uuid.UUID]struct{}, len(memberRoles))
-	for _, mr := range memberRoles {
-		userRoleIDs[mr.RoleID] = struct{}{}
+	roleIDList, _, err := handler.effectiveRoleIDs(ctx, app, project.ID, identity.User.ID, ses)
+	if err != nil {
+		log.Err(err).Msg("Could not resolve effective role ids")
+		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
+		return
+	}
+	userRoleIDs := make(map[uuid.UUID]struct{}, len(roleIDList))
+	for _, rid := range roleIDList {
+		userRoleIDs[rid] = struct{}{}
 	}
 
 	filtered := make([]core.EvaluatedFeatureFlag, 0, len(flags))

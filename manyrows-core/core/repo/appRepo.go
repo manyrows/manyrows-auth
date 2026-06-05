@@ -681,3 +681,9 @@ func (r *Repo) CountAppsByWorkspaceID(ctx context.Context, workspaceID uuid.UUID
 	const q = `select count(*) from apps where workspace_id = $1`
 	return r.scalarCount(ctx, q, workspaceID)
 }
+
+// SetAppOrganizationsEnabled flips the per-app org-mode flag.
+func (r *Repo) SetAppOrganizationsEnabled(ctx context.Context, appID uuid.UUID, enabled bool) error {
+	const q = `UPDATE apps SET organizations_enabled = $2, updated_at = now() WHERE id = $1;`
+	return r.execAffectingOne(ctx, ErrNotFound, q, appID, enabled)
+}
