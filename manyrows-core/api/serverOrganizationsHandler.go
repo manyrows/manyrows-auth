@@ -124,9 +124,7 @@ func (handler *RequestHandler) ServerCreateOrganization(w http.ResponseWriter, r
 		WriteError(w, r, "error.badRequest", http.StatusBadRequest)
 		return
 	}
-	owner, err := handler.repo.GetUserByID(ctx, ownerID)
-	if err != nil || owner == nil || owner.UserPoolID != app.UserPoolID {
-		WriteError(w, r, "error.badRequest", http.StatusBadRequest)
+	if !handler.requireAppMember(w, r, app.ID, ownerID) {
 		return
 	}
 	slug := strings.TrimSpace(body.Slug)
@@ -284,9 +282,12 @@ func (handler *RequestHandler) ServerAddOrgMember(w http.ResponseWriter, r *http
 			WriteError(w, r, "error.badRequest", http.StatusBadRequest)
 			return
 		}
+		if !handler.requireAppMember(w, r, app.ID, uid) {
+			return
+		}
 		u, err := handler.repo.GetUserByID(ctx, uid)
-		if err != nil || u == nil || u.UserPoolID != app.UserPoolID {
-			WriteError(w, r, "error.badRequest", http.StatusBadRequest)
+		if err != nil || u == nil {
+			WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 			return
 		}
 		user = u
@@ -298,6 +299,16 @@ func (handler *RequestHandler) ServerAddOrgMember(w http.ResponseWriter, r *http
 			return
 		}
 		if u == nil {
+			WriteError(w, r, "error.userNotSignedIn", http.StatusConflict)
+			return
+		}
+		member, err := handler.repo.GetAppUser(ctx, app.ID, u.ID)
+		if err != nil {
+			log.Err(err).Msg("ServerAddOrgMember: membership check failed")
+			WriteError(w, r, "error.internalError", http.StatusInternalServerError)
+			return
+		}
+		if member == nil {
 			WriteError(w, r, "error.userNotSignedIn", http.StatusConflict)
 			return
 		}

@@ -81,7 +81,7 @@ func TestServerCreateOrganization_SeedsOwner(t *testing.T) {
 	}
 	app = &reloaded
 
-	owner, _, err := testEnv.Repo.GetOrCreateUser(ctx, "own-"+GenerateUniqueSlug("u")+"@example.com", app, core.UserSourceInvited)
+	owner, _, err := testEnv.GetOrCreateUserWithMembership(ctx, "own-"+GenerateUniqueSlug("u")+"@example.com", app, core.UserSourceInvited)
 	if err != nil {
 		t.Fatalf("owner: %v", err)
 	}
@@ -116,7 +116,7 @@ func TestServerListOrganizationsForUser(t *testing.T) {
 	app := testEnv.CreateTestApp(t, ws, acc)
 	defer testEnv.CleanupTestData(t, &TestFixtures{Account: acc, Workspace: ws})
 
-	user, _, _ := testEnv.Repo.GetOrCreateUser(ctx, "u-"+GenerateUniqueSlug("u")+"@example.com", app, core.UserSourceInvited)
+	user, _, _ := testEnv.GetOrCreateUserWithMembership(ctx, "u-"+GenerateUniqueSlug("u")+"@example.com", app, core.UserSourceInvited)
 	for i := 0; i < 2; i++ {
 		o, err := testEnv.Repo.CreateOrganization(ctx, app.ID, "Org", GenerateUniqueSlug("o"), &user.ID)
 		if err != nil {
@@ -150,7 +150,7 @@ func TestServerAddOrgMember_ByEmailMissing_409(t *testing.T) {
 	app := testEnv.CreateTestApp(t, ws, acc)
 	defer testEnv.CleanupTestData(t, &TestFixtures{Account: acc, Workspace: ws})
 
-	owner, _, _ := testEnv.Repo.GetOrCreateUser(ctx, "own-"+GenerateUniqueSlug("u")+"@example.com", app, core.UserSourceInvited)
+	owner, _, _ := testEnv.GetOrCreateUserWithMembership(ctx, "own-"+GenerateUniqueSlug("u")+"@example.com", app, core.UserSourceInvited)
 	org, _ := testEnv.Repo.CreateOrganization(ctx, app.ID, "Acme", GenerateUniqueSlug("acme"), &owner.ID)
 	_, _ = testEnv.Repo.AddOrganizationMember(ctx, org.ID, owner.ID, core.OrgRoleOwner)
 
@@ -171,12 +171,12 @@ func TestServerAddOrgMember_ByEmailExisting(t *testing.T) {
 	app := testEnv.CreateTestApp(t, ws, acc)
 	defer testEnv.CleanupTestData(t, &TestFixtures{Account: acc, Workspace: ws})
 
-	owner, _, _ := testEnv.Repo.GetOrCreateUser(ctx, "own-"+GenerateUniqueSlug("u")+"@example.com", app, core.UserSourceInvited)
+	owner, _, _ := testEnv.GetOrCreateUserWithMembership(ctx, "own-"+GenerateUniqueSlug("u")+"@example.com", app, core.UserSourceInvited)
 	org, _ := testEnv.Repo.CreateOrganization(ctx, app.ID, "Acme", GenerateUniqueSlug("acme"), &owner.ID)
 	_, _ = testEnv.Repo.AddOrganizationMember(ctx, org.ID, owner.ID, core.OrgRoleOwner)
 
 	teammateEmail := "tm-" + GenerateUniqueSlug("u") + "@example.com"
-	teammate, _, _ := testEnv.Repo.GetOrCreateUser(ctx, teammateEmail, app, core.UserSourceInvited)
+	teammate, _, _ := testEnv.GetOrCreateUserWithMembership(ctx, teammateEmail, app, core.UserSourceInvited)
 
 	router := setupServerOrgRouter(t, ws, app)
 	body, _ := json.Marshal(map[string]string{"email": teammateEmail, "orgRole": "admin"})
@@ -199,7 +199,7 @@ func TestServerLastOwnerGuard(t *testing.T) {
 	app := testEnv.CreateTestApp(t, ws, acc)
 	defer testEnv.CleanupTestData(t, &TestFixtures{Account: acc, Workspace: ws})
 
-	owner, _, _ := testEnv.Repo.GetOrCreateUser(ctx, "own-"+GenerateUniqueSlug("u")+"@example.com", app, core.UserSourceInvited)
+	owner, _, _ := testEnv.GetOrCreateUserWithMembership(ctx, "own-"+GenerateUniqueSlug("u")+"@example.com", app, core.UserSourceInvited)
 	org, _ := testEnv.Repo.CreateOrganization(ctx, app.ID, "Acme", GenerateUniqueSlug("acme"), &owner.ID)
 	_, _ = testEnv.Repo.AddOrganizationMember(ctx, org.ID, owner.ID, core.OrgRoleOwner)
 
@@ -229,8 +229,8 @@ func TestServerAddOrgMember_ByUserId(t *testing.T) {
 	app := testEnv.CreateTestApp(t, ws, acc)
 	defer testEnv.CleanupTestData(t, &TestFixtures{Account: acc, Workspace: ws})
 
-	owner, _, _ := testEnv.Repo.GetOrCreateUser(ctx, "own-"+GenerateUniqueSlug("u")+"@example.com", app, core.UserSourceInvited)
-	teammate, _, _ := testEnv.Repo.GetOrCreateUser(ctx, "tm-"+GenerateUniqueSlug("u")+"@example.com", app, core.UserSourceInvited)
+	owner, _, _ := testEnv.GetOrCreateUserWithMembership(ctx, "own-"+GenerateUniqueSlug("u")+"@example.com", app, core.UserSourceInvited)
+	teammate, _, _ := testEnv.GetOrCreateUserWithMembership(ctx, "tm-"+GenerateUniqueSlug("u")+"@example.com", app, core.UserSourceInvited)
 	org, _ := testEnv.Repo.CreateOrganization(ctx, app.ID, "Acme", GenerateUniqueSlug("acme"), &owner.ID)
 	_, _ = testEnv.Repo.AddOrganizationMember(ctx, org.ID, owner.ID, core.OrgRoleOwner)
 
@@ -255,8 +255,8 @@ func TestServerLastOwnerGuard_AllowsWithMultipleOwners(t *testing.T) {
 	app := testEnv.CreateTestApp(t, ws, acc)
 	defer testEnv.CleanupTestData(t, &TestFixtures{Account: acc, Workspace: ws})
 
-	o1, _, _ := testEnv.Repo.GetOrCreateUser(ctx, "o1-"+GenerateUniqueSlug("u")+"@example.com", app, core.UserSourceInvited)
-	o2, _, _ := testEnv.Repo.GetOrCreateUser(ctx, "o2-"+GenerateUniqueSlug("u")+"@example.com", app, core.UserSourceInvited)
+	o1, _, _ := testEnv.GetOrCreateUserWithMembership(ctx, "o1-"+GenerateUniqueSlug("u")+"@example.com", app, core.UserSourceInvited)
+	o2, _, _ := testEnv.GetOrCreateUserWithMembership(ctx, "o2-"+GenerateUniqueSlug("u")+"@example.com", app, core.UserSourceInvited)
 	org, _ := testEnv.Repo.CreateOrganization(ctx, app.ID, "Acme", GenerateUniqueSlug("acme"), &o1.ID)
 	_, _ = testEnv.Repo.AddOrganizationMember(ctx, org.ID, o1.ID, core.OrgRoleOwner)
 	_, _ = testEnv.Repo.AddOrganizationMember(ctx, org.ID, o2.ID, core.OrgRoleOwner) // two owners
@@ -288,8 +288,8 @@ func TestServerGetOrgMember_MiddlewareGate(t *testing.T) {
 	app := testEnv.CreateTestApp(t, ws, acc)
 	defer testEnv.CleanupTestData(t, &TestFixtures{Account: acc, Workspace: ws})
 
-	owner, _, _ := testEnv.Repo.GetOrCreateUser(ctx, "own-"+GenerateUniqueSlug("u")+"@example.com", app, core.UserSourceInvited)
-	outsider, _, _ := testEnv.Repo.GetOrCreateUser(ctx, "out-"+GenerateUniqueSlug("u")+"@example.com", app, core.UserSourceInvited)
+	owner, _, _ := testEnv.GetOrCreateUserWithMembership(ctx, "own-"+GenerateUniqueSlug("u")+"@example.com", app, core.UserSourceInvited)
+	outsider, _, _ := testEnv.GetOrCreateUserWithMembership(ctx, "out-"+GenerateUniqueSlug("u")+"@example.com", app, core.UserSourceInvited)
 	org, _ := testEnv.Repo.CreateOrganization(ctx, app.ID, "Acme", GenerateUniqueSlug("acme"), &owner.ID)
 	_, _ = testEnv.Repo.AddOrganizationMember(ctx, org.ID, owner.ID, core.OrgRoleOwner)
 
@@ -333,7 +333,7 @@ func TestServerOrg_CrossApp404(t *testing.T) {
 	}
 }
 
-func TestServerCreateOrganization_ForeignPoolOwner_400(t *testing.T) {
+func TestServerCreateOrganization_ForeignPoolOwner_404(t *testing.T) {
 	ctx := context.Background()
 	acc := testEnv.CreateTestAccount(t, "fp-"+GenerateUniqueSlug("u")+"@example.com")
 	ws := testEnv.CreateTestWorkspace(t, acc, "WS", GenerateUniqueSlug("ws"))
@@ -358,8 +358,8 @@ func TestServerCreateOrganization_ForeignPoolOwner_400(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, orgBase(app1), bytes.NewReader(body))
 	rr := httptest.NewRecorder()
 	router.ServeHTTP(rr, req)
-	if rr.Code != http.StatusBadRequest {
-		t.Fatalf("foreign-pool owner must be 400, got %d (%s)", rr.Code, rr.Body.String())
+	if rr.Code != http.StatusNotFound {
+		t.Fatalf("foreign-pool owner must be 404, got %d (%s)", rr.Code, rr.Body.String())
 	}
 }
 
@@ -370,7 +370,7 @@ func TestServerGetOrgMember_DisabledMember_404(t *testing.T) {
 	app := testEnv.CreateTestApp(t, ws, acc)
 	defer testEnv.CleanupTestData(t, &TestFixtures{Account: acc, Workspace: ws})
 
-	owner, _, _ := testEnv.Repo.GetOrCreateUser(ctx, "own-"+GenerateUniqueSlug("u")+"@example.com", app, core.UserSourceInvited)
+	owner, _, _ := testEnv.GetOrCreateUserWithMembership(ctx, "own-"+GenerateUniqueSlug("u")+"@example.com", app, core.UserSourceInvited)
 	org, _ := testEnv.Repo.CreateOrganization(ctx, app.ID, "Acme", GenerateUniqueSlug("acme"), &owner.ID)
 	_, _ = testEnv.Repo.AddOrganizationMember(ctx, org.ID, owner.ID, core.OrgRoleOwner)
 	if _, err := testEnv.DB.Pool().Exec(ctx, "UPDATE organization_members SET status='disabled' WHERE org_id=$1 AND user_id=$2", org.ID, owner.ID); err != nil {
@@ -393,7 +393,7 @@ func TestServerOrg_ArchivedOrg_404(t *testing.T) {
 	app := testEnv.CreateTestApp(t, ws, acc)
 	defer testEnv.CleanupTestData(t, &TestFixtures{Account: acc, Workspace: ws})
 
-	owner, _, _ := testEnv.Repo.GetOrCreateUser(ctx, "own-"+GenerateUniqueSlug("u")+"@example.com", app, core.UserSourceInvited)
+	owner, _, _ := testEnv.GetOrCreateUserWithMembership(ctx, "own-"+GenerateUniqueSlug("u")+"@example.com", app, core.UserSourceInvited)
 	org, _ := testEnv.Repo.CreateOrganization(ctx, app.ID, "Acme", GenerateUniqueSlug("acme"), &owner.ID)
 	_, _ = testEnv.Repo.AddOrganizationMember(ctx, org.ID, owner.ID, core.OrgRoleOwner)
 	if err := testEnv.Repo.ArchiveOrganization(ctx, org.ID); err != nil {
@@ -425,7 +425,7 @@ func TestServerCreateOrganization_OrgsDisabled_409(t *testing.T) {
 	app := testEnv.CreateTestApp(t, ws, acc) // orgs NOT enabled (default false)
 	defer testEnv.CleanupTestData(t, &TestFixtures{Account: acc, Workspace: ws})
 
-	owner, _, _ := testEnv.Repo.GetOrCreateUser(ctx, "own-"+GenerateUniqueSlug("u")+"@example.com", app, core.UserSourceInvited)
+	owner, _, _ := testEnv.GetOrCreateUserWithMembership(ctx, "own-"+GenerateUniqueSlug("u")+"@example.com", app, core.UserSourceInvited)
 
 	router := setupServerOrgRouter(t, ws, app)
 	body, _ := json.Marshal(map[string]string{"name": "Acme", "ownerUserId": owner.ID.String()})
@@ -434,5 +434,81 @@ func TestServerCreateOrganization_OrgsDisabled_409(t *testing.T) {
 	router.ServeHTTP(rr, req)
 	if rr.Code != http.StatusConflict {
 		t.Fatalf("create on orgs-disabled app must be 409, got %d (%s)", rr.Code, rr.Body.String())
+	}
+}
+
+// A user who exists in the app's pool but is NOT an app member must not be
+// addable to an org by userId (cross-app injection guard).
+func TestServerAddOrgMember_NonAppMemberByID_404(t *testing.T) {
+	ctx := context.Background()
+	acc := testEnv.CreateTestAccount(t, "nam-"+GenerateUniqueSlug("u")+"@example.com")
+	ws := testEnv.CreateTestWorkspace(t, acc, "WS", GenerateUniqueSlug("ws"))
+	app := testEnv.CreateTestApp(t, ws, acc)
+	defer testEnv.CleanupTestData(t, &TestFixtures{Account: acc, Workspace: ws})
+
+	owner, _, _ := testEnv.GetOrCreateUserWithMembership(ctx, "own-"+GenerateUniqueSlug("u")+"@example.com", app, core.UserSourceInvited)
+	org, _ := testEnv.Repo.CreateOrganization(ctx, app.ID, "Acme", GenerateUniqueSlug("acme"), &owner.ID)
+	_, _ = testEnv.Repo.AddOrganizationMember(ctx, org.ID, owner.ID, core.OrgRoleOwner)
+
+	// Pool-only user (no app_users membership).
+	nonMember, _, _ := testEnv.Repo.GetOrCreateUser(ctx, "nm-"+GenerateUniqueSlug("u")+"@example.com", app, core.UserSourceInvited)
+
+	router := setupServerOrgRouter(t, ws, app)
+	body, _ := json.Marshal(map[string]string{"userId": nonMember.ID.String(), "orgRole": "admin"})
+	req := httptest.NewRequest(http.MethodPost, orgBase(app)+"/"+org.ID.String()+"/members", bytes.NewReader(body))
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+	if rr.Code != http.StatusNotFound {
+		t.Fatalf("non-app-member by id must be 404, got %d (%s)", rr.Code, rr.Body.String())
+	}
+}
+
+// A user in the pool (e.g. via a sibling app) but not a member of THIS app must
+// get the same 409 "sign in first" when added by email.
+func TestServerAddOrgMember_InPoolNonMemberByEmail_409(t *testing.T) {
+	ctx := context.Background()
+	acc := testEnv.CreateTestAccount(t, "ipn-"+GenerateUniqueSlug("u")+"@example.com")
+	ws := testEnv.CreateTestWorkspace(t, acc, "WS", GenerateUniqueSlug("ws"))
+	app := testEnv.CreateTestApp(t, ws, acc)
+	defer testEnv.CleanupTestData(t, &TestFixtures{Account: acc, Workspace: ws})
+
+	owner, _, _ := testEnv.GetOrCreateUserWithMembership(ctx, "own-"+GenerateUniqueSlug("u")+"@example.com", app, core.UserSourceInvited)
+	org, _ := testEnv.Repo.CreateOrganization(ctx, app.ID, "Acme", GenerateUniqueSlug("acme"), &owner.ID)
+	_, _ = testEnv.Repo.AddOrganizationMember(ctx, org.ID, owner.ID, core.OrgRoleOwner)
+
+	nmEmail := "nm-" + GenerateUniqueSlug("u") + "@example.com"
+	_, _, _ = testEnv.Repo.GetOrCreateUser(ctx, nmEmail, app, core.UserSourceInvited) // in pool, no membership
+
+	router := setupServerOrgRouter(t, ws, app)
+	body, _ := json.Marshal(map[string]string{"email": nmEmail, "orgRole": "admin"})
+	req := httptest.NewRequest(http.MethodPost, orgBase(app)+"/"+org.ID.String()+"/members", bytes.NewReader(body))
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+	if rr.Code != http.StatusConflict {
+		t.Fatalf("in-pool non-member by email must be 409, got %d (%s)", rr.Code, rr.Body.String())
+	}
+}
+
+// Seeding an org owner who is not an app member must be rejected (404).
+func TestServerCreateOrganization_NonAppMemberOwner_404(t *testing.T) {
+	ctx := context.Background()
+	acc := testEnv.CreateTestAccount(t, "nmo-"+GenerateUniqueSlug("u")+"@example.com")
+	ws := testEnv.CreateTestWorkspace(t, acc, "WS", GenerateUniqueSlug("ws"))
+	app := testEnv.CreateTestApp(t, ws, acc)
+	defer testEnv.CleanupTestData(t, &TestFixtures{Account: acc, Workspace: ws})
+	if err := testEnv.Repo.SetAppOrganizationsEnabled(ctx, app.ID, true); err != nil {
+		t.Fatalf("enable: %v", err)
+	}
+	reloaded, _ := testEnv.Repo.GetAppByID(ctx, app.ID)
+	app = &reloaded
+
+	nonMember, _, _ := testEnv.Repo.GetOrCreateUser(ctx, "nm-"+GenerateUniqueSlug("u")+"@example.com", app, core.UserSourceInvited)
+	router := setupServerOrgRouter(t, ws, app)
+	body, _ := json.Marshal(map[string]string{"name": "Acme", "ownerUserId": nonMember.ID.String()})
+	req := httptest.NewRequest(http.MethodPost, orgBase(app), bytes.NewReader(body))
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+	if rr.Code != http.StatusNotFound {
+		t.Fatalf("non-app-member owner must be 404, got %d (%s)", rr.Code, rr.Body.String())
 	}
 }
