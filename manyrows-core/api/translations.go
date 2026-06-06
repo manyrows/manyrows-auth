@@ -104,6 +104,7 @@ var apiTranslations = map[string]map[string]string{
 		"error.apiKeyNotFound":        "API key not found",
 		"error.sessionNotFound":       "Session not found",
 		"error.appNotFound":           "App not found",
+		"error.organizationNotFound":  "Organization not found",
 		"error.appDisabled":           "App is disabled",
 		"error.invalidStatus":         "Invalid status (expected \"active\" or \"disabled\")",
 		"error.permissionsInvalid":    "One or more permissions are invalid",

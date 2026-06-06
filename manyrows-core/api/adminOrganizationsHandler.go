@@ -4,10 +4,13 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"time"
 
+	"manyrows-core/core"
 	"manyrows-core/core/repo"
 	"manyrows-core/utils"
 
+	"github.com/gofrs/uuid/v5"
 	"github.com/rs/zerolog/log"
 )
 
@@ -51,4 +54,95 @@ func (handler *RequestHandler) HandleUpdateAppOrganizationsEnabled(w http.Respon
 		return
 	}
 	utils.WriteJsonWithStatusCode(w, handler.toAdminAppResponse(out, ws), http.StatusOK)
+}
+
+// adminOrgListItem is one row of the admin org list.
+type adminOrgListItem struct {
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	Slug        string `json:"slug"`
+	Status      string `json:"status"`
+	MemberCount int    `json:"memberCount"`
+	CreatedAt   string `json:"createdAt"`
+}
+
+type adminOrgListResponse struct {
+	Organizations []adminOrgListItem `json:"organizations"`
+}
+
+// HandleListAppOrganizations lists every org in the app (active + archived) with
+// active-member counts. App-scoped via the path appId.
+func (handler *RequestHandler) HandleListAppOrganizations(w http.ResponseWriter, r *http.Request) {
+	if _, _, ok := handler.adminAndWorkspace(w, r); !ok {
+		return
+	}
+	_, appID, ok := handler.resolvePathIDs(w, r)
+	if !ok {
+		return
+	}
+	views, err := handler.repo.ListOrganizationsForApp(r.Context(), appID)
+	if err != nil {
+		log.Err(err).Msg("failed to list organizations for app")
+		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
+		return
+	}
+	out := adminOrgListResponse{Organizations: make([]adminOrgListItem, 0, len(views))}
+	for _, v := range views {
+		out.Organizations = append(out.Organizations, adminOrgListItem{
+			ID:          v.ID.String(),
+			Name:        v.Name,
+			Slug:        v.Slug,
+			Status:      v.Status,
+			MemberCount: v.MemberCount,
+			CreatedAt:   v.CreatedAt.Format(time.RFC3339),
+		})
+	}
+	utils.WriteJsonWithStatusCode(w, out, http.StatusOK)
+}
+
+// adminOrgFromURL loads {orgId} and enforces it belongs to appID, returning 404
+// otherwise. Archived orgs pass (admin must view/rename/archive them); only
+// cross-app access is denied. Caller has already run adminAndWorkspace +
+// resolvePathIDs.
+func (handler *RequestHandler) adminOrgFromURL(w http.ResponseWriter, r *http.Request, appID uuid.UUID) (*core.Organization, bool) {
+	orgID, err := utils.GetPathUUID("orgId", r)
+	if err != nil || orgID == uuid.Nil {
+		WriteError(w, r, "error.organizationNotFound", http.StatusNotFound)
+		return nil, false
+	}
+	org, err := handler.repo.GetOrganizationByID(r.Context(), orgID)
+	if err != nil || org == nil || org.AppID != appID {
+		WriteError(w, r, "error.organizationNotFound", http.StatusNotFound)
+		return nil, false
+	}
+	return org, true
+}
+
+type adminOrgMembersResponse struct {
+	Members []repo.OrganizationMemberView `json:"members"`
+}
+
+// HandleListAppOrganizationMembers returns an org's members (read-only).
+func (handler *RequestHandler) HandleListAppOrganizationMembers(w http.ResponseWriter, r *http.Request) {
+	if _, _, ok := handler.adminAndWorkspace(w, r); !ok {
+		return
+	}
+	_, appID, ok := handler.resolvePathIDs(w, r)
+	if !ok {
+		return
+	}
+	org, ok := handler.adminOrgFromURL(w, r, appID)
+	if !ok {
+		return
+	}
+	members, err := handler.repo.ListOrganizationMembers(r.Context(), org.ID)
+	if err != nil {
+		log.Err(err).Msg("failed to list organization members")
+		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
+		return
+	}
+	if members == nil {
+		members = []repo.OrganizationMemberView{}
+	}
+	utils.WriteJsonWithStatusCode(w, adminOrgMembersResponse{Members: members}, http.StatusOK)
 }

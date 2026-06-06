@@ -304,6 +304,8 @@ func (a *AppService) initRouter() error {
 			// Organizations (admin oversight: enable flag + list/manage
 			// app-scoped tenants from the admin panel).
 			r.Put("/organizations-enabled", requestHandler.HandleUpdateAppOrganizationsEnabled)
+			r.Get("/organizations", requestHandler.HandleListAppOrganizations)
+			r.Get("/organizations/{orgId}/members", requestHandler.HandleListAppOrganizationMembers)
 
 			// Repoint the app at a different user pool. Refuses when
 			// the app has any members; merge-on-repoint is a follow-up.
