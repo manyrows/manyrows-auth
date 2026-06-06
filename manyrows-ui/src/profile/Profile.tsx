@@ -463,7 +463,7 @@ export default function Profile() {
             <Eyebrow dot sx={{ mb: 1 }}>{t("profile.account")}</Eyebrow>
             <Typography
               sx={{
-                fontFamily: "var(--font-serif)",
+                fontFamily: "var(--font-sans)",
                 fontSize: 32,
                 fontWeight: 500,
                 letterSpacing: "-0.025em",

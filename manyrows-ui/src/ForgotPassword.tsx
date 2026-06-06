@@ -199,7 +199,7 @@ export default function ForgotPassword(props: Props) {
               <Stack spacing={0.5}>
                 <Typography
                   sx={{
-                    fontFamily: "var(--font-serif)",
+                    fontFamily: "var(--font-sans)",
                     fontSize: 34,
                     fontWeight: 500,
                     letterSpacing: "-0.025em",

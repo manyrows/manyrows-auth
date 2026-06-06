@@ -10,34 +10,23 @@ export default function NotFound() {
     <Box sx={{ textAlign: "center", py: 12, px: 2, maxWidth: 480, mx: "auto" }}>
       <Typography
         sx={{
-          fontFamily: "var(--font-serif)",
+          fontFamily: "var(--font-sans)",
           fontSize: 96,
           fontWeight: 500,
           letterSpacing: "-0.04em",
           lineHeight: 1,
           color: "text.primary",
-          fontOpticalSizing: "auto",
         }}
       >
         404
       </Typography>
-      <Box
-        sx={{
-          width: 36,
-          height: 2,
-          bgcolor: "primary.main",
-          mx: "auto",
-          my: 3,
-          borderRadius: 1,
-        }}
-      />
       <Typography
         sx={{
-          fontFamily: "var(--font-serif)",
+          fontFamily: "var(--font-sans)",
           fontSize: 24,
           fontWeight: 500,
           letterSpacing: "-0.02em",
-          mt: 1,
+          mt: 3,
           fontOpticalSizing: "auto",
         }}
       >

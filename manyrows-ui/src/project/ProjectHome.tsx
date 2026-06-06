@@ -343,7 +343,7 @@ export default function ProjectHome(props: Props) {
         </Box>
 
         <Box sx={{ p: { xs: 2, sm: 3 } }}>
-            {/* Editorial app header - mono overline, Fraunces serif
+            {/* Editorial app header - mono overline, sans (Geist)
                 name with env pip, and a small mono meta line for app id
                 + auth domain. The title itself isn't a button anymore;
                 a discrete "switch" link to its right opens the
@@ -353,7 +353,7 @@ export default function ProjectHome(props: Props) {
                 <Stack direction="row" spacing={1.5} alignItems="center" sx={{ minWidth: 0 }}>
                   <Typography
                     sx={{
-                      fontFamily: "var(--font-serif)",
+                      fontFamily: "var(--font-sans)",
                       fontSize: 22,
                       fontWeight: 500,
                       letterSpacing: "-0.02em",
