@@ -76,3 +76,30 @@ func TestUpdateAppOrganizationsEnabled_ScopedGuard(t *testing.T) {
 		t.Fatalf("expected ErrNotFound for foreign workspace, got %v", err)
 	}
 }
+
+func TestRemoveOrganizationMemberGuarded_LastOwner(t *testing.T) {
+	ctx := context.Background()
+	acc := testEnv.CreateTestAccount(t, "rog-"+GenerateUniqueSlug("u")+"@example.com")
+	ws := testEnv.CreateTestWorkspace(t, acc, "WS", GenerateUniqueSlug("ws"))
+	app := testEnv.CreateTestApp(t, ws, acc)
+	defer testEnv.CleanupTestData(t, &TestFixtures{Account: acc, Workspace: ws})
+
+	o1, _, _ := testEnv.GetOrCreateUserWithMembership(ctx, "o1-"+GenerateUniqueSlug("u")+"@example.com", app, core.UserSourceInvited)
+	o2, _, _ := testEnv.GetOrCreateUserWithMembership(ctx, "o2-"+GenerateUniqueSlug("u")+"@example.com", app, core.UserSourceInvited)
+	org, _ := testEnv.Repo.CreateOrganization(ctx, app.ID, "Acme", GenerateUniqueSlug("acme"), &o1.ID)
+	_, _ = testEnv.Repo.AddOrganizationMember(ctx, org.ID, o1.ID, core.OrgRoleOwner)
+	_, _ = testEnv.Repo.AddOrganizationMember(ctx, org.ID, o2.ID, core.OrgRoleOwner)
+
+	// Two owners: removing one succeeds.
+	if err := testEnv.Repo.RemoveOrganizationMemberGuarded(ctx, org.ID, o2.ID); err != nil {
+		t.Fatalf("remove with 2 owners: %v", err)
+	}
+	// One owner left: removing it must fail closed.
+	if err := testEnv.Repo.RemoveOrganizationMemberGuarded(ctx, org.ID, o1.ID); !errors.Is(err, repo.ErrLastOwner) {
+		t.Fatalf("remove last owner: want ErrLastOwner, got %v", err)
+	}
+	// Demoting the last owner must also fail closed.
+	if err := testEnv.Repo.SetOrganizationMemberRoleGuarded(ctx, org.ID, o1.ID, core.OrgRoleMember); !errors.Is(err, repo.ErrLastOwner) {
+		t.Fatalf("demote last owner: want ErrLastOwner, got %v", err)
+	}
+}

@@ -332,6 +332,94 @@ func (r *Repo) CountActiveOrgOwners(ctx context.Context, orgID uuid.UUID) (int, 
 	return r.scalarCount(ctx, q, orgID)
 }
 
+// RemoveOrganizationMemberGuarded removes a member, refusing (ErrLastOwner) to
+// remove the last active owner. The owner-count and the delete run in one
+// transaction that first locks the organizations row FOR UPDATE, so concurrent
+// guarded mutations on the same org serialize and the count can't go stale
+// (fixes the TOCTOU where two concurrent removals each see 2 owners). Returns
+// ErrNotFound if the membership doesn't exist.
+func (r *Repo) RemoveOrganizationMemberGuarded(ctx context.Context, orgID, userID uuid.UUID) error {
+	tx, err := r.db.Pool().Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	// Serialize all guarded member mutations for this org.
+	var lockedOrg uuid.UUID
+	if err := tx.QueryRow(ctx, `SELECT id FROM organizations WHERE id = $1 FOR UPDATE`, orgID).Scan(&lockedOrg); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return ErrNotFound
+		}
+		return err
+	}
+
+	var role, status string
+	if err := tx.QueryRow(ctx, `SELECT org_role, status FROM organization_members WHERE org_id = $1 AND user_id = $2`, orgID, userID).Scan(&role, &status); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return ErrNotFound
+		}
+		return err
+	}
+
+	if role == core.OrgRoleOwner && status == core.OrgMemberStatusActive {
+		var owners int
+		if err := tx.QueryRow(ctx, `SELECT count(*) FROM organization_members WHERE org_id = $1 AND org_role = 'owner' AND status = 'active'`, orgID).Scan(&owners); err != nil {
+			return err
+		}
+		if owners <= 1 {
+			return ErrLastOwner
+		}
+	}
+
+	if _, err := tx.Exec(ctx, `DELETE FROM organization_members WHERE org_id = $1 AND user_id = $2`, orgID, userID); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
+}
+
+// SetOrganizationMemberRoleGuarded sets a member's tier, refusing (ErrLastOwner)
+// to demote the last active owner. Same per-org serialization as
+// RemoveOrganizationMemberGuarded. Returns ErrNotFound if the membership is missing.
+func (r *Repo) SetOrganizationMemberRoleGuarded(ctx context.Context, orgID, userID uuid.UUID, newRole string) error {
+	tx, err := r.db.Pool().Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	var lockedOrg uuid.UUID
+	if err := tx.QueryRow(ctx, `SELECT id FROM organizations WHERE id = $1 FOR UPDATE`, orgID).Scan(&lockedOrg); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return ErrNotFound
+		}
+		return err
+	}
+
+	var role, status string
+	if err := tx.QueryRow(ctx, `SELECT org_role, status FROM organization_members WHERE org_id = $1 AND user_id = $2`, orgID, userID).Scan(&role, &status); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return ErrNotFound
+		}
+		return err
+	}
+
+	if role == core.OrgRoleOwner && newRole != core.OrgRoleOwner && status == core.OrgMemberStatusActive {
+		var owners int
+		if err := tx.QueryRow(ctx, `SELECT count(*) FROM organization_members WHERE org_id = $1 AND org_role = 'owner' AND status = 'active'`, orgID).Scan(&owners); err != nil {
+			return err
+		}
+		if owners <= 1 {
+			return ErrLastOwner
+		}
+	}
+
+	if _, err := tx.Exec(ctx, `UPDATE organization_members SET org_role = $3 WHERE org_id = $1 AND user_id = $2`, orgID, userID, newRole); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
+}
+
 // OrganizationAdminView is one org with its active-member count, for the admin
 // org list. Includes archived orgs (status carries the state).
 type OrganizationAdminView struct {

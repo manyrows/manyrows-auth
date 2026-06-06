@@ -17,6 +17,10 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
+// maxOrgNameLen caps an org's display name and slug length to reject obviously
+// oversized input before it reaches the database.
+const maxOrgNameLen = 200
+
 // serverOrgResponse is the API shape for an organization.
 type serverOrgResponse struct {
 	ID        uuid.UUID `json:"id"`
@@ -119,6 +123,10 @@ func (handler *RequestHandler) ServerCreateOrganization(w http.ResponseWriter, r
 		WriteError(w, r, "error.badRequest", http.StatusBadRequest)
 		return
 	}
+	if len(strings.TrimSpace(body.Name)) > maxOrgNameLen || len(strings.TrimSpace(body.Slug)) > maxOrgNameLen {
+		WriteError(w, r, "error.badRequest", http.StatusBadRequest)
+		return
+	}
 	ownerID, err := uuid.FromString(strings.TrimSpace(body.OwnerUserID))
 	if err != nil || ownerID == uuid.Nil {
 		WriteError(w, r, "error.badRequest", http.StatusBadRequest)
@@ -186,6 +194,11 @@ func (handler *RequestHandler) ServerUpdateOrganization(w http.ResponseWriter, r
 	}
 	var body updateOrgRequest
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		WriteError(w, r, "error.badRequest", http.StatusBadRequest)
+		return
+	}
+	if (body.Name != nil && len(strings.TrimSpace(*body.Name)) > maxOrgNameLen) ||
+		(body.Slug != nil && len(strings.TrimSpace(*body.Slug)) > maxOrgNameLen) {
 		WriteError(w, r, "error.badRequest", http.StatusBadRequest)
 		return
 	}
@@ -384,33 +397,19 @@ func (handler *RequestHandler) ServerSetOrgMemberRole(w http.ResponseWriter, r *
 	}
 	newRole := strings.TrimSpace(body.OrgRole)
 
-	current, err := handler.repo.GetOrganizationMember(ctx, org.ID, userID)
-	if err != nil {
-		if errors.Is(err, repo.ErrNotFound) {
+	// The owner-count check and the role update run atomically inside the repo
+	// (per-org serialized transaction) so two concurrent demotes can't both pass
+	// the last-owner guard and leave the org ownerless.
+	if err := handler.repo.SetOrganizationMemberRoleGuarded(ctx, org.ID, userID, newRole); err != nil {
+		switch {
+		case errors.Is(err, repo.ErrNotFound):
 			WriteError(w, r, "error.notFound", http.StatusNotFound)
-			return
-		}
-		log.Err(err).Msg("ServerSetOrgMemberRole: load failed")
-		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
-		return
-	}
-	// Last-owner guard: never demote the final active owner. Fail closed if the
-	// owner count can't be determined.
-	if current.OrgRole == core.OrgRoleOwner && newRole != core.OrgRoleOwner && current.Status == core.OrgMemberStatusActive {
-		owners, err := handler.repo.CountActiveOrgOwners(ctx, org.ID)
-		if err != nil {
-			log.Err(err).Msg("ServerSetOrgMemberRole: count owners failed")
-			WriteError(w, r, "error.internalError", http.StatusInternalServerError)
-			return
-		}
-		if owners <= 1 {
+		case errors.Is(err, repo.ErrLastOwner):
 			WriteError(w, r, "error.conflict", http.StatusConflict)
-			return
+		default:
+			log.Err(err).Msg("ServerSetOrgMemberRole: update failed")
+			WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 		}
-	}
-	if err := handler.repo.SetOrganizationMemberRole(ctx, org.ID, userID, newRole); err != nil {
-		log.Err(err).Msg("ServerSetOrgMemberRole: update failed")
-		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -427,33 +426,19 @@ func (handler *RequestHandler) ServerRemoveOrgMember(w http.ResponseWriter, r *h
 	if !ok {
 		return
 	}
-	current, err := handler.repo.GetOrganizationMember(ctx, org.ID, userID)
-	if err != nil {
-		if errors.Is(err, repo.ErrNotFound) {
+	// The owner-count check and the delete run atomically inside the repo
+	// (per-org serialized transaction) so two concurrent removals can't both pass
+	// the last-owner guard and leave the org ownerless.
+	if err := handler.repo.RemoveOrganizationMemberGuarded(ctx, org.ID, userID); err != nil {
+		switch {
+		case errors.Is(err, repo.ErrNotFound):
 			WriteError(w, r, "error.notFound", http.StatusNotFound)
-			return
-		}
-		log.Err(err).Msg("ServerRemoveOrgMember: load failed")
-		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
-		return
-	}
-	// Last-owner guard: never remove the final active owner. Fail closed if the
-	// owner count can't be determined.
-	if current.OrgRole == core.OrgRoleOwner && current.Status == core.OrgMemberStatusActive {
-		owners, err := handler.repo.CountActiveOrgOwners(ctx, org.ID)
-		if err != nil {
-			log.Err(err).Msg("ServerRemoveOrgMember: count owners failed")
-			WriteError(w, r, "error.internalError", http.StatusInternalServerError)
-			return
-		}
-		if owners <= 1 {
+		case errors.Is(err, repo.ErrLastOwner):
 			WriteError(w, r, "error.conflict", http.StatusConflict)
-			return
+		default:
+			log.Err(err).Msg("ServerRemoveOrgMember: delete failed")
+			WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 		}
-	}
-	if err := handler.repo.RemoveOrganizationMember(ctx, org.ID, userID); err != nil {
-		log.Err(err).Msg("ServerRemoveOrgMember: delete failed")
-		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)

@@ -12,6 +12,11 @@ var (
 	ErrConflict   = errors.New("conflict")
 	ErrBadRequest = errors.New("bad request")
 
+	// ErrLastOwner is returned by the guarded org-member mutations when a
+	// remove/demote would leave the organization with zero active owners.
+	// Handlers map it to 409 Conflict.
+	ErrLastOwner = errors.New("organization must retain at least one active owner")
+
 	// ErrPoolInUse is returned by DeleteUserPool when one or more apps
 	// still point at the pool. Handler maps to 409 Conflict so admins
 	// see "this pool is in use" rather than a generic 500.
