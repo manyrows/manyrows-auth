@@ -1356,6 +1356,7 @@
   "app.nav.authMethods": "인증 방식",
   "app.nav.insights": "인사이트",
   "app.nav.members": "사용자",
+  "app.nav.organizations": "조직",
   "app.nav.security": "인증 설정",
   "app.nav.sessions": "세션",
   "app.nav.summary": "앱 요약",

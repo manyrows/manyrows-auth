@@ -1360,6 +1360,7 @@
   "app.nav.authMethods": "Auth methods",
   "app.nav.insights": "Insights",
   "app.nav.members": "Users",
+  "app.nav.organizations": "Organizations",
   "app.nav.security": "Auth settings",
   "app.nav.sessions": "Sessions",
   "app.nav.summary": "App Summary",

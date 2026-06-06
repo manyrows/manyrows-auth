@@ -48,6 +48,7 @@ const ConfigKeys = React.lazy(() => import("./ConfigKeys.tsx"));
 const AppDetail = React.lazy(() => import("./AppDetail.tsx"));
 const AppAuthMethods = React.lazy(() => import("./AppAuthMethods.tsx"));
 const AppSecurity = React.lazy(() => import("./AppSecurity.tsx"));
+const AppOrganizations = React.lazy(() => import("./AppOrganizations.tsx"));
 const AppDiff = React.lazy(() => import("./AppDiff.tsx"));
 const AppInsights = React.lazy(() => import("./AppInsights.tsx"));
 const Sessions = React.lazy(() => import("../workspace/Sessions.tsx"));
@@ -456,6 +457,8 @@ export default function ProjectHome(props: Props) {
                 <AppAuthMethods project={project} workspace={workspace} appId={appId} />
               ) : page === "appDetail" && appId && appPage === "security" ? (
                 <AppSecurity project={project} workspace={workspace} appId={appId} />
+              ) : page === "appDetail" && appId && appPage === "organizations" ? (
+                <AppOrganizations project={project} workspace={workspace} appId={appId} />
               ) : page === "appDetail" && appId && appPage === "features" ? (
                 <Features project={project} workspace={workspace} appId={appId} />
               ) : page === "appDetail" && appId && appPage === "config" ? (

@@ -30,6 +30,7 @@ import {
   Flag,
   SlidersHorizontal,
   Bell,
+  Building2,
   KeyRound,
   LineChart,
 } from "lucide-react";
@@ -198,6 +199,7 @@ function AppSubNav({
         { to: `${appBasePath}/auth-methods`, key: "auth-methods", icon: <Lock size={ICON_SIZE} strokeWidth={ICON_STROKE} />, label: t("app.nav.authMethods", { defaultValue: "Auth Methods" }) },
         { to: `${appBasePath}/security`, key: "security", icon: <ShieldCheck size={ICON_SIZE} strokeWidth={ICON_STROKE} />, label: t("app.nav.security", { defaultValue: "Auth settings" }) },
         { to: `${appBasePath}/members`, key: "members", icon: <Users size={ICON_SIZE} strokeWidth={ICON_STROKE} />, label: t("app.nav.members", { defaultValue: "Users" }) },
+        { to: `${appBasePath}/organizations`, key: "organizations", icon: <Building2 size={ICON_SIZE} strokeWidth={ICON_STROKE} />, label: t("app.nav.organizations", { defaultValue: "Organizations" }) },
         // Roles + Permissions are project-scoped (basePath, not appBasePath) and
         // shared across every environment — selection keys off the project page.
         { to: `${basePath}/roles`, key: "roles", icon: <IdCard size={ICON_SIZE} strokeWidth={ICON_STROKE} />, label: t("project.nav.roles"), selectedOverride: selectedValue === "roles" },
