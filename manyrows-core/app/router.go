@@ -301,6 +301,10 @@ func (a *AppService) initRouter() error {
 			r.Put("/transport-mode", requestHandler.HandleUpdateAppTransportMode)
 			r.Put("/session-cookie-samesite", requestHandler.HandleUpdateAppSessionCookieSameSite)
 
+			// Organizations (admin oversight: enable flag + list/manage
+			// app-scoped tenants from the admin panel).
+			r.Put("/organizations-enabled", requestHandler.HandleUpdateAppOrganizationsEnabled)
+
 			// Repoint the app at a different user pool. Refuses when
 			// the app has any members; merge-on-repoint is a follow-up.
 			r.Post("/userPool", requestHandler.HandleRepointAppUserPool)
