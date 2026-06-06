@@ -248,3 +248,55 @@ func TestAdminOrgs_Archive_Idempotent(t *testing.T) {
 		t.Fatalf("re-archive: expected 204 (idempotent), got %d", code)
 	}
 }
+
+func TestAdminOrgs_ForeignApp_404(t *testing.T) {
+	ctx := context.Background()
+	router, _ := setupAdminOrgRouter(t)
+
+	accA := testEnv.CreateTestAccount(t, "fa-a-"+GenerateUniqueSlug("u")+"@example.com")
+	wsA := testEnv.CreateTestWorkspace(t, accA, "WSA", GenerateUniqueSlug("ws"))
+	sessA, claimsA := testEnv.CreateTestSession(t, accA)
+
+	accB := testEnv.CreateTestAccount(t, "fa-b-"+GenerateUniqueSlug("u")+"@example.com")
+	wsB := testEnv.CreateTestWorkspace(t, accB, "WSB", GenerateUniqueSlug("ws"))
+	appB := testEnv.CreateTestApp(t, wsB, accB)
+
+	defer testEnv.CleanupTestData(t, &TestFixtures{Account: accA, Workspace: wsA, Session: sessA})
+	defer testEnv.CleanupTestData(t, &TestFixtures{Account: accB, Workspace: wsB})
+
+	owner, _, _ := testEnv.Repo.GetOrCreateUser(ctx, "own-"+GenerateUniqueSlug("u")+"@example.com", appB, core.UserSourceInvited)
+	orgB, _ := testEnv.Repo.CreateOrganization(ctx, appB.ID, "Acme", GenerateUniqueSlug("acme"), &owner.ID)
+	_, _ = testEnv.Repo.AddOrganizationMember(ctx, orgB.ID, owner.ID, core.OrgRoleOwner)
+
+	// A's workspace (accA is a member) but B's project + app + org in the path.
+	base := "/admin/workspace/" + wsA.ID.String() + "/projects/" + appB.ProjectID.String() + "/apps/" + appB.ID.String()
+
+	hit := func(method, path string, withBody bool) int {
+		var rr *httptest.ResponseRecorder
+		if withBody {
+			req := httptest.NewRequest(method, path, bytes.NewReader([]byte(`{"name":"x"}`)))
+			testEnv.SetSessionCookie(t, req, claimsA)
+			rr = httptest.NewRecorder()
+			router.ServeHTTP(rr, req)
+		} else {
+			req := httptest.NewRequest(method, path, nil)
+			testEnv.SetSessionCookie(t, req, claimsA)
+			rr = httptest.NewRecorder()
+			router.ServeHTTP(rr, req)
+		}
+		return rr.Code
+	}
+
+	if code := hit(http.MethodGet, base+"/organizations", false); code != http.StatusNotFound {
+		t.Fatalf("list foreign app: expected 404, got %d", code)
+	}
+	if code := hit(http.MethodGet, base+"/organizations/"+orgB.ID.String()+"/members", false); code != http.StatusNotFound {
+		t.Fatalf("members foreign app: expected 404, got %d", code)
+	}
+	if code := hit(http.MethodPatch, base+"/organizations/"+orgB.ID.String(), true); code != http.StatusNotFound {
+		t.Fatalf("rename foreign app: expected 404, got %d", code)
+	}
+	if code := hit(http.MethodDelete, base+"/organizations/"+orgB.ID.String(), false); code != http.StatusNotFound {
+		t.Fatalf("archive foreign app: expected 404, got %d", code)
+	}
+}

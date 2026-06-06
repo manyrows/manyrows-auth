@@ -21,6 +21,32 @@ type updateAppOrganizationsEnabledRequest struct {
 	OrganizationsEnabled *bool `json:"organizationsEnabled"`
 }
 
+// adminAppScope runs the admin/workspace gate, parses the path ids, AND verifies
+// the app belongs to the caller's workspace+project — failing safe (404) if not.
+// resolvePathIDs alone only PARSES the ids; without this ownership check a
+// workspace-A admin could reach an app in workspace B by supplying its id. Every
+// org-management handler must go through this.
+func (handler *RequestHandler) adminAppScope(w http.ResponseWriter, r *http.Request) (projectID, appID uuid.UUID, ok bool) {
+	_, ws, ok := handler.adminAndWorkspace(w, r)
+	if !ok {
+		return uuid.Nil, uuid.Nil, false
+	}
+	projectID, appID, ok = handler.resolvePathIDs(w, r)
+	if !ok {
+		return uuid.Nil, uuid.Nil, false
+	}
+	if _, err := handler.repo.GetAppByIDForProject(r.Context(), ws.ID, projectID, appID); err != nil {
+		if errors.Is(err, repo.ErrNotFound) {
+			WriteError(w, r, "error.appNotFound", http.StatusNotFound)
+			return uuid.Nil, uuid.Nil, false
+		}
+		log.Err(err).Msg("failed to load app for org admin scope")
+		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
+		return uuid.Nil, uuid.Nil, false
+	}
+	return projectID, appID, true
+}
+
 // HandleUpdateAppOrganizationsEnabled flips apps.organizations_enabled for one
 // app, scoped to the caller's workspace+project, and returns the updated app.
 func (handler *RequestHandler) HandleUpdateAppOrganizationsEnabled(w http.ResponseWriter, r *http.Request) {
@@ -74,10 +100,7 @@ type adminOrgListResponse struct {
 // HandleListAppOrganizations lists every org in the app (active + archived) with
 // active-member counts. App-scoped via the path appId.
 func (handler *RequestHandler) HandleListAppOrganizations(w http.ResponseWriter, r *http.Request) {
-	if _, _, ok := handler.adminAndWorkspace(w, r); !ok {
-		return
-	}
-	_, appID, ok := handler.resolvePathIDs(w, r)
+	_, appID, ok := handler.adminAppScope(w, r)
 	if !ok {
 		return
 	}
@@ -125,10 +148,7 @@ type adminOrgMembersResponse struct {
 
 // HandleListAppOrganizationMembers returns an org's members (read-only).
 func (handler *RequestHandler) HandleListAppOrganizationMembers(w http.ResponseWriter, r *http.Request) {
-	if _, _, ok := handler.adminAndWorkspace(w, r); !ok {
-		return
-	}
-	_, appID, ok := handler.resolvePathIDs(w, r)
+	_, appID, ok := handler.adminAppScope(w, r)
 	if !ok {
 		return
 	}
@@ -162,10 +182,7 @@ type adminOrgResponse struct {
 // HandleRenameAppOrganization renames an org (name only; slug is preserved so
 // downstream mirrors keyed on id/slug don't drift).
 func (handler *RequestHandler) HandleRenameAppOrganization(w http.ResponseWriter, r *http.Request) {
-	if _, _, ok := handler.adminAndWorkspace(w, r); !ok {
-		return
-	}
-	_, appID, ok := handler.resolvePathIDs(w, r)
+	_, appID, ok := handler.adminAppScope(w, r)
 	if !ok {
 		return
 	}
@@ -205,10 +222,7 @@ func (handler *RequestHandler) HandleRenameAppOrganization(w http.ResponseWriter
 // HandleArchiveAppOrganization archives an org (status='archived'). Idempotent:
 // archiving an already-archived org still returns 204.
 func (handler *RequestHandler) HandleArchiveAppOrganization(w http.ResponseWriter, r *http.Request) {
-	if _, _, ok := handler.adminAndWorkspace(w, r); !ok {
-		return
-	}
-	_, appID, ok := handler.resolvePathIDs(w, r)
+	_, appID, ok := handler.adminAppScope(w, r)
 	if !ok {
 		return
 	}
@@ -218,7 +232,8 @@ func (handler *RequestHandler) HandleArchiveAppOrganization(w http.ResponseWrite
 	}
 	if err := handler.repo.ArchiveOrganization(r.Context(), org.ID); err != nil {
 		if errors.Is(err, repo.ErrNotFound) {
-			// Already gone — treat as success (idempotent).
+			// Row physically gone — treat as already-archived (idempotent).
+			// (Re-archiving an existing archived row returns nil, not ErrNotFound.)
 			w.WriteHeader(http.StatusNoContent)
 			return
 		}
