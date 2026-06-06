@@ -282,6 +282,22 @@ func (r *Repo) ArchiveOrganization(ctx context.Context, id uuid.UUID) error {
 	return nil
 }
 
+// DeleteOrganization hard-deletes an org row. Members, member-roles and invites
+// cascade (FK ON DELETE CASCADE); client_sessions.organization_id is set NULL.
+// ErrNotFound if the org doesn't exist. Used by the server API when a consuming
+// app deletes its tenant (the admin panel's archive is separate).
+func (r *Repo) DeleteOrganization(ctx context.Context, id uuid.UUID) error {
+	const q = `DELETE FROM organizations WHERE id = $1;`
+	ct, err := r.db.Pool().Exec(ctx, q, id)
+	if err != nil {
+		return err
+	}
+	if ct.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
 // OrganizationMemberView is one member with their email + tier, for admin listing.
 type OrganizationMemberView struct {
 	UserID  uuid.UUID `json:"userId"`

@@ -223,14 +223,16 @@ func (handler *RequestHandler) ServerUpdateOrganization(w http.ResponseWriter, r
 	utils.WriteJson(w, toServerOrg(updated))
 }
 
-// ServerArchiveOrganization: DELETE /v1/apps/{appId}/organizations/{orgId}
-func (handler *RequestHandler) ServerArchiveOrganization(w http.ResponseWriter, r *http.Request) {
+// ServerDeleteOrganization: DELETE /v1/apps/{appId}/organizations/{orgId}
+// Hard-deletes the org (members/roles/invites cascade, sessions detach). The
+// consuming app deletes its tenant; the admin panel's archive is separate.
+func (handler *RequestHandler) ServerDeleteOrganization(w http.ResponseWriter, r *http.Request) {
 	_, org, ok := handler.serverOrgFromURL(w, r)
 	if !ok {
 		return
 	}
-	if err := handler.repo.ArchiveOrganization(r.Context(), org.ID); err != nil {
-		log.Err(err).Msg("ServerArchiveOrganization failed")
+	if err := handler.repo.DeleteOrganization(r.Context(), org.ID); err != nil {
+		log.Err(err).Msg("ServerDeleteOrganization failed")
 		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 		return
 	}

@@ -4,11 +4,13 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 
 	"manyrows-core/core"
+	"manyrows-core/core/repo"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/gofrs/uuid/v5"
@@ -35,7 +37,7 @@ func setupServerOrgRouter(t *testing.T, ws *core.Workspace, app *core.App) *chi.
 		or.Get("/", svc.Handler.ServerListOrganizationsForUser)
 		or.Get("/{orgId}", svc.Handler.ServerGetOrganization)
 		or.Patch("/{orgId}", svc.Handler.ServerUpdateOrganization)
-		or.Delete("/{orgId}", svc.Handler.ServerArchiveOrganization)
+		or.Delete("/{orgId}", svc.Handler.ServerDeleteOrganization)
 		or.Get("/{orgId}/members", svc.Handler.ServerListOrgMembers)
 		or.Post("/{orgId}/members", svc.Handler.ServerAddOrgMember)
 		or.Get("/{orgId}/members/{userId}", svc.Handler.ServerGetOrgMember)
@@ -415,6 +417,34 @@ func TestServerOrg_ArchivedOrg_404(t *testing.T) {
 	router.ServeHTTP(rr2, req2)
 	if rr2.Code != http.StatusNotFound {
 		t.Fatalf("rename archived org must be 404, got %d (%s)", rr2.Code, rr2.Body.String())
+	}
+}
+
+func TestServerDeleteOrganization_HardDeletes(t *testing.T) {
+	ctx := context.Background()
+	acc := testEnv.CreateTestAccount(t, "del-"+GenerateUniqueSlug("u")+"@example.com")
+	ws := testEnv.CreateTestWorkspace(t, acc, "WS", GenerateUniqueSlug("ws"))
+	app := testEnv.CreateTestApp(t, ws, acc)
+	defer testEnv.CleanupTestData(t, &TestFixtures{Account: acc, Workspace: ws})
+
+	owner, _, _ := testEnv.GetOrCreateUserWithMembership(ctx, "own-"+GenerateUniqueSlug("u")+"@example.com", app, core.UserSourceInvited)
+	org, _ := testEnv.Repo.CreateOrganization(ctx, app.ID, "Acme", GenerateUniqueSlug("acme"), &owner.ID)
+	_, _ = testEnv.Repo.AddOrganizationMember(ctx, org.ID, owner.ID, core.OrgRoleOwner)
+
+	router := setupServerOrgRouter(t, ws, app)
+	req := httptest.NewRequest(http.MethodDelete, orgBase(app)+"/"+org.ID.String(), nil)
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+	if rr.Code != http.StatusNoContent {
+		t.Fatalf("delete: expected 204, got %d (%s)", rr.Code, rr.Body.String())
+	}
+	// Hard-deleted: the row is gone, not merely archived.
+	if _, err := testEnv.Repo.GetOrganizationByID(ctx, org.ID); !errors.Is(err, repo.ErrNotFound) {
+		t.Fatalf("org should be hard-deleted (ErrNotFound), got %v", err)
+	}
+	// Members cascade-deleted.
+	if _, err := testEnv.Repo.GetOrganizationMember(ctx, org.ID, owner.ID); !errors.Is(err, repo.ErrNotFound) {
+		t.Fatalf("member should cascade-delete (ErrNotFound), got %v", err)
 	}
 }
 
