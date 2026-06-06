@@ -145,6 +145,7 @@ var apiTranslations = map[string]map[string]string{
 		"error.keyInvalid":                "Invalid key format",
 		"error.keyExists":                 "Key already exists",
 		"error.conflict":                  "Resource conflict",
+		"error.userNotSignedIn":           "That email isn't a registered user of this app yet — they must sign in once before being added.",
 		"error.secretsNotSupportedViaAPI": "Secret config values must be set via the admin UI",
 
 		// Workspace account errors

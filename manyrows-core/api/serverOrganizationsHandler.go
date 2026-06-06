@@ -88,6 +88,10 @@ func (handler *RequestHandler) serverOrgFromURL(w http.ResponseWriter, r *http.R
 		WriteError(w, r, "error.notFound", http.StatusNotFound)
 		return nil, nil, false
 	}
+	if org.Status != core.OrgStatusActive {
+		WriteError(w, r, "error.notFound", http.StatusNotFound)
+		return nil, nil, false
+	}
 	return app, org, true
 }
 
@@ -102,6 +106,12 @@ func (handler *RequestHandler) ServerCreateOrganization(w http.ResponseWriter, r
 	ctx := r.Context()
 	app, ok := handler.serverAppFromCtx(w, r)
 	if !ok {
+		return
+	}
+	if !app.OrganizationsEnabled {
+		// Provisioning orgs on an app that doesn't have orgs enabled would
+		// silently create rows runtime resolution never reads. Fail loud.
+		WriteError(w, r, "error.conflict", http.StatusConflict)
 		return
 	}
 	var body createOrgRequest
@@ -330,6 +340,12 @@ func (handler *RequestHandler) ServerGetOrgMember(w http.ResponseWriter, r *http
 		}
 		log.Err(err).Msg("ServerGetOrgMember failed")
 		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
+		return
+	}
+	if m.Status != core.OrgMemberStatusActive {
+		// The gate is a 200/404 authz check for consumers — a disabled/pending
+		// member is NOT an active member, so fail safe (404), not 200.
+		WriteError(w, r, "error.notFound", http.StatusNotFound)
 		return
 	}
 	utils.WriteJson(w, map[string]any{"userId": m.UserID, "orgRole": m.OrgRole, "status": m.Status})

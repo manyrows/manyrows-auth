@@ -72,6 +72,15 @@ func TestServerCreateOrganization_SeedsOwner(t *testing.T) {
 	app := testEnv.CreateTestApp(t, ws, acc)
 	defer testEnv.CleanupTestData(t, &TestFixtures{Account: acc, Workspace: ws})
 
+	if err := testEnv.Repo.SetAppOrganizationsEnabled(ctx, app.ID, true); err != nil {
+		t.Fatalf("enable orgs: %v", err)
+	}
+	reloaded, err := testEnv.Repo.GetAppByID(ctx, app.ID)
+	if err != nil {
+		t.Fatalf("reload app: %v", err)
+	}
+	app = &reloaded
+
 	owner, _, err := testEnv.Repo.GetOrCreateUser(ctx, "own-"+GenerateUniqueSlug("u")+"@example.com", app, core.UserSourceInvited)
 	if err != nil {
 		t.Fatalf("owner: %v", err)
@@ -332,6 +341,15 @@ func TestServerCreateOrganization_ForeignPoolOwner_400(t *testing.T) {
 	app2 := testEnv.CreateTestApp(t, ws, acc)
 	defer testEnv.CleanupTestData(t, &TestFixtures{Account: acc, Workspace: ws})
 
+	if err := testEnv.Repo.SetAppOrganizationsEnabled(ctx, app1.ID, true); err != nil {
+		t.Fatalf("enable orgs: %v", err)
+	}
+	reloaded1, err := testEnv.Repo.GetAppByID(ctx, app1.ID)
+	if err != nil {
+		t.Fatalf("reload app1: %v", err)
+	}
+	app1 = &reloaded1
+
 	// This user belongs to app2's pool, not app1's.
 	foreign, _, _ := testEnv.Repo.GetOrCreateUser(ctx, "f-"+GenerateUniqueSlug("u")+"@example.com", app2, core.UserSourceInvited)
 
@@ -342,5 +360,79 @@ func TestServerCreateOrganization_ForeignPoolOwner_400(t *testing.T) {
 	router.ServeHTTP(rr, req)
 	if rr.Code != http.StatusBadRequest {
 		t.Fatalf("foreign-pool owner must be 400, got %d (%s)", rr.Code, rr.Body.String())
+	}
+}
+
+func TestServerGetOrgMember_DisabledMember_404(t *testing.T) {
+	ctx := context.Background()
+	acc := testEnv.CreateTestAccount(t, "dm-"+GenerateUniqueSlug("u")+"@example.com")
+	ws := testEnv.CreateTestWorkspace(t, acc, "WS", GenerateUniqueSlug("ws"))
+	app := testEnv.CreateTestApp(t, ws, acc)
+	defer testEnv.CleanupTestData(t, &TestFixtures{Account: acc, Workspace: ws})
+
+	owner, _, _ := testEnv.Repo.GetOrCreateUser(ctx, "own-"+GenerateUniqueSlug("u")+"@example.com", app, core.UserSourceInvited)
+	org, _ := testEnv.Repo.CreateOrganization(ctx, app.ID, "Acme", GenerateUniqueSlug("acme"), &owner.ID)
+	_, _ = testEnv.Repo.AddOrganizationMember(ctx, org.ID, owner.ID, core.OrgRoleOwner)
+	if _, err := testEnv.DB.Pool().Exec(ctx, "UPDATE organization_members SET status='disabled' WHERE org_id=$1 AND user_id=$2", org.ID, owner.ID); err != nil {
+		t.Fatalf("disable: %v", err)
+	}
+
+	router := setupServerOrgRouter(t, ws, app)
+	req := httptest.NewRequest(http.MethodGet, orgBase(app)+"/"+org.ID.String()+"/members/"+owner.ID.String(), nil)
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+	if rr.Code != http.StatusNotFound {
+		t.Fatalf("disabled member gate must be 404, got %d (%s)", rr.Code, rr.Body.String())
+	}
+}
+
+func TestServerOrg_ArchivedOrg_404(t *testing.T) {
+	ctx := context.Background()
+	acc := testEnv.CreateTestAccount(t, "ar-"+GenerateUniqueSlug("u")+"@example.com")
+	ws := testEnv.CreateTestWorkspace(t, acc, "WS", GenerateUniqueSlug("ws"))
+	app := testEnv.CreateTestApp(t, ws, acc)
+	defer testEnv.CleanupTestData(t, &TestFixtures{Account: acc, Workspace: ws})
+
+	owner, _, _ := testEnv.Repo.GetOrCreateUser(ctx, "own-"+GenerateUniqueSlug("u")+"@example.com", app, core.UserSourceInvited)
+	org, _ := testEnv.Repo.CreateOrganization(ctx, app.ID, "Acme", GenerateUniqueSlug("acme"), &owner.ID)
+	_, _ = testEnv.Repo.AddOrganizationMember(ctx, org.ID, owner.ID, core.OrgRoleOwner)
+	if err := testEnv.Repo.ArchiveOrganization(ctx, org.ID); err != nil {
+		t.Fatalf("archive: %v", err)
+	}
+
+	router := setupServerOrgRouter(t, ws, app)
+	// Gate on an archived org → 404.
+	req := httptest.NewRequest(http.MethodGet, orgBase(app)+"/"+org.ID.String()+"/members/"+owner.ID.String(), nil)
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+	if rr.Code != http.StatusNotFound {
+		t.Fatalf("archived-org gate must be 404, got %d (%s)", rr.Code, rr.Body.String())
+	}
+	// Rename of an archived org → 404.
+	body, _ := json.Marshal(map[string]string{"name": "Nope"})
+	req2 := httptest.NewRequest(http.MethodPatch, orgBase(app)+"/"+org.ID.String(), bytes.NewReader(body))
+	rr2 := httptest.NewRecorder()
+	router.ServeHTTP(rr2, req2)
+	if rr2.Code != http.StatusNotFound {
+		t.Fatalf("rename archived org must be 404, got %d (%s)", rr2.Code, rr2.Body.String())
+	}
+}
+
+func TestServerCreateOrganization_OrgsDisabled_409(t *testing.T) {
+	ctx := context.Background()
+	acc := testEnv.CreateTestAccount(t, "od-"+GenerateUniqueSlug("u")+"@example.com")
+	ws := testEnv.CreateTestWorkspace(t, acc, "WS", GenerateUniqueSlug("ws"))
+	app := testEnv.CreateTestApp(t, ws, acc) // orgs NOT enabled (default false)
+	defer testEnv.CleanupTestData(t, &TestFixtures{Account: acc, Workspace: ws})
+
+	owner, _, _ := testEnv.Repo.GetOrCreateUser(ctx, "own-"+GenerateUniqueSlug("u")+"@example.com", app, core.UserSourceInvited)
+
+	router := setupServerOrgRouter(t, ws, app)
+	body, _ := json.Marshal(map[string]string{"name": "Acme", "ownerUserId": owner.ID.String()})
+	req := httptest.NewRequest(http.MethodPost, orgBase(app), bytes.NewReader(body))
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+	if rr.Code != http.StatusConflict {
+		t.Fatalf("create on orgs-disabled app must be 409, got %d (%s)", rr.Code, rr.Body.String())
 	}
 }
