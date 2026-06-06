@@ -14,6 +14,7 @@ import {
   DialogTitle,
   FormControlLabel,
   IconButton,
+  MenuItem,
   Paper,
   Stack,
   Switch,
@@ -73,6 +74,9 @@ export default function AppOrganizations({ project, appId }: Props) {
   const [loading, setLoading] = React.useState(true);
   const [app, setApp] = React.useState<App | null>(null);
   const [orgs, setOrgs] = React.useState<OrgRow[]>([]);
+
+  // Status filter — archived orgs are hidden by default.
+  const [statusFilter, setStatusFilter] = React.useState<"active" | "archived" | "all">("active");
 
   // Enable toggle
   const [enabled, setEnabled] = React.useState(false);
@@ -203,13 +207,15 @@ export default function AppOrganizations({ project, appId }: Props) {
     }
   }
 
+  const visibleOrgs = statusFilter === "all" ? orgs : orgs.filter((o) => o.status === statusFilter);
+
   if (loading) return <Loader />;
 
   return (
     <Box>
       <PageHeader title={t("organizations.title", { defaultValue: "Organizations" })} mb={2} />
 
-      <Stack spacing={3} sx={{ maxWidth: 880 }}>
+      <Stack spacing={3}>
         {/* Enable card */}
         <Box sx={{ border: "1px solid", borderColor: "divider", borderRadius: 2, p: 2.5, bgcolor: "background.paper" }}>
           <FormControlLabel
@@ -237,6 +243,24 @@ export default function AppOrganizations({ project, appId }: Props) {
           />
         </Box>
 
+        {/* Status filter (only meaningful once at least one org exists) */}
+        {orgs.length > 0 && (
+          <Stack direction="row" justifyContent="flex-end">
+            <TextField
+              select
+              size="small"
+              label={t("organizations.filter.status", { defaultValue: "Status" })}
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value as "active" | "archived" | "all")}
+              sx={{ minWidth: 160 }}
+            >
+              <MenuItem value="active">{t("organizations.status.active", { defaultValue: "Active" })}</MenuItem>
+              <MenuItem value="archived">{t("organizations.status.archived", { defaultValue: "Archived" })}</MenuItem>
+              <MenuItem value="all">{t("organizations.filter.all", { defaultValue: "All" })}</MenuItem>
+            </TextField>
+          </Stack>
+        )}
+
         {/* Org list */}
         {orgs.length === 0 ? (
           <Alert severity="info">
@@ -247,6 +271,10 @@ export default function AppOrganizations({ project, appId }: Props) {
               : t("organizations.emptyDisabled", {
                   defaultValue: "Organizations are off for this app. Turn them on above to start creating tenants.",
                 })}
+          </Alert>
+        ) : visibleOrgs.length === 0 ? (
+          <Alert severity="info">
+            {t("organizations.noneForFilter", { defaultValue: "No organizations match this filter." })}
           </Alert>
         ) : (
           <TableContainer component={Paper} variant="outlined" sx={{ borderRadius: 2 }}>
@@ -262,7 +290,7 @@ export default function AppOrganizations({ project, appId }: Props) {
                 </TableRow>
               </TableHead>
               <TableBody>
-                {orgs.map((org) => {
+                {visibleOrgs.map((org) => {
                   const archived = org.status === "archived";
                   return (
                     <TableRow key={org.id} hover sx={{ opacity: archived ? 0.6 : 1 }}>
