@@ -306,6 +306,8 @@ func (a *AppService) initRouter() error {
 			r.Put("/organizations-enabled", requestHandler.HandleUpdateAppOrganizationsEnabled)
 			r.Get("/organizations", requestHandler.HandleListAppOrganizations)
 			r.Get("/organizations/{orgId}/members", requestHandler.HandleListAppOrganizationMembers)
+			r.Patch("/organizations/{orgId}", requestHandler.HandleRenameAppOrganization)
+			r.Delete("/organizations/{orgId}", requestHandler.HandleArchiveAppOrganization)
 
 			// Repoint the app at a different user pool. Refuses when
 			// the app has any members; merge-on-repoint is a follow-up.

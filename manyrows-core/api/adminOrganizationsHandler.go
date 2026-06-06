@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strings"
 	"time"
 
 	"manyrows-core/core"
@@ -145,4 +146,85 @@ func (handler *RequestHandler) HandleListAppOrganizationMembers(w http.ResponseW
 		members = []repo.OrganizationMemberView{}
 	}
 	utils.WriteJsonWithStatusCode(w, adminOrgMembersResponse{Members: members}, http.StatusOK)
+}
+
+type renameAppOrganizationRequest struct {
+	Name string `json:"name"`
+}
+
+type adminOrgResponse struct {
+	ID     string `json:"id"`
+	Name   string `json:"name"`
+	Slug   string `json:"slug"`
+	Status string `json:"status"`
+}
+
+// HandleRenameAppOrganization renames an org (name only; slug is preserved so
+// downstream mirrors keyed on id/slug don't drift).
+func (handler *RequestHandler) HandleRenameAppOrganization(w http.ResponseWriter, r *http.Request) {
+	if _, _, ok := handler.adminAndWorkspace(w, r); !ok {
+		return
+	}
+	_, appID, ok := handler.resolvePathIDs(w, r)
+	if !ok {
+		return
+	}
+	org, ok := handler.adminOrgFromURL(w, r, appID)
+	if !ok {
+		return
+	}
+	var req renameAppOrganizationRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		log.Err(err).Msg("failed to decode json")
+		WriteError(w, r, "error.invalidJson", http.StatusBadRequest)
+		return
+	}
+	name := strings.TrimSpace(req.Name)
+	if name == "" {
+		WriteError(w, r, "error.badRequest", http.StatusBadRequest)
+		return
+	}
+	updated, err := handler.repo.UpdateOrganization(r.Context(), org.ID, name, org.Slug)
+	if err != nil {
+		if errors.Is(err, repo.ErrNotFound) {
+			WriteError(w, r, "error.organizationNotFound", http.StatusNotFound)
+			return
+		}
+		log.Err(err).Msg("failed to rename organization")
+		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
+		return
+	}
+	utils.WriteJsonWithStatusCode(w, adminOrgResponse{
+		ID:     updated.ID.String(),
+		Name:   updated.Name,
+		Slug:   updated.Slug,
+		Status: updated.Status,
+	}, http.StatusOK)
+}
+
+// HandleArchiveAppOrganization archives an org (status='archived'). Idempotent:
+// archiving an already-archived org still returns 204.
+func (handler *RequestHandler) HandleArchiveAppOrganization(w http.ResponseWriter, r *http.Request) {
+	if _, _, ok := handler.adminAndWorkspace(w, r); !ok {
+		return
+	}
+	_, appID, ok := handler.resolvePathIDs(w, r)
+	if !ok {
+		return
+	}
+	org, ok := handler.adminOrgFromURL(w, r, appID)
+	if !ok {
+		return
+	}
+	if err := handler.repo.ArchiveOrganization(r.Context(), org.ID); err != nil {
+		if errors.Is(err, repo.ErrNotFound) {
+			// Already gone — treat as success (idempotent).
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		log.Err(err).Msg("failed to archive organization")
+		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
