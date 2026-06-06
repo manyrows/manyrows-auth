@@ -331,3 +331,40 @@ func (r *Repo) CountActiveOrgOwners(ctx context.Context, orgID uuid.UUID) (int, 
 	const q = `SELECT count(*) FROM organization_members WHERE org_id = $1 AND org_role = 'owner' AND status = 'active';`
 	return r.scalarCount(ctx, q, orgID)
 }
+
+// OrganizationAdminView is one org with its active-member count, for the admin
+// org list. Includes archived orgs (status carries the state).
+type OrganizationAdminView struct {
+	ID          uuid.UUID `json:"id"`
+	Name        string    `json:"name"`
+	Slug        string    `json:"slug"`
+	Status      string    `json:"status"`
+	MemberCount int       `json:"memberCount"`
+	CreatedAt   time.Time `json:"createdAt"`
+}
+
+// ListOrganizationsForApp returns every org in an app (active + archived) with a
+// count of active members, newest first. Drives the admin Organizations page.
+func (r *Repo) ListOrganizationsForApp(ctx context.Context, appID uuid.UUID) ([]OrganizationAdminView, error) {
+	const q = `
+SELECT o.id, o.name, o.slug, o.status, o.created_at,
+       (SELECT count(*) FROM organization_members m
+        WHERE m.org_id = o.id AND m.status = 'active') AS member_count
+FROM organizations o
+WHERE o.app_id = $1
+ORDER BY o.created_at DESC;`
+	rows, err := r.db.Pool().Query(ctx, q, appID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []OrganizationAdminView
+	for rows.Next() {
+		var v OrganizationAdminView
+		if err := rows.Scan(&v.ID, &v.Name, &v.Slug, &v.Status, &v.CreatedAt, &v.MemberCount); err != nil {
+			return nil, err
+		}
+		out = append(out, v)
+	}
+	return out, rows.Err()
+}

@@ -387,6 +387,33 @@ func (r *Repo) UpdateAppTransportMode(ctx context.Context, workspaceID, projectI
 	return out, nil
 }
 
+// UpdateAppOrganizationsEnabled flips apps.organizations_enabled, scoped to the
+// owning workspace+project, and returns the updated app. The unscoped
+// SetAppOrganizationsEnabled remains for server-side callers; this variant adds
+// the workspace+project guard so an admin can't flip an app in another
+// workspace by guessing its id.
+func (r *Repo) UpdateAppOrganizationsEnabled(ctx context.Context, workspaceID, projectID, appID uuid.UUID, enabled bool) (core.App, error) {
+	q := `
+		update apps
+		set organizations_enabled = $4,
+		    updated_at = now()
+		where id = $1 and workspace_id = $2 and project_id = $3
+		returning ` + appColumnsReturning
+
+	var out core.App
+	err := scanAppFull(r.db.Pool().QueryRow(ctx, q,
+		appID, workspaceID, projectID,
+		enabled,
+	), &out)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return core.App{}, ErrNotFound
+		}
+		return core.App{}, err
+	}
+	return out, nil
+}
+
 // UpdateAppSessionCookieSameSite sets the SameSite attribute used when
 // issuing the session cookies. Caller validates the value is one of the
 // allowed enum values; the DB CHECK constraint is the second line of
