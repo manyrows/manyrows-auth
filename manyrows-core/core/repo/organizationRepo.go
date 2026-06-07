@@ -607,7 +607,14 @@ func (r *Repo) AcceptOrganizationInviteTx(ctx context.Context, inviteID, userID 
 		}
 		return err
 	}
-	if status != core.OrgInviteStatusPending {
+	switch status {
+	case core.OrgInviteStatusPending:
+		// ok, continue
+	case core.OrgInviteStatusRevoked:
+		return ErrInviteRevoked
+	case core.OrgInviteStatusAccepted:
+		return ErrInviteNotPending
+	default: // expired or anything else non-pending
 		return ErrInviteNotPending
 	}
 	if time.Now().After(expiresAt) {

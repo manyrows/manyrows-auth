@@ -73,9 +73,10 @@ func TestOrgInvite_RepoLifecycle(t *testing.T) {
 	if reGot.Status != core.OrgInviteStatusAccepted {
 		t.Fatalf("invite should be accepted, got %q", reGot.Status)
 	}
-	// Idempotent re-accept (already a member / already accepted) → no error.
-	if err := testEnv.Repo.AcceptOrganizationInviteTx(ctx, inv.ID, invitee.ID); err == nil {
-		// acceptable: idempotent success. If it returns a typed "not pending" error, that's also fine — adjust assertion in impl.
+	// Re-accept of an already-ACCEPTED invite → ErrInviteNotPending (the
+	// invitee is already a member; the handler treats this as already-joined).
+	if err := testEnv.Repo.AcceptOrganizationInviteTx(ctx, inv.ID, invitee.ID); !errors.Is(err, repo.ErrInviteNotPending) {
+		t.Fatalf("re-accept of accepted invite: want ErrInviteNotPending, got %v", err)
 	}
 
 	// After accept, a fresh invite for the same email is allowed (partial-unique only blocks pending).
@@ -99,6 +100,19 @@ func TestOrgInvite_Revoke(t *testing.T) {
 	// Revoking a non-pending invite → ErrNotFound.
 	if err := testEnv.Repo.RevokeOrganizationInvite(ctx, org.ID, inv.ID); !errors.Is(err, repo.ErrNotFound) {
 		t.Fatalf("expected ErrNotFound revoking non-pending, got %v", err)
+	}
+
+	// Accepting a REVOKED invite via the tx must surface ErrInviteRevoked (NOT
+	// the generic ErrInviteNotPending) so the handler can refuse sign-in. This
+	// guards the race window between the handler's status pre-check and the tx's
+	// FOR UPDATE re-read: a revoke landing in that window must never sign in.
+	invitee, _, _ := testEnv.GetOrCreateUserWithMembership(ctx, email, mustReloadApp(t, ctx, org.AppID), core.UserSourceInvited)
+	if err := testEnv.Repo.AcceptOrganizationInviteTx(ctx, inv.ID, invitee.ID); !errors.Is(err, repo.ErrInviteRevoked) {
+		t.Fatalf("accept of revoked invite: want ErrInviteRevoked, got %v", err)
+	}
+	// And it must NOT have created a membership.
+	if _, err := testEnv.Repo.GetOrganizationMember(ctx, org.ID, invitee.ID); !errors.Is(err, repo.ErrNotFound) {
+		t.Fatalf("revoked accept must not create a membership, got err=%v", err)
 	}
 }
 
@@ -329,6 +343,47 @@ func TestAcceptOrgInvite_UnknownToken(t *testing.T) {
 	loc := rr.Header().Get("Location")
 	if !strings.Contains(loc, "mr_invite_error=") || strings.Contains(loc, "mr_session=") {
 		t.Fatalf("unknown token should redirect with mr_invite_error and no session, got %q", loc)
+	}
+}
+
+func TestAcceptOrgInvite_RevokedToken(t *testing.T) {
+	ctx := context.Background()
+	acc, ws, app, org, owner := seedOrgWithAppURL(t, ctx)
+	defer testEnv.CleanupTestData(t, &TestFixtures{Account: acc, Workspace: ws})
+
+	router, _ := setupAcceptInviteRouter(t, ws, app)
+
+	// Seed a pending invite, then revoke it before the invitee hits the link.
+	raw, hash := generateTestMagicToken(t)
+	inviteeEmail := "rvk-" + GenerateUniqueSlug("u") + "@example.com"
+	inv, err := testEnv.Repo.CreateOrganizationInvite(ctx, org.ID, inviteeEmail, core.OrgRoleAdmin, nil, &owner.ID, hash, time.Now().UTC().Add(7*24*time.Hour))
+	if err != nil {
+		t.Fatalf("seed invite: %v", err)
+	}
+	if err := testEnv.Repo.RevokeOrganizationInvite(ctx, org.ID, inv.ID); err != nil {
+		t.Fatalf("revoke invite: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/x/"+ws.Slug+"/apps/"+app.ID.String()+"/auth/org-invite?token="+raw, nil)
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+
+	// Revoked -> redirect to app URL with mr_invite_error, NO session.
+	if rr.Code != http.StatusFound {
+		t.Fatalf("revoked accept: expected 302, got %d (%s)", rr.Code, rr.Body.String())
+	}
+	loc := rr.Header().Get("Location")
+	if !strings.Contains(loc, "mr_invite_error=") {
+		t.Fatalf("expected mr_invite_error in redirect, got %q", loc)
+	}
+	if strings.Contains(loc, "mr_session=") {
+		t.Fatalf("revoked invite must not mint a session, got %q", loc)
+	}
+	// The invitee must NOT have become an org member.
+	if invitee, _ := testEnv.Repo.GetUserByEmail(ctx, inviteeEmail, app); invitee != nil {
+		if _, err := testEnv.Repo.GetOrganizationMember(ctx, org.ID, invitee.ID); !errors.Is(err, repo.ErrNotFound) {
+			t.Fatalf("revoked invite must not create a membership, got err=%v", err)
+		}
 	}
 }
 

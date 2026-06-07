@@ -34,8 +34,14 @@ var (
 	ErrInvitePending = errors.New("a pending invite already exists for this email")
 
 	// ErrInviteNotPending is returned by AcceptOrganizationInviteTx when the
-	// invite has already been accepted/revoked/expired (status != pending).
+	// invite has already been accepted (status == accepted) — the invitee is
+	// already a member, so the handler may treat it as already-joined.
 	ErrInviteNotPending = errors.New("invite is not pending")
+
+	// ErrInviteRevoked is returned by AcceptOrganizationInviteTx when the invite
+	// was revoked. Distinct from ErrInviteNotPending so the handler can refuse
+	// to sign the invitee in (a revoked invite must NEVER mint a session).
+	ErrInviteRevoked = errors.New("invite has been revoked")
 
 	// ErrInviteExpired is returned by AcceptOrganizationInviteTx when the
 	// invite is still pending but past its expires_at.

@@ -246,11 +246,27 @@ func (handler *RequestHandler) AcceptOrgInvite(w http.ResponseWriter, r *http.Re
 		}
 	}
 
-	// Add the org membership + mark the invite accepted (atomic). If the invite
-	// is no longer pending (concurrent accept / already joined), treat it as
-	// already-joined and still sign the invitee in.
+	// Add the org membership + mark the invite accepted (atomic). The tx re-reads
+	// the invite FOR UPDATE, so a revoke/expiry landing in the race window after
+	// the pre-check above is caught here. Only an already-ACCEPTED invite (the
+	// invitee IS a member) may fall through to sign-in; a revoked/expired invite
+	// must NEVER mint a session.
 	if err := handler.repo.AcceptOrganizationInviteTx(r.Context(), inv.ID, user.ID); err != nil {
-		if !errors.Is(err, repo.ErrInviteNotPending) {
+		switch {
+		case errors.Is(err, repo.ErrInviteNotPending):
+			// Already accepted (e.g. a concurrent double-click of the same
+			// link) — the invitee is already a member; fall through and sign
+			// them in.
+		case errors.Is(err, repo.ErrInviteRevoked):
+			failRedirect("invite_revoked")
+			return
+		case errors.Is(err, repo.ErrInviteExpired):
+			failRedirect("invite_expired")
+			return
+		case errors.Is(err, repo.ErrNotFound):
+			failRedirect("invalid_token")
+			return
+		default:
 			log.Err(err).Msg("AcceptOrgInvite: accept tx failed")
 			failRedirect("server_error")
 			return
