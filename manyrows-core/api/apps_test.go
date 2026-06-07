@@ -135,6 +135,64 @@ func TestCreateApp_Success(t *testing.T) {
 	}
 }
 
+// TestCreateApp_InheritsProjectOrganizationsEnabled verifies a new app inherits
+// the project's org-mode: the first app in a project defaults to false, and a
+// later app inherits true once any sibling in the project is enabled.
+func TestCreateApp_InheritsProjectOrganizationsEnabled(t *testing.T) {
+	router := setupAppsRouter(t)
+	ctx := context.Background()
+
+	acc := testEnv.CreateTestAccount(t, "apps-inh-"+GenerateUniqueSlug("test")+"@example.com")
+	ws := testEnv.CreateTestWorkspace(t, acc, "Test WS", GenerateUniqueSlug("ws"))
+	project := testEnv.CreateTestProject(t, ws, acc, "Inh Project", GenerateUniqueSlug("proj"))
+	sess, claims := testEnv.CreateTestSession(t, acc)
+
+	defer testEnv.CleanupTestData(t, &TestFixtures{Account: acc, Workspace: ws, Projects: []core.Project{*project}, Session: sess})
+	defer func() {
+		_, _ = testEnv.DB.Pool().Exec(context.Background(), "DELETE FROM apps WHERE project_id = $1", project.ID)
+	}()
+
+	createApp := func(t *testing.T, typ string) map[string]any {
+		t.Helper()
+		body, _ := json.Marshal(map[string]any{"type": typ})
+		req := httptest.NewRequest(http.MethodPost, "/admin/workspace/"+ws.ID.String()+"/projects/"+project.ID.String()+"/apps", bytes.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		testEnv.SetSessionCookie(t, req, claims)
+		rr := httptest.NewRecorder()
+		router.ServeHTTP(rr, req)
+		if rr.Code != http.StatusCreated {
+			t.Fatalf("create %s app: expected 201, got %d (%s)", typ, rr.Code, rr.Body.String())
+		}
+		var resp map[string]any
+		if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+			t.Fatalf("parse create response: %v", err)
+		}
+		return resp
+	}
+
+	// First app in a fresh project: nothing to inherit → false.
+	first := createApp(t, "dev")
+	if first["organizationsEnabled"] == true {
+		t.Fatalf("first app should default organizationsEnabled=false, got %v", first["organizationsEnabled"])
+	}
+
+	// Enable orgs on the project (via the existing app).
+	firstID := uuid.Must(uuid.FromString(first["id"].(string)))
+	if err := testEnv.Repo.SetAppOrganizationsEnabled(ctx, firstID, true); err != nil {
+		t.Fatalf("enable existing app: %v", err)
+	}
+
+	// A NEW app in the same project inherits true.
+	second := createApp(t, "staging")
+	if second["organizationsEnabled"] != true {
+		t.Fatalf("second app should inherit organizationsEnabled=true, got %v", second["organizationsEnabled"])
+	}
+	secondID := uuid.Must(uuid.FromString(second["id"].(string)))
+	if got, err := testEnv.Repo.GetAppByID(ctx, secondID); err != nil || !got.OrganizationsEnabled {
+		t.Fatalf("second app DB flag expected true, err=%v", err)
+	}
+}
+
 // TestGetApp_Success tests getting a single app
 func TestGetApp_Success(t *testing.T) {
 	router := setupAppsRouter(t)

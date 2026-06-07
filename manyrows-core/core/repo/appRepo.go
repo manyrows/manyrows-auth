@@ -35,8 +35,8 @@ func (r *Repo) InsertApp(ctx context.Context, a core.App) (core.App, error) {
 	}
 
 	const q = `
-		INSERT INTO apps (id, workspace_id, project_id, type, enabled, allow_registration, allow_account_deletion, allow_email_change, default_role_id, allowed_email_domains, primary_auth_method, auth_method_google, require_2fa, google_oauth_client_id, description, app_url, user_pool_id)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+		INSERT INTO apps (id, workspace_id, project_id, type, enabled, allow_registration, allow_account_deletion, allow_email_change, default_role_id, allowed_email_domains, primary_auth_method, auth_method_google, require_2fa, google_oauth_client_id, description, app_url, user_pool_id, organizations_enabled)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
 		RETURNING ` + appColumnsReturning
 
 	var out core.App
@@ -58,6 +58,7 @@ func (r *Repo) InsertApp(ctx context.Context, a core.App) (core.App, error) {
 		a.Description,
 		a.AppURL,
 		a.UserPoolID,
+		a.OrganizationsEnabled,
 	), &out)
 	if err != nil {
 		return core.App{}, err
@@ -387,33 +388,6 @@ func (r *Repo) UpdateAppTransportMode(ctx context.Context, workspaceID, projectI
 	return out, nil
 }
 
-// UpdateAppOrganizationsEnabled flips apps.organizations_enabled, scoped to the
-// owning workspace+project, and returns the updated app. The unscoped
-// SetAppOrganizationsEnabled remains for server-side callers; this variant adds
-// the workspace+project guard so an admin can't flip an app in another
-// workspace by guessing its id.
-func (r *Repo) UpdateAppOrganizationsEnabled(ctx context.Context, workspaceID, projectID, appID uuid.UUID, enabled bool) (core.App, error) {
-	q := `
-		update apps
-		set organizations_enabled = $4,
-		    updated_at = now()
-		where id = $1 and workspace_id = $2 and project_id = $3
-		returning ` + appColumnsReturning
-
-	var out core.App
-	err := scanAppFull(r.db.Pool().QueryRow(ctx, q,
-		appID, workspaceID, projectID,
-		enabled,
-	), &out)
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return core.App{}, ErrNotFound
-		}
-		return core.App{}, err
-	}
-	return out, nil
-}
-
 // UpdateAppSessionCookieSameSite sets the SameSite attribute used when
 // issuing the session cookies. Caller validates the value is one of the
 // allowed enum values; the DB CHECK constraint is the second line of
@@ -713,4 +687,19 @@ func (r *Repo) CountAppsByWorkspaceID(ctx context.Context, workspaceID uuid.UUID
 func (r *Repo) SetAppOrganizationsEnabled(ctx context.Context, appID uuid.UUID, enabled bool) error {
 	const q = `UPDATE apps SET organizations_enabled = $2, updated_at = now() WHERE id = $1;`
 	return r.execAffectingOne(ctx, ErrNotFound, q, appID, enabled)
+}
+
+// SetProjectOrganizationsEnabled flips organizations_enabled for every app in a
+// project. The flag is conceptually project-level but stored per-app (duplicated
+// across the project's apps); this keeps every copy in sync. Scoped to
+// workspace+project so an admin can't reach another workspace's apps by guessing
+// a project id. A project with no apps yet is a no-op success.
+func (r *Repo) SetProjectOrganizationsEnabled(ctx context.Context, workspaceID, projectID uuid.UUID, enabled bool) error {
+	const q = `
+		update apps
+		set organizations_enabled = $3,
+		    updated_at = now()
+		where workspace_id = $1 and project_id = $2;`
+	_, err := r.db.Pool().Exec(ctx, q, workspaceID, projectID, enabled)
+	return err
 }

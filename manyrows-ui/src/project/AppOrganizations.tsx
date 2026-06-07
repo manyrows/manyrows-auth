@@ -148,7 +148,12 @@ export default function AppOrganizations({ project, appId }: Props) {
       const res = await axios.put<App>(`${appURL}/organizations-enabled`, { organizationsEnabled: enabled });
       setApp(res.data);
       setEnabled(!!res.data.organizationsEnabled);
-      enqueueSnackbar(t("apps.appUpdated", { defaultValue: "App updated" }), { variant: "success" });
+      enqueueSnackbar(
+        t("organizations.enabledUpdated", {
+          defaultValue: "Organizations setting updated for all apps in this project",
+        }),
+        { variant: "success" },
+      );
     } catch (e) {
       enqueueSnackbar(errText(e), { variant: "error" });
     } finally {
@@ -272,7 +277,7 @@ export default function AppOrganizations({ project, appId }: Props) {
                 <Typography variant="caption" color="text.secondary">
                   {t("organizations.enableHelp", {
                     defaultValue:
-                      "Let end-users belong to organizations (tenants) within this app. A consuming app can't create organizations until this is on. Default off.",
+                      "Let end-users belong to organizations (tenants). This applies to every app in this project. A consuming app can't create organizations until this is on. Default off.",
                   })}
                 </Typography>
               </Stack>

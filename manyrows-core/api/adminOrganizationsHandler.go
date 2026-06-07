@@ -47,8 +47,11 @@ func (handler *RequestHandler) adminAppScope(w http.ResponseWriter, r *http.Requ
 	return projectID, appID, true
 }
 
-// HandleUpdateAppOrganizationsEnabled flips apps.organizations_enabled for one
-// app, scoped to the caller's workspace+project, and returns the updated app.
+// HandleUpdateAppOrganizationsEnabled flips organizations_enabled for the whole
+// project the addressed app belongs to. The flag is conceptually project-level
+// but stored per-app (duplicated across the project's apps); this keeps every
+// copy in sync. The endpoint is still addressed via one app's id (the admin UI
+// lives on an app's Organizations page) and returns that app.
 func (handler *RequestHandler) HandleUpdateAppOrganizationsEnabled(w http.ResponseWriter, r *http.Request) {
 	_, ws, ok := handler.adminAndWorkspace(w, r)
 	if !ok {
@@ -70,16 +73,29 @@ func (handler *RequestHandler) HandleUpdateAppOrganizationsEnabled(w http.Respon
 		return
 	}
 
-	out, err := handler.repo.UpdateAppOrganizationsEnabled(r.Context(), ws.ID, projectID, appID, *req.OrganizationsEnabled)
+	// Validate the addressed app belongs to this workspace+project before
+	// mutating anything (404 otherwise) — so a bad app id can't trigger a
+	// project-wide write.
+	out, err := handler.repo.GetAppByIDForProject(r.Context(), ws.ID, projectID, appID)
 	if err != nil {
 		if errors.Is(err, repo.ErrNotFound) {
 			WriteError(w, r, "error.appNotFound", http.StatusNotFound)
 			return
 		}
-		log.Err(err).Msg("failed to update app organizations flag")
+		log.Err(err).Msg("failed to load app for organizations flag update")
 		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 		return
 	}
+
+	if err := handler.repo.SetProjectOrganizationsEnabled(r.Context(), ws.ID, projectID, *req.OrganizationsEnabled); err != nil {
+		log.Err(err).Msg("failed to update project organizations flag")
+		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
+		return
+	}
+
+	// Reflect the new value on the addressed app we return (every app in the
+	// project now carries it).
+	out.OrganizationsEnabled = *req.OrganizationsEnabled
 	utils.WriteJsonWithStatusCode(w, handler.toAdminAppResponse(out, ws), http.StatusOK)
 }
 

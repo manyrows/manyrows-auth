@@ -56,24 +56,68 @@ func TestListOrganizationsForApp_CountsAndIncludesArchived(t *testing.T) {
 	}
 }
 
-func TestUpdateAppOrganizationsEnabled_ScopedGuard(t *testing.T) {
+func TestSetProjectOrganizationsEnabled_AllAppsInProject(t *testing.T) {
 	ctx := context.Background()
-	acc := testEnv.CreateTestAccount(t, "uoe-"+GenerateUniqueSlug("u")+"@example.com")
+	acc := testEnv.CreateTestAccount(t, "spoe-"+GenerateUniqueSlug("u")+"@example.com")
 	ws := testEnv.CreateTestWorkspace(t, acc, "WS", GenerateUniqueSlug("ws"))
-	app := testEnv.CreateTestApp(t, ws, acc)
+	// CreateTestApp makes a fresh project with one "dev" app.
+	app1 := testEnv.CreateTestApp(t, ws, acc)
+	// Add a second app ("staging") in the SAME project.
+	pool2, err := testEnv.Repo.CreateUserPool(ctx, ws.ID, "Pool2 "+GenerateUniqueSlug("pool"))
+	if err != nil {
+		t.Fatalf("pool2: %v", err)
+	}
+	app2, err := testEnv.Repo.InsertApp(ctx, core.App{
+		WorkspaceID:       ws.ID,
+		ProjectID:         app1.ProjectID,
+		UserPoolID:        pool2.ID,
+		Type:              "staging",
+		Enabled:           true,
+		PrimaryAuthMethod: core.PrimaryAuthMethodPassword,
+	})
+	if err != nil {
+		t.Fatalf("insert app2: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = testEnv.DB.Pool().Exec(context.Background(), "DELETE FROM apps WHERE id = $1", app2.ID)
+		_, _ = testEnv.DB.Pool().Exec(context.Background(), "DELETE FROM user_pools WHERE id = $1", pool2.ID)
+	})
+	// A control app in a DIFFERENT project must be left untouched.
+	other := testEnv.CreateTestApp(t, ws, acc)
 	defer testEnv.CleanupTestData(t, &TestFixtures{Account: acc, Workspace: ws})
 
-	out, err := testEnv.Repo.UpdateAppOrganizationsEnabled(ctx, ws.ID, app.ProjectID, app.ID, true)
-	if err != nil {
-		t.Fatalf("enable: %v", err)
+	// Enable for the whole project: every app in it flips on.
+	if err := testEnv.Repo.SetProjectOrganizationsEnabled(ctx, ws.ID, app1.ProjectID, true); err != nil {
+		t.Fatalf("enable project: %v", err)
 	}
-	if !out.OrganizationsEnabled {
-		t.Fatalf("expected OrganizationsEnabled true")
+	for _, id := range []uuid.UUID{app1.ID, app2.ID} {
+		got, err := testEnv.Repo.GetAppByID(ctx, id)
+		if err != nil || !got.OrganizationsEnabled {
+			t.Fatalf("app %s expected enabled, err=%v enabled=%v", id, err, got.OrganizationsEnabled)
+		}
+	}
+	// The other project's app is unaffected.
+	if got, err := testEnv.Repo.GetAppByID(ctx, other.ID); err != nil || got.OrganizationsEnabled {
+		t.Fatalf("other-project app should be untouched, err=%v enabled=%v", err, got.OrganizationsEnabled)
 	}
 
+	// A foreign workspace id is a no-op (scoping guard): apps stay enabled.
 	foreign := uuid.Must(uuid.NewV4())
-	if _, err := testEnv.Repo.UpdateAppOrganizationsEnabled(ctx, foreign, app.ProjectID, app.ID, false); !errors.Is(err, repo.ErrNotFound) {
-		t.Fatalf("expected ErrNotFound for foreign workspace, got %v", err)
+	if err := testEnv.Repo.SetProjectOrganizationsEnabled(ctx, foreign, app1.ProjectID, false); err != nil {
+		t.Fatalf("foreign-ws set: expected nil (no-op), got %v", err)
+	}
+	if got, _ := testEnv.Repo.GetAppByID(ctx, app1.ID); !got.OrganizationsEnabled {
+		t.Fatalf("foreign-ws set must not flip app1")
+	}
+
+	// Disable flips every app in the project back off.
+	if err := testEnv.Repo.SetProjectOrganizationsEnabled(ctx, ws.ID, app1.ProjectID, false); err != nil {
+		t.Fatalf("disable project: %v", err)
+	}
+	for _, id := range []uuid.UUID{app1.ID, app2.ID} {
+		if got, _ := testEnv.Repo.GetAppByID(ctx, id); got.OrganizationsEnabled {
+			t.Fatalf("app %s expected disabled after project disable", id)
+		}
 	}
 }
 

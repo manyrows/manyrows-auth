@@ -74,6 +74,74 @@ func TestAdminOrgs_EnableToggle(t *testing.T) {
 	}
 }
 
+func TestAdminOrgs_EnableToggle_SyncsWholeProject(t *testing.T) {
+	ctx := context.Background()
+	router, _ := setupAdminOrgRouter(t)
+	acc := testEnv.CreateTestAccount(t, "aoesync-"+GenerateUniqueSlug("u")+"@example.com")
+	ws := testEnv.CreateTestWorkspace(t, acc, "WS", GenerateUniqueSlug("ws"))
+	app := testEnv.CreateTestApp(t, ws, acc) // "dev" app + a fresh project
+	// A sibling app ("staging") in the SAME project.
+	pool2, err := testEnv.Repo.CreateUserPool(ctx, ws.ID, "Pool2 "+GenerateUniqueSlug("pool"))
+	if err != nil {
+		t.Fatalf("pool2: %v", err)
+	}
+	sibling, err := testEnv.Repo.InsertApp(ctx, core.App{
+		WorkspaceID:       ws.ID,
+		ProjectID:         app.ProjectID,
+		UserPoolID:        pool2.ID,
+		Type:              "staging",
+		Enabled:           true,
+		PrimaryAuthMethod: core.PrimaryAuthMethodPassword,
+	})
+	if err != nil {
+		t.Fatalf("insert sibling: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = testEnv.DB.Pool().Exec(context.Background(), "DELETE FROM apps WHERE id = $1", sibling.ID)
+		_, _ = testEnv.DB.Pool().Exec(context.Background(), "DELETE FROM user_pools WHERE id = $1", pool2.ID)
+	})
+	sess, claims := testEnv.CreateTestSession(t, acc)
+	defer testEnv.CleanupTestData(t, &TestFixtures{Account: acc, Workspace: ws, Session: sess})
+
+	put := func(target *core.App, enabled bool) *httptest.ResponseRecorder {
+		body, _ := json.Marshal(map[string]any{"organizationsEnabled": enabled})
+		req := httptest.NewRequest(http.MethodPut, adminAppOrgBase(ws, target)+"/organizations-enabled", bytes.NewReader(body))
+		testEnv.SetSessionCookie(t, req, claims)
+		rr := httptest.NewRecorder()
+		router.ServeHTTP(rr, req)
+		return rr
+	}
+
+	// Enabling via ONE app's endpoint enables orgs across the whole project.
+	rr := put(app, true)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("enable: expected 200, got %d (%s)", rr.Code, rr.Body.String())
+	}
+	var resp struct {
+		OrganizationsEnabled bool `json:"organizationsEnabled"`
+	}
+	_ = json.Unmarshal(rr.Body.Bytes(), &resp)
+	if !resp.OrganizationsEnabled {
+		t.Fatalf("response for the addressed app should be enabled")
+	}
+	for _, a := range []*core.App{app, &sibling} {
+		got, err := testEnv.Repo.GetAppByID(ctx, a.ID)
+		if err != nil || !got.OrganizationsEnabled {
+			t.Fatalf("app %s expected enabled after project toggle, err=%v", a.ID, err)
+		}
+	}
+
+	// Disabling via the SIBLING's endpoint turns the whole project back off.
+	if rr := put(&sibling, false); rr.Code != http.StatusOK {
+		t.Fatalf("disable: expected 200, got %d (%s)", rr.Code, rr.Body.String())
+	}
+	for _, a := range []*core.App{app, &sibling} {
+		if got, _ := testEnv.Repo.GetAppByID(ctx, a.ID); got.OrganizationsEnabled {
+			t.Fatalf("app %s expected disabled after project toggle off", a.ID)
+		}
+	}
+}
+
 func TestAdminOrgs_EnableMissingField_400(t *testing.T) {
 	router, _ := setupAdminOrgRouter(t)
 	acc := testEnv.CreateTestAccount(t, "aoe2-"+GenerateUniqueSlug("u")+"@example.com")
