@@ -432,7 +432,7 @@ func TestServerDeleteOrganization_HardDeletes(t *testing.T) {
 	_, _ = testEnv.Repo.AddOrganizationMember(ctx, org.ID, owner.ID, core.OrgRoleOwner)
 
 	router := setupServerOrgRouter(t, ws, app)
-	req := httptest.NewRequest(http.MethodDelete, orgBase(app)+"/"+org.ID.String(), nil)
+	req := httptest.NewRequest(http.MethodDelete, orgBase(app)+"/"+org.ID.String()+"?actorUserId="+owner.ID.String(), nil)
 	rr := httptest.NewRecorder()
 	router.ServeHTTP(rr, req)
 	if rr.Code != http.StatusNoContent {
@@ -445,6 +445,59 @@ func TestServerDeleteOrganization_HardDeletes(t *testing.T) {
 	// Members cascade-deleted.
 	if _, err := testEnv.Repo.GetOrganizationMember(ctx, org.ID, owner.ID); !errors.Is(err, repo.ErrNotFound) {
 		t.Fatalf("member should cascade-delete (ErrNotFound), got %v", err)
+	}
+}
+
+// Strict owner-only delete: without an actorUserId the server refuses
+// (fail-closed), so a backend can't delete a tenant without naming the acting
+// end-user whose tier is then verified.
+func TestServerDeleteOrganization_RequiresActorUserId_400(t *testing.T) {
+	ctx := context.Background()
+	acc := testEnv.CreateTestAccount(t, "delna-"+GenerateUniqueSlug("u")+"@example.com")
+	ws := testEnv.CreateTestWorkspace(t, acc, "WS", GenerateUniqueSlug("ws"))
+	app := testEnv.CreateTestApp(t, ws, acc)
+	defer testEnv.CleanupTestData(t, &TestFixtures{Account: acc, Workspace: ws})
+
+	owner, _, _ := testEnv.GetOrCreateUserWithMembership(ctx, "own-"+GenerateUniqueSlug("u")+"@example.com", app, core.UserSourceInvited)
+	org, _ := testEnv.Repo.CreateOrganization(ctx, app.ID, "Acme", GenerateUniqueSlug("acme"), &owner.ID)
+	_, _ = testEnv.Repo.AddOrganizationMember(ctx, org.ID, owner.ID, core.OrgRoleOwner)
+
+	router := setupServerOrgRouter(t, ws, app)
+	req := httptest.NewRequest(http.MethodDelete, orgBase(app)+"/"+org.ID.String(), nil)
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("delete without actorUserId must be 400, got %d (%s)", rr.Code, rr.Body.String())
+	}
+	// A rejected delete must leave the org intact.
+	if _, err := testEnv.Repo.GetOrganizationByID(ctx, org.ID); err != nil {
+		t.Fatalf("org must still exist after rejected delete, got %v", err)
+	}
+}
+
+// Only an owner may delete the org — an admin-tier member is refused (403).
+func TestServerDeleteOrganization_AdminActor_403(t *testing.T) {
+	ctx := context.Background()
+	acc := testEnv.CreateTestAccount(t, "dela-"+GenerateUniqueSlug("u")+"@example.com")
+	ws := testEnv.CreateTestWorkspace(t, acc, "WS", GenerateUniqueSlug("ws"))
+	app := testEnv.CreateTestApp(t, ws, acc)
+	defer testEnv.CleanupTestData(t, &TestFixtures{Account: acc, Workspace: ws})
+
+	owner, _, _ := testEnv.GetOrCreateUserWithMembership(ctx, "own-"+GenerateUniqueSlug("u")+"@example.com", app, core.UserSourceInvited)
+	admin, _, _ := testEnv.GetOrCreateUserWithMembership(ctx, "adm-"+GenerateUniqueSlug("u")+"@example.com", app, core.UserSourceInvited)
+	org, _ := testEnv.Repo.CreateOrganization(ctx, app.ID, "Acme", GenerateUniqueSlug("acme"), &owner.ID)
+	_, _ = testEnv.Repo.AddOrganizationMember(ctx, org.ID, owner.ID, core.OrgRoleOwner)
+	_, _ = testEnv.Repo.AddOrganizationMember(ctx, org.ID, admin.ID, core.OrgRoleAdmin)
+
+	router := setupServerOrgRouter(t, ws, app)
+	req := httptest.NewRequest(http.MethodDelete, orgBase(app)+"/"+org.ID.String()+"?actorUserId="+admin.ID.String(), nil)
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+	if rr.Code != http.StatusForbidden {
+		t.Fatalf("admin-tier actor delete must be 403, got %d (%s)", rr.Code, rr.Body.String())
+	}
+	if _, err := testEnv.Repo.GetOrganizationByID(ctx, org.ID); err != nil {
+		t.Fatalf("org must still exist after forbidden delete, got %v", err)
 	}
 }
 

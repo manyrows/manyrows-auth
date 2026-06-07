@@ -231,12 +231,36 @@ func (handler *RequestHandler) ServerUpdateOrganization(w http.ResponseWriter, r
 	utils.WriteJson(w, toServerOrg(updated))
 }
 
-// ServerDeleteOrganization: DELETE /v1/apps/{appId}/organizations/{orgId}
+// ServerDeleteOrganization: DELETE /v1/apps/{appId}/organizations/{orgId}?actorUserId=...
 // Hard-deletes the org (members/roles/invites cascade, sessions detach). The
 // consuming app deletes its tenant; the admin panel's archive is separate.
+//
+// Owner-only, fail-closed: the caller MUST name the acting end-user via
+// actorUserId, and that user must be an active OWNER of the org. This makes the
+// auth server the referee — a backend can't (accidentally or otherwise) let an
+// admin-tier member delete a tenant.
 func (handler *RequestHandler) ServerDeleteOrganization(w http.ResponseWriter, r *http.Request) {
 	_, org, ok := handler.serverOrgFromURL(w, r)
 	if !ok {
+		return
+	}
+	actorID, err := uuid.FromString(strings.TrimSpace(r.URL.Query().Get("actorUserId")))
+	if err != nil || actorID == uuid.Nil {
+		WriteError(w, r, "error.badRequest", http.StatusBadRequest)
+		return
+	}
+	actor, err := handler.repo.GetOrganizationMember(r.Context(), org.ID, actorID)
+	if err != nil {
+		if errors.Is(err, repo.ErrNotFound) {
+			WriteError(w, r, "error.forbidden", http.StatusForbidden) // not a member
+			return
+		}
+		log.Err(err).Msg("ServerDeleteOrganization: actor lookup failed")
+		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
+		return
+	}
+	if actor.Status != core.OrgMemberStatusActive || actor.OrgRole != core.OrgRoleOwner {
+		WriteError(w, r, "error.forbidden", http.StatusForbidden) // admin/member/disabled → denied
 		return
 	}
 	if err := handler.repo.DeleteOrganization(r.Context(), org.ID); err != nil {
