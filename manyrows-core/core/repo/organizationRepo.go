@@ -269,6 +269,33 @@ RETURNING id, app_id, name, slug, status, created_by, created_at, updated_at;`
 	return &o, nil
 }
 
+// UpdateOrganizationWithUniqueSlug renames an org and sets its slug, appending
+// -2, -3 … to baseSlug on an (app_id, slug) collision with *another* org —
+// mirroring CreateOrganizationWithUniqueSlug so a rename can never fail on a
+// duplicate slug. Updating a row to its own current slug is not a collision, so
+// renaming to the same name (or a name whose slug is unchanged) is idempotent
+// and never grows a suffix. ErrNotFound if the org is missing.
+func (r *Repo) UpdateOrganizationWithUniqueSlug(ctx context.Context, id uuid.UUID, name, baseSlug string) (*core.Organization, error) {
+	name = strings.TrimSpace(name)
+	baseSlug = strings.TrimSpace(baseSlug)
+	if baseSlug == "" {
+		baseSlug = "org"
+	}
+	slug := baseSlug
+	for attempt := 2; attempt < 100; attempt++ {
+		o, err := r.UpdateOrganization(ctx, id, name, slug)
+		if err == nil {
+			return o, nil
+		}
+		var pgErr *pgconn.PgError
+		if !errors.As(err, &pgErr) || pgErr.Code != "23505" {
+			return nil, err
+		}
+		slug = fmt.Sprintf("%s-%d", baseSlug, attempt)
+	}
+	return nil, errors.New("could not allocate unique organization slug")
+}
+
 // ArchiveOrganization sets status='archived'. ErrNotFound if missing.
 func (r *Repo) ArchiveOrganization(ctx context.Context, id uuid.UUID) error {
 	const q = `UPDATE organizations SET status = 'archived', updated_at = now() WHERE id = $1;`

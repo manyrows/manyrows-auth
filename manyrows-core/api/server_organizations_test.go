@@ -519,6 +519,125 @@ func TestServerAddOrgMember_InPoolNonMemberByEmail_409(t *testing.T) {
 	}
 }
 
+// A name-only rename via the server API silently regenerates the slug from the
+// new name (Pier's path — Pier never sends a slug).
+func TestServerUpdateOrganization_RegeneratesSlugFromName(t *testing.T) {
+	ctx := context.Background()
+	acc := testEnv.CreateTestAccount(t, "urs-"+GenerateUniqueSlug("u")+"@example.com")
+	ws := testEnv.CreateTestWorkspace(t, acc, "WS", GenerateUniqueSlug("ws"))
+	app := testEnv.CreateTestApp(t, ws, acc)
+	defer testEnv.CleanupTestData(t, &TestFixtures{Account: acc, Workspace: ws})
+
+	org, err := testEnv.Repo.CreateOrganization(ctx, app.ID, "Drum Kingdom", "sdafadsf", nil)
+	if err != nil {
+		t.Fatalf("create org: %v", err)
+	}
+
+	router := setupServerOrgRouter(t, ws, app)
+	body, _ := json.Marshal(map[string]string{"name": "Foo Bar"})
+	req := httptest.NewRequest(http.MethodPatch, orgBase(app)+"/"+org.ID.String(), bytes.NewReader(body))
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("rename: got %d (%s)", rr.Code, rr.Body.String())
+	}
+	var resp serverOrgResp
+	_ = json.Unmarshal(rr.Body.Bytes(), &resp)
+	if resp.Name != "Foo Bar" || resp.Slug != "foo-bar" {
+		t.Fatalf("expected name 'Foo Bar' slug 'foo-bar', got name %q slug %q", resp.Name, resp.Slug)
+	}
+}
+
+// Regenerating onto a slug another org already holds appends -2 instead of
+// failing with a conflict.
+func TestServerUpdateOrganization_SlugCollisionSuffix(t *testing.T) {
+	ctx := context.Background()
+	acc := testEnv.CreateTestAccount(t, "ucs-"+GenerateUniqueSlug("u")+"@example.com")
+	ws := testEnv.CreateTestWorkspace(t, acc, "WS", GenerateUniqueSlug("ws"))
+	app := testEnv.CreateTestApp(t, ws, acc)
+	defer testEnv.CleanupTestData(t, &TestFixtures{Account: acc, Workspace: ws})
+
+	if _, err := testEnv.Repo.CreateOrganization(ctx, app.ID, "Existing", "foo", nil); err != nil {
+		t.Fatalf("create org A: %v", err)
+	}
+	orgB, err := testEnv.Repo.CreateOrganization(ctx, app.ID, "Other", "bar", nil)
+	if err != nil {
+		t.Fatalf("create org B: %v", err)
+	}
+
+	router := setupServerOrgRouter(t, ws, app)
+	body, _ := json.Marshal(map[string]string{"name": "Foo"})
+	req := httptest.NewRequest(http.MethodPatch, orgBase(app)+"/"+orgB.ID.String(), bytes.NewReader(body))
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("rename: got %d (%s)", rr.Code, rr.Body.String())
+	}
+	var resp serverOrgResp
+	_ = json.Unmarshal(rr.Body.Bytes(), &resp)
+	if resp.Slug != "foo-2" {
+		t.Fatalf("expected collision slug 'foo-2', got %q", resp.Slug)
+	}
+}
+
+// An explicit slug in the request is honored (still run through the collision
+// loop); a name omitted leaves the name untouched.
+func TestServerUpdateOrganization_ExplicitSlugHonored(t *testing.T) {
+	ctx := context.Background()
+	acc := testEnv.CreateTestAccount(t, "ues-"+GenerateUniqueSlug("u")+"@example.com")
+	ws := testEnv.CreateTestWorkspace(t, acc, "WS", GenerateUniqueSlug("ws"))
+	app := testEnv.CreateTestApp(t, ws, acc)
+	defer testEnv.CleanupTestData(t, &TestFixtures{Account: acc, Workspace: ws})
+
+	org, err := testEnv.Repo.CreateOrganization(ctx, app.ID, "Acme", "acme", nil)
+	if err != nil {
+		t.Fatalf("create org: %v", err)
+	}
+
+	router := setupServerOrgRouter(t, ws, app)
+	body, _ := json.Marshal(map[string]string{"slug": "custom-handle"})
+	req := httptest.NewRequest(http.MethodPatch, orgBase(app)+"/"+org.ID.String(), bytes.NewReader(body))
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("update: got %d (%s)", rr.Code, rr.Body.String())
+	}
+	var resp serverOrgResp
+	_ = json.Unmarshal(rr.Body.Bytes(), &resp)
+	if resp.Slug != "custom-handle" || resp.Name != "Acme" {
+		t.Fatalf("expected slug 'custom-handle' name 'Acme', got slug %q name %q", resp.Slug, resp.Name)
+	}
+}
+
+// Renaming to the same name (slug already matches) is idempotent — the org's own
+// row is not treated as a collision, so no -2 suffix is appended.
+func TestServerUpdateOrganization_SameNameKeepsSlug(t *testing.T) {
+	ctx := context.Background()
+	acc := testEnv.CreateTestAccount(t, "usn-"+GenerateUniqueSlug("u")+"@example.com")
+	ws := testEnv.CreateTestWorkspace(t, acc, "WS", GenerateUniqueSlug("ws"))
+	app := testEnv.CreateTestApp(t, ws, acc)
+	defer testEnv.CleanupTestData(t, &TestFixtures{Account: acc, Workspace: ws})
+
+	org, err := testEnv.Repo.CreateOrganization(ctx, app.ID, "Acme", "acme", nil)
+	if err != nil {
+		t.Fatalf("create org: %v", err)
+	}
+
+	router := setupServerOrgRouter(t, ws, app)
+	body, _ := json.Marshal(map[string]string{"name": "Acme"})
+	req := httptest.NewRequest(http.MethodPatch, orgBase(app)+"/"+org.ID.String(), bytes.NewReader(body))
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("rename: got %d (%s)", rr.Code, rr.Body.String())
+	}
+	var resp serverOrgResp
+	_ = json.Unmarshal(rr.Body.Bytes(), &resp)
+	if resp.Slug != "acme" {
+		t.Fatalf("idempotent rename should keep slug 'acme', got %q", resp.Slug)
+	}
+}
+
 // Seeding an org owner who is not an app member must be rejected (404).
 func TestServerCreateOrganization_NonAppMemberOwner_404(t *testing.T) {
 	ctx := context.Background()

@@ -202,18 +202,26 @@ func (handler *RequestHandler) ServerUpdateOrganization(w http.ResponseWriter, r
 		WriteError(w, r, "error.badRequest", http.StatusBadRequest)
 		return
 	}
-	name, slug := org.Name, org.Slug
+	name := org.Name
 	if body.Name != nil && strings.TrimSpace(*body.Name) != "" {
 		name = strings.TrimSpace(*body.Name)
 	}
-	if body.Slug != nil && strings.TrimSpace(*body.Slug) != "" {
-		slug = strings.TrimSpace(*body.Slug)
+	// Resolve the base slug. An explicit slug is honored as-is (matching create);
+	// otherwise, whenever the name is being set, the slug is silently regenerated
+	// from the new name. With neither field, the current slug is preserved. The
+	// repo runs the chosen base through a -2, -3 … collision loop in every case,
+	// so a rename can never fail on a duplicate slug.
+	baseSlug := org.Slug
+	switch {
+	case body.Slug != nil && strings.TrimSpace(*body.Slug) != "":
+		baseSlug = strings.TrimSpace(*body.Slug)
+	case body.Name != nil && strings.TrimSpace(*body.Name) != "":
+		baseSlug = simpleSlug(name)
 	}
-	updated, err := handler.repo.UpdateOrganization(r.Context(), org.ID, name, slug)
+	updated, err := handler.repo.UpdateOrganizationWithUniqueSlug(r.Context(), org.ID, name, baseSlug)
 	if err != nil {
-		var pgErr *pgconn.PgError
-		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
-			WriteError(w, r, "error.conflict", http.StatusConflict)
+		if errors.Is(err, repo.ErrNotFound) {
+			WriteError(w, r, "error.notFound", http.StatusNotFound)
 			return
 		}
 		log.Err(err).Msg("ServerUpdateOrganization failed")
