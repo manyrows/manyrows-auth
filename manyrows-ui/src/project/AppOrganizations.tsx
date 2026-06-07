@@ -28,7 +28,7 @@ import {
   Tooltip,
   Typography,
 } from "@mui/material";
-import { Archive, ArchiveRestore, SquarePen, Trash2, TriangleAlert, Users } from "lucide-react";
+import { Archive, ArchiveRestore, Copy, SquarePen, Trash2, TriangleAlert, Users } from "lucide-react";
 import type { Project, Workspace } from "../core.ts";
 import type { App } from "./AppAuthMethods.tsx";
 import { errText } from "./AppAuthMethods.tsx";
@@ -331,6 +331,7 @@ export default function AppOrganizations({ project, appId }: Props) {
               <TableHead>
                 <TableRow>
                   <TableCell><Typography variant="subtitle2">{t("organizations.col.name", { defaultValue: "Name" })}</Typography></TableCell>
+                  <TableCell><Typography variant="subtitle2">{t("organizations.col.id", { defaultValue: "ID" })}</Typography></TableCell>
                   <TableCell><Typography variant="subtitle2">{t("organizations.col.slug", { defaultValue: "Slug" })}</Typography></TableCell>
                   <TableCell><Typography variant="subtitle2">{t("organizations.col.status", { defaultValue: "Status" })}</Typography></TableCell>
                   <TableCell align="center"><Typography variant="subtitle2">{t("organizations.col.members", { defaultValue: "Members" })}</Typography></TableCell>
@@ -344,6 +345,27 @@ export default function AppOrganizations({ project, appId }: Props) {
                   return (
                     <TableRow key={org.id} hover sx={{ opacity: archived ? 0.6 : 1 }}>
                       <TableCell>{org.name}</TableCell>
+                      <TableCell>
+                        <Stack direction="row" spacing={0.5} alignItems="center">
+                          <Typography sx={{ fontFamily: "var(--font-mono)", fontSize: 12.5, color: "text.secondary" }}>
+                            {org.id}
+                          </Typography>
+                          <Tooltip title={t("organizations.copyId", { defaultValue: "Copy ID" })}>
+                            <IconButton
+                              size="small"
+                              onClick={() => {
+                                navigator.clipboard.writeText(org.id).then(
+                                  () => enqueueSnackbar(t("organizations.idCopied", { defaultValue: "Organization ID copied" }), { variant: "success" }),
+                                  () => enqueueSnackbar(t("organizations.copyFailed", { defaultValue: "Copy failed" }), { variant: "error" }),
+                                );
+                              }}
+                              sx={{ color: "text.secondary" }}
+                            >
+                              <Copy size={12} strokeWidth={1.75} />
+                            </IconButton>
+                          </Tooltip>
+                        </Stack>
+                      </TableCell>
                       <TableCell>
                         <Typography sx={{ fontFamily: "var(--font-mono)", fontSize: 12.5 }}>{org.slug}</Typography>
                       </TableCell>
