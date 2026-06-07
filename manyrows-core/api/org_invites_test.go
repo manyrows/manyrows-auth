@@ -7,6 +7,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -182,6 +183,152 @@ func TestServerCreateOrgInvite_PersistsAndLists(t *testing.T) {
 	router.ServeHTTP(rr, req)
 	if rr.Code != http.StatusNoContent {
 		t.Fatalf("revoke: expected 204, got %d (%s)", rr.Code, rr.Body.String())
+	}
+}
+
+// setupAcceptInviteRouter mounts the PUBLIC org-invite accept handler behind
+// test middleware that injects workspace + app into context (mirrors the
+// /auth group's workspace/app-context middleware in the real external router).
+// The handler reads ws+app from context, so the bare router suffices.
+func setupAcceptInviteRouter(t *testing.T, ws *core.Workspace, app *core.App) (*chi.Mux, *TestServices) {
+	t.Helper()
+	svc := NewTestServices(t)
+	r := chi.NewRouter()
+	r.Use(func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+			ctx := core.WithApp(core.WithWorkspace(req.Context(), ws), app)
+			next.ServeHTTP(w, req.WithContext(ctx))
+		})
+	})
+	r.Get("/x/{workspaceSlug}/apps/{appId}/auth/org-invite", svc.Handler.AcceptOrgInvite)
+	return r, svc
+}
+
+// seedOrgWithAppURL creates an account/workspace/app (with an AppURL set so the
+// accept flow has a redirect target) plus an org owned by a fresh owner.
+func seedOrgWithAppURL(t *testing.T, ctx context.Context) (acc *core.Account, ws *core.Workspace, app *core.App, org *core.Organization, owner *core.User) {
+	t.Helper()
+	acc = testEnv.CreateTestAccount(t, "ai-"+GenerateUniqueSlug("u")+"@example.com")
+	ws = testEnv.CreateTestWorkspace(t, acc, "WS", GenerateUniqueSlug("ws"))
+	app = testEnv.CreateTestApp(t, ws, acc)
+
+	appURL := "https://app.example.com"
+	if _, err := testEnv.Repo.UpdateAppEnabled(ctx, ws.ID, app.ProjectID, app.ID, true, repo.AppCoreUpdate{AppURL: &appURL}); err != nil {
+		t.Fatalf("set app url: %v", err)
+	}
+	app = mustReloadApp(t, ctx, app.ID)
+
+	owner, _, _ = testEnv.GetOrCreateUserWithMembership(ctx, "own-"+GenerateUniqueSlug("u")+"@example.com", app, core.UserSourceInvited)
+	org, _ = testEnv.Repo.CreateOrganization(ctx, app.ID, "Acme", GenerateUniqueSlug("acme"), &owner.ID)
+	_, _ = testEnv.Repo.AddOrganizationMember(ctx, org.ID, owner.ID, core.OrgRoleOwner)
+	return
+}
+
+func TestAcceptOrgInvite_HappyPath(t *testing.T) {
+	ctx := context.Background()
+	acc, ws, app, org, owner := seedOrgWithAppURL(t, ctx)
+	defer testEnv.CleanupTestData(t, &TestFixtures{Account: acc, Workspace: ws})
+
+	router, _ := setupAcceptInviteRouter(t, ws, app)
+
+	// Seed a pending invite with a token hash matching what the handler
+	// derives via adminAuthService.HashMagicToken (generateTestMagicToken
+	// mirrors that exact derivation: base64url(raw) -> sha256-hex).
+	raw, hash := generateTestMagicToken(t)
+	inviteeEmail := "newbie-" + GenerateUniqueSlug("u") + "@example.com"
+	if _, err := testEnv.Repo.CreateOrganizationInvite(ctx, org.ID, inviteeEmail, core.OrgRoleAdmin, nil, &owner.ID, hash, time.Now().UTC().Add(7*24*time.Hour)); err != nil {
+		t.Fatalf("seed invite: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/x/"+ws.Slug+"/apps/"+app.ID.String()+"/auth/org-invite?token="+raw, nil)
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusFound {
+		t.Fatalf("accept: expected 302, got %d (%s)", rr.Code, rr.Body.String())
+	}
+	loc := rr.Header().Get("Location")
+	if !strings.HasPrefix(loc, "https://app.example.com") {
+		t.Fatalf("redirect should target app URL, got %q", loc)
+	}
+	if !strings.Contains(loc, "mr_session=") {
+		t.Fatalf("expected session in redirect fragment, got %q", loc)
+	}
+
+	// Invitee is now an org member with the invite's role.
+	invitee, _ := testEnv.Repo.GetUserByEmail(ctx, inviteeEmail, app)
+	if invitee == nil {
+		t.Fatalf("invitee user not created")
+	}
+	if m, err := testEnv.Repo.GetOrganizationMember(ctx, org.ID, invitee.ID); err != nil || m.OrgRole != core.OrgRoleAdmin {
+		t.Fatalf("invitee not an admin member: %v %+v", err, m)
+	}
+	// Email is marked verified by the sign-in tail.
+	if reloaded, _ := testEnv.Repo.GetUserByID(ctx, invitee.ID); reloaded == nil || !reloaded.IsEmailVerified() {
+		t.Fatalf("invitee email should be verified after accept, got %+v", reloaded)
+	}
+	// Invite is now accepted.
+	gotInv, _ := testEnv.Repo.GetOrganizationInviteByTokenHash(ctx, hash)
+	if gotInv == nil || gotInv.Status != core.OrgInviteStatusAccepted {
+		t.Fatalf("invite should be accepted, got %+v", gotInv)
+	}
+}
+
+func TestAcceptOrgInvite_ExpiredToken(t *testing.T) {
+	ctx := context.Background()
+	acc, ws, app, org, owner := seedOrgWithAppURL(t, ctx)
+	defer testEnv.CleanupTestData(t, &TestFixtures{Account: acc, Workspace: ws})
+
+	router, _ := setupAcceptInviteRouter(t, ws, app)
+
+	// Seed an already-expired invite.
+	raw, hash := generateTestMagicToken(t)
+	inviteeEmail := "exp-" + GenerateUniqueSlug("u") + "@example.com"
+	if _, err := testEnv.Repo.CreateOrganizationInvite(ctx, org.ID, inviteeEmail, core.OrgRoleAdmin, nil, &owner.ID, hash, time.Now().UTC().Add(-1*time.Hour)); err != nil {
+		t.Fatalf("seed expired invite: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/x/"+ws.Slug+"/apps/"+app.ID.String()+"/auth/org-invite?token="+raw, nil)
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+
+	// Expired -> redirect to app URL with mr_invite_error, NO session.
+	if rr.Code != http.StatusFound {
+		t.Fatalf("expired accept: expected 302, got %d (%s)", rr.Code, rr.Body.String())
+	}
+	loc := rr.Header().Get("Location")
+	if !strings.Contains(loc, "mr_invite_error=") {
+		t.Fatalf("expected mr_invite_error in redirect, got %q", loc)
+	}
+	if strings.Contains(loc, "mr_session=") {
+		t.Fatalf("expired invite must not mint a session, got %q", loc)
+	}
+	// No membership created.
+	if invitee, _ := testEnv.Repo.GetUserByEmail(ctx, inviteeEmail, app); invitee != nil {
+		if m, _ := testEnv.Repo.GetOrganizationMember(ctx, org.ID, invitee.ID); m != nil {
+			t.Fatalf("expired invite should not have created a membership, got %+v", m)
+		}
+	}
+}
+
+func TestAcceptOrgInvite_UnknownToken(t *testing.T) {
+	ctx := context.Background()
+	acc, ws, app, _, _ := seedOrgWithAppURL(t, ctx)
+	defer testEnv.CleanupTestData(t, &TestFixtures{Account: acc, Workspace: ws})
+
+	router, _ := setupAcceptInviteRouter(t, ws, app)
+
+	raw, _ := generateTestMagicToken(t) // never persisted as an invite
+	req := httptest.NewRequest(http.MethodGet, "/x/"+ws.Slug+"/apps/"+app.ID.String()+"/auth/org-invite?token="+raw, nil)
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusFound {
+		t.Fatalf("unknown token: expected 302, got %d (%s)", rr.Code, rr.Body.String())
+	}
+	loc := rr.Header().Get("Location")
+	if !strings.Contains(loc, "mr_invite_error=") || strings.Contains(loc, "mr_session=") {
+		t.Fatalf("unknown token should redirect with mr_invite_error and no session, got %q", loc)
 	}
 }
 

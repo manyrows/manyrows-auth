@@ -66,6 +66,7 @@ func (a *AppService) externalAPIRouter(h *api.RequestHandler, corsMiddleware fun
 			auth.Post("/verify", h.WorkspaceLogin)
 			auth.Post("/request-magic-link", h.WorkspaceLoginRequestMagicLink)
 			auth.Get("/magic-link", h.WorkspaceConsumeMagicLink)
+			auth.Get("/org-invite", h.AcceptOrgInvite)
 			auth.Post("/refresh", h.WorkspaceRefresh)
 			auth.Post("/logout", h.WorkspacePublicLogout)
 			auth.Post("/register", h.WorkspaceRegister)

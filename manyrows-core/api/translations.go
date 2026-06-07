@@ -113,6 +113,7 @@ var apiTranslations = map[string]map[string]string{
 		"error.appUrlRequired":        "An App URL must be configured to send invite emails",
 		"error.invitePending":         "A pending invite already exists for this email",
 		"error.inviteEmailFailed":     "Could not send the invite email; please try again",
+		"error.invalidInvite":         "This invitation is invalid or has expired",
 
 		// ID errors
 		"error.missingProjectId":     "Missing project ID",

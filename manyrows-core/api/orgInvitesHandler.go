@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -169,4 +170,102 @@ func (handler *RequestHandler) ServerRevokeOrgInvite(w http.ResponseWriter, r *h
 func buildOrgInviteAcceptURL(baseURL, workspaceSlug string, appID uuid.UUID, token string) string {
 	baseURL = strings.TrimRight(baseURL, "/")
 	return baseURL + "/x/" + workspaceSlug + "/apps/" + appID.String() + "/auth/org-invite?token=" + token
+}
+
+// AcceptOrgInvite: GET /x/{workspaceSlug}/apps/{appId}/auth/org-invite?token=
+// Public (no API key). Validates the invite token, onboards the invitee
+// (bypassing AllowRegistration — an invite is explicit consent, scoped only to
+// the invited email), adds the org membership, marks the invite accepted, and
+// signs the invitee in by reusing the shared magic-link sign-in tail (so 2FA is
+// still enforced). On any validation failure it redirects to the app URL with
+// mr_invite_error=<code> (or 400 error.invalidInvite if no app URL is set).
+func (handler *RequestHandler) AcceptOrgInvite(w http.ResponseWriter, r *http.Request) {
+	ws, wsOk := core.WorkspaceFromContext(r.Context())
+	app, appOk := core.AppFromContext(r.Context())
+	if !wsOk || ws == nil || !appOk || app == nil {
+		WriteError(w, r, "error.appNotFound", http.StatusNotFound)
+		return
+	}
+
+	appURL := ""
+	if app.AppURL != nil {
+		appURL = strings.TrimSpace(*app.AppURL)
+	}
+	// On any failure: bounce to the app URL with mr_invite_error so AppKit can
+	// surface it. With no app URL configured there is nowhere to bounce, so we
+	// emit a plain 400.
+	failRedirect := func(code string) {
+		if appURL == "" {
+			WriteError(w, r, "error.invalidInvite", http.StatusBadRequest)
+			return
+		}
+		http.Redirect(w, r, appendFragment(appURL, "mr_invite_error="+url.QueryEscape(code)), http.StatusFound)
+	}
+
+	token := strings.TrimSpace(r.URL.Query().Get("token"))
+	if token == "" {
+		failRedirect("invalid_token")
+		return
+	}
+
+	inv, err := handler.repo.GetOrganizationInviteByTokenHash(r.Context(), handler.adminAuthService.HashMagicToken(token))
+	if err != nil || inv == nil {
+		failRedirect("invalid_token")
+		return
+	}
+	if inv.Status != core.OrgInviteStatusPending || time.Now().After(inv.ExpiresAt) {
+		failRedirect("invite_expired")
+		return
+	}
+
+	// Confirm the invite's org belongs to this app and is active. Guards
+	// against a token leaking across apps and against accepting into a
+	// suspended/deleted org.
+	org, err := handler.repo.GetOrganizationByID(r.Context(), inv.OrgID)
+	if err != nil || org == nil || org.AppID != app.ID || org.Status != core.OrgStatusActive {
+		failRedirect("invalid_token")
+		return
+	}
+
+	// Onboard the invitee, bypassing AllowRegistration — the invite IS the
+	// consent, and it is scoped to exactly inv.Email (not arbitrary signups).
+	user, created, err := handler.repo.GetOrCreateUser(r.Context(), inv.Email, app, core.UserSourceInvited)
+	if err != nil {
+		log.Err(err).Msg("AcceptOrgInvite: GetOrCreateUser failed")
+		failRedirect("server_error")
+		return
+	}
+	if _, _, err := handler.repo.EnsureAppMember(r.Context(), app.ID, user.ID, core.UserSourceInvited); err != nil {
+		log.Err(err).Msg("AcceptOrgInvite: EnsureAppMember failed")
+		failRedirect("server_error")
+		return
+	}
+	if !user.IsEmailVerified() {
+		if verr := handler.repo.SetUserEmailVerified(r.Context(), user.ID, time.Now().UTC()); verr != nil {
+			log.Err(verr).Msg("AcceptOrgInvite: SetUserEmailVerified failed")
+		}
+	}
+
+	// Add the org membership + mark the invite accepted (atomic). If the invite
+	// is no longer pending (concurrent accept / already joined), treat it as
+	// already-joined and still sign the invitee in.
+	if err := handler.repo.AcceptOrganizationInviteTx(r.Context(), inv.ID, user.ID); err != nil {
+		if !errors.Is(err, repo.ErrInviteNotPending) {
+			log.Err(err).Msg("AcceptOrgInvite: accept tx failed")
+			failRedirect("server_error")
+			return
+		}
+	}
+
+	// Reload the user so the sign-in tail sees the freshly-verified flag.
+	signedIn, lerr := handler.repo.GetUserByID(r.Context(), user.ID)
+	if lerr != nil || signedIn == nil {
+		log.Err(lerr).Msg("AcceptOrgInvite: reload user failed")
+		failRedirect("server_error")
+		return
+	}
+
+	// rememberMe=false for invites. Reuse AuthMethodMagicLink for the auth-log
+	// method (no dedicated org-invite method const exists).
+	handler.finishClientSignInRedirect(w, r, ws, app, signedIn, created, false, appURL, core.AuthMethodMagicLink, inv.Email, failRedirect)
 }
