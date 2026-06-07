@@ -28,7 +28,7 @@ import {
   Tooltip,
   Typography,
 } from "@mui/material";
-import { Archive, ArchiveRestore, SquarePen, Users } from "lucide-react";
+import { Archive, ArchiveRestore, SquarePen, Trash2, TriangleAlert, Users } from "lucide-react";
 import type { Project, Workspace } from "../core.ts";
 import type { App } from "./AppAuthMethods.tsx";
 import { errText } from "./AppAuthMethods.tsx";
@@ -103,6 +103,12 @@ export default function AppOrganizations({ project, appId }: Props) {
 
   // Restore (unarchive) — direct action, no confirm dialog. Tracks the in-flight row.
   const [restoringId, setRestoringId] = React.useState<string | null>(null);
+
+  // Delete (permanent) — archived orgs only; type-the-name to confirm.
+  const [deleteOpen, setDeleteOpen] = React.useState(false);
+  const [deleteOrg, setDeleteOrg] = React.useState<OrgRow | null>(null);
+  const [deleteConfirm, setDeleteConfirm] = React.useState("");
+  const [deleteSaving, setDeleteSaving] = React.useState(false);
 
   const loadOrgs = React.useCallback(async () => {
     try {
@@ -220,6 +226,28 @@ export default function AppOrganizations({ project, appId }: Props) {
       enqueueSnackbar(errText(e), { variant: "error" });
     } finally {
       setRestoringId(null);
+    }
+  }
+
+  function openDelete(org: OrgRow) {
+    setDeleteOrg(org);
+    setDeleteConfirm("");
+    setDeleteOpen(true);
+  }
+
+  async function confirmDelete() {
+    if (!deleteOrg) return;
+    setDeleteSaving(true);
+    try {
+      await axios.delete(`${appURL}/organizations/${deleteOrg.id}/permanent`);
+      setDeleteOpen(false);
+      setDeleteOrg(null);
+      await loadOrgs();
+      enqueueSnackbar(t("organizations.deleted", { defaultValue: "Organization deleted" }), { variant: "success" });
+    } catch (e) {
+      enqueueSnackbar(errText(e), { variant: "error" });
+    } finally {
+      setDeleteSaving(false);
     }
   }
 
@@ -341,17 +369,26 @@ export default function AppOrganizations({ project, appId }: Props) {
                             </IconButton>
                           </Tooltip>
                           {archived ? (
-                            <Tooltip title={t("organizations.restore", { defaultValue: "Restore" })}>
-                              <span>
-                                <IconButton
-                                  size="small"
-                                  disabled={restoringId === org.id}
-                                  onClick={() => void doRestore(org)}
-                                >
-                                  <ArchiveRestore size={14} strokeWidth={1.75} />
-                                </IconButton>
-                              </span>
-                            </Tooltip>
+                            <>
+                              <Tooltip title={t("organizations.restore", { defaultValue: "Restore" })}>
+                                <span>
+                                  <IconButton
+                                    size="small"
+                                    disabled={restoringId === org.id}
+                                    onClick={() => void doRestore(org)}
+                                  >
+                                    <ArchiveRestore size={14} strokeWidth={1.75} />
+                                  </IconButton>
+                                </span>
+                              </Tooltip>
+                              <Tooltip title={t("organizations.delete", { defaultValue: "Delete" })}>
+                                <span>
+                                  <IconButton size="small" color="error" disabled={restoringId === org.id} onClick={() => openDelete(org)}>
+                                    <Trash2 size={14} strokeWidth={1.75} />
+                                  </IconButton>
+                                </span>
+                              </Tooltip>
+                            </>
                           ) : (
                             <Tooltip title={t("organizations.archive", { defaultValue: "Archive" })}>
                               <span>
@@ -462,6 +499,58 @@ export default function AppOrganizations({ project, appId }: Props) {
             {archiveSaving ? <CircularProgress size={16} /> : t("organizations.archive", { defaultValue: "Archive" })}
           </Button>
         </DialogActions>
+      </Dialog>
+
+      {/* Delete (permanent) — archived orgs only, type-to-confirm */}
+      <Dialog open={deleteOpen} onClose={() => !deleteSaving && setDeleteOpen(false)} fullWidth maxWidth="xs">
+        <DialogTitle>{t("organizations.deleteTitle", { defaultValue: "Delete organization permanently" })}</DialogTitle>
+        <Box
+          component="form"
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (deleteConfirm.trim() === deleteOrg?.name) void confirmDelete();
+          }}
+        >
+          <DialogContent>
+            <Stack spacing={1.5}>
+              <Alert severity="warning" icon={<TriangleAlert size={16} strokeWidth={1.75} />}>
+                {t("organizations.deleteWarning", {
+                  defaultValue:
+                    'Permanently delete "{{name}}"? This cannot be undone. All members, roles, and invitations are removed. Your app must make sure nothing still references this organization before you delete it.',
+                  name: deleteOrg?.name,
+                })}
+              </Alert>
+              <Typography variant="body2" color="text.secondary">
+                {t("organizations.typeToConfirm", {
+                  name: deleteOrg?.name,
+                  defaultValue: 'Type "{{name}}" to confirm.',
+                })}
+              </Typography>
+              <TextField
+                size="small"
+                autoFocus
+                value={deleteConfirm}
+                onChange={(e) => setDeleteConfirm(e.target.value)}
+                placeholder={deleteOrg?.name}
+                disabled={deleteSaving}
+              />
+            </Stack>
+          </DialogContent>
+          <DialogActions>
+            <Button onClick={() => setDeleteOpen(false)} disabled={deleteSaving}>
+              {t("apps.dialog.cancel", { defaultValue: "Cancel" })}
+            </Button>
+            <Button
+              type="submit"
+              variant="contained"
+              color="error"
+              disableElevation
+              disabled={deleteConfirm.trim() !== deleteOrg?.name || deleteSaving}
+            >
+              {deleteSaving ? <CircularProgress size={16} /> : t("organizations.delete", { defaultValue: "Delete" })}
+            </Button>
+          </DialogActions>
+        </Box>
       </Dialog>
     </Box>
   );
