@@ -12,6 +12,11 @@ var (
 	ErrConflict   = errors.New("conflict")
 	ErrBadRequest = errors.New("bad request")
 
+	// ErrLastOwner is returned by the guarded org-member mutations when a
+	// remove/demote would leave the organization with zero active owners.
+	// Handlers map it to 409 Conflict.
+	ErrLastOwner = errors.New("organization must retain at least one active owner")
+
 	// ErrPoolInUse is returned by DeleteUserPool when one or more apps
 	// still point at the pool. Handler maps to 409 Conflict so admins
 	// see "this pool is in use" rather than a generic 500.
@@ -24,6 +29,23 @@ var (
 	// (the typical case is "this Google account is linked to a different
 	// pool user").
 	ErrIdentitySubjectMismatch = errors.New("user identity subject mismatch")
+
+	// ErrInvitePending means a pending invite already exists for this (org, email).
+	ErrInvitePending = errors.New("a pending invite already exists for this email")
+
+	// ErrInviteNotPending is returned by AcceptOrganizationInviteTx when the
+	// invite has already been accepted (status == accepted) — the invitee is
+	// already a member, so the handler may treat it as already-joined.
+	ErrInviteNotPending = errors.New("invite is not pending")
+
+	// ErrInviteRevoked is returned by AcceptOrganizationInviteTx when the invite
+	// was revoked. Distinct from ErrInviteNotPending so the handler can refuse
+	// to sign the invitee in (a revoked invite must NEVER mint a session).
+	ErrInviteRevoked = errors.New("invite has been revoked")
+
+	// ErrInviteExpired is returned by AcceptOrganizationInviteTx when the
+	// invite is still pending but past its expires_at.
+	ErrInviteExpired = errors.New("invite has expired")
 )
 
 func IsUniqueViolation(err error) bool {

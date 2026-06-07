@@ -349,6 +349,41 @@ func (handler *RequestHandler) WorkspaceConsumeMagicLink(w http.ResponseWriter, 
 		return
 	}
 
+	handler.finishClientSignInRedirect(w, r, ws, ctxApp, user, created, rememberMe, appURL, core.AuthMethodMagicLink, ml.Email, failRedirect)
+	return
+}
+
+// finishClientSignInRedirect runs the post-identity-resolution tail
+// shared by the magic-link and org-invite accept flows: marks email
+// verified, enforces the disabled check, enforces TOTP/Require2FA
+// (bouncing via the URL fragment), ensures the default role, mints a
+// session + token pair, sets cookies, records success, and redirects to
+// appURL with mr_session/mr_refresh/mr_expires in the fragment. `method`
+// is the auth-log method (core.AuthMethodMagicLink for magic links).
+// `sourceEmail` is the email the flow was initiated for (for
+// webhooks/logs). `failRedirect` is the caller's failure redirect
+// closure. On the 2FA bounce paths this returns WITHOUT creating a
+// session.
+func (handler *RequestHandler) finishClientSignInRedirect(
+	w http.ResponseWriter, r *http.Request,
+	ws *core.Workspace, ctxApp *core.App, user *core.User,
+	created bool, rememberMe bool, appURL string,
+	method core.AuthLogMethod, sourceEmail string,
+	failRedirect func(code string),
+) {
+	logFail := func(reason core.AuthLogFailureReason) {
+		handler.writeAuthLogFromRequest(r, AuthLogInput{
+			WorkspaceID:    ws.ID,
+			AppID:          &ctxApp.ID,
+			Event:          core.AuthEventLoginFailed,
+			Method:         method,
+			Outcome:        core.AuthOutcomeFailed,
+			FailureReason:  reason,
+			EmailAttempted: sourceEmail,
+			ActorType:      core.AuthActorSelf,
+		})
+	}
+
 	if !user.IsEmailVerified() {
 		now := time.Now().UTC()
 		if err := handler.repo.SetUserEmailVerified(r.Context(), user.ID, now); err != nil {
@@ -426,7 +461,7 @@ func (handler *RequestHandler) WorkspaceConsumeMagicLink(w http.ResponseWriter, 
 		return
 	}
 
-	handler.recordMagicLinkSuccess(r, ws.ID, ctxApp.ID, &userID, &sessionID, user.Email, ml.Email, created)
+	handler.recordClientSignInSuccess(r, ws.ID, ctxApp.ID, &userID, &sessionID, user.Email, sourceEmail, created, method)
 
 	// Set cookies before the redirect so cookie-mode clients land
 	// already-authenticated. Bearer-mode clients (AppKit-direct,
@@ -441,24 +476,27 @@ func (handler *RequestHandler) WorkspaceConsumeMagicLink(w http.ResponseWriter, 
 	http.Redirect(w, r, appendFragment(appURL, frag.Encode()), http.StatusFound)
 }
 
-// recordMagicLinkSuccess writes the auth log entries, dispatches
+// recordClientSignInSuccess writes the auth log entries, dispatches
 // webhooks, and bumps the user's last-login timestamp once the
 // session has been minted. When `created` is true, a register.success
 // log + user.register webhook precede the login.success pair —
-// matching the OTP and OAuth flows.
-func (handler *RequestHandler) recordMagicLinkSuccess(
+// matching the OTP and OAuth flows. `method` is the auth-log method
+// (e.g. core.AuthMethodMagicLink); the webhook `"method"` string is
+// mapped from it via webhookMethodString.
+func (handler *RequestHandler) recordClientSignInSuccess(
 	r *http.Request,
 	workspaceID, appID uuid.UUID,
 	userID, sessionID *uuid.UUID,
 	userEmail, sourceEmail string,
 	created bool,
+	method core.AuthLogMethod,
 ) {
 	if created {
 		handler.writeAuthLogFromRequest(r, AuthLogInput{
 			WorkspaceID:   workspaceID,
 			AppID:         &appID,
 			Event:         core.AuthEventRegisterSuccess,
-			Method:        core.AuthMethodMagicLink,
+			Method:        method,
 			Outcome:       core.AuthOutcomeSuccess,
 			SubjectUserID: userID,
 			ActorType:     core.AuthActorSelf,
@@ -475,7 +513,7 @@ func (handler *RequestHandler) recordMagicLinkSuccess(
 		WorkspaceID:   workspaceID,
 		AppID:         &appID,
 		Event:         core.AuthEventLoginSuccess,
-		Method:        core.AuthMethodMagicLink,
+		Method:        method,
 		Outcome:       core.AuthOutcomeSuccess,
 		SubjectUserID: userID,
 		ActorType:     core.AuthActorSelf,
@@ -486,12 +524,25 @@ func (handler *RequestHandler) recordMagicLinkSuccess(
 		"userId": *userID,
 		"email":  sourceEmail,
 		"appId":  appID,
-		"method": "magicLink",
+		"method": webhookMethodString(method),
 	})
 	if userID != nil {
 		loginAt := time.Now().UTC()
 		_ = handler.repo.UpdateUserLastLogin(r.Context(), *userID, loginAt)
 		_ = handler.repo.UpdateAppUserLastLogin(r.Context(), appID, *userID, loginAt)
+	}
+}
+
+// webhookMethodString maps an auth-log method to the camelCase string
+// used in the user.login webhook payload's "method" field. Magic links
+// historically emitted "magicLink"; unknown methods fall back to the
+// raw auth-log method value.
+func webhookMethodString(method core.AuthLogMethod) string {
+	switch method {
+	case core.AuthMethodMagicLink:
+		return "magicLink"
+	default:
+		return string(method)
 	}
 }
 

@@ -59,7 +59,7 @@ export default function EmptyState({
         )}
         <Typography
           sx={{
-            fontFamily: "var(--font-serif)",
+            fontFamily: "var(--font-sans)",
             fontSize: 20,
             fontWeight: 500,
             letterSpacing: "-0.02em",

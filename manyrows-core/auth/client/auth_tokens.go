@@ -66,6 +66,16 @@ func (a *AuthService) IssueAccessToken(s *core.ClientSession, ttl time.Duration,
 		claims.AppID = s.AppID.String()
 		claims.Audience = jwt.ClaimStrings{s.AppID.String()}
 	}
+	// The org claim is ADVISORY for external token consumers: it reflects the
+	// session's active org at mint time and is NOT rotated when the user
+	// switches orgs (the switch updates the DB session only). It can therefore
+	// lag by up to one access-token TTL. The auth server never trusts this
+	// claim — it reads client_sessions.organization_id from the DB every
+	// request. External backends doing org-sensitive authz from the JWT must
+	// treat it as advisory and re-validate against the auth server.
+	if s.OrganizationID != nil && *s.OrganizationID != uuid.Nil {
+		claims.OrgID = s.OrganizationID.String()
+	}
 
 	current := a.jwtKeys.Load().Current
 	tok := jwt.NewWithClaims(jwt.SigningMethodES256, claims)

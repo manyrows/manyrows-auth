@@ -94,11 +94,10 @@ function getTheme() {
           body: {
             backgroundColor: bgDefault,
             fontFeatureSettings: '"ss01", "cv11"',
-            // Font-family custom properties for places that want serif
-            // display or mono via sx={{ fontFamily: "var(--font-serif)" }}.
-            // The Typography defaults stay on the sans (Geist) stack.
+            // Font-family custom properties. Titles and body share the
+            // sans (Geist) stack; the mono stack is available via
+            // sx={{ fontFamily: "var(--font-mono)" }}.
             "--font-sans": 'Geist, "Inter Tight", Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif',
-            "--font-serif": 'Fraunces, "Iowan Old Style", Georgia, serif',
             "--font-mono": '"Geist Mono", "JetBrains Mono", ui-monospace, Menlo, monospace',
           },
           // tabular-nums for numeric content
@@ -224,10 +223,9 @@ function getTheme() {
       MuiDialogTitle: {
         styleOverrides: {
           root: {
-            // Dialog titles use the editorial serif so they feel
-            // weighted but still calm - pairs with the Geist body
-            // copy beneath.
-            fontFamily: '"Fraunces", "Iowan Old Style", Georgia, serif',
+            // Dialog titles share the Geist sans stack with the body
+            // copy beneath - weighted but calm.
+            fontFamily: "var(--font-sans)",
             fontWeight: 500,
             fontSize: 22,
             letterSpacing: "-0.02em",

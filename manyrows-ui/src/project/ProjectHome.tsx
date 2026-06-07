@@ -48,6 +48,7 @@ const ConfigKeys = React.lazy(() => import("./ConfigKeys.tsx"));
 const AppDetail = React.lazy(() => import("./AppDetail.tsx"));
 const AppAuthMethods = React.lazy(() => import("./AppAuthMethods.tsx"));
 const AppSecurity = React.lazy(() => import("./AppSecurity.tsx"));
+const AppOrganizations = React.lazy(() => import("./AppOrganizations.tsx"));
 const AppDiff = React.lazy(() => import("./AppDiff.tsx"));
 const AppInsights = React.lazy(() => import("./AppInsights.tsx"));
 const Sessions = React.lazy(() => import("../workspace/Sessions.tsx"));
@@ -343,7 +344,7 @@ export default function ProjectHome(props: Props) {
         </Box>
 
         <Box sx={{ p: { xs: 2, sm: 3 } }}>
-            {/* Editorial app header - mono overline, Fraunces serif
+            {/* Editorial app header - mono overline, sans (Geist)
                 name with env pip, and a small mono meta line for app id
                 + auth domain. The title itself isn't a button anymore;
                 a discrete "switch" link to its right opens the
@@ -353,7 +354,7 @@ export default function ProjectHome(props: Props) {
                 <Stack direction="row" spacing={1.5} alignItems="center" sx={{ minWidth: 0 }}>
                   <Typography
                     sx={{
-                      fontFamily: "var(--font-serif)",
+                      fontFamily: "var(--font-sans)",
                       fontSize: 22,
                       fontWeight: 500,
                       letterSpacing: "-0.02em",
@@ -456,6 +457,8 @@ export default function ProjectHome(props: Props) {
                 <AppAuthMethods project={project} workspace={workspace} appId={appId} />
               ) : page === "appDetail" && appId && appPage === "security" ? (
                 <AppSecurity project={project} workspace={workspace} appId={appId} />
+              ) : page === "appDetail" && appId && appPage === "organizations" ? (
+                <AppOrganizations project={project} workspace={workspace} appId={appId} />
               ) : page === "appDetail" && appId && appPage === "features" ? (
                 <Features project={project} workspace={workspace} appId={appId} />
               ) : page === "appDetail" && appId && appPage === "config" ? (

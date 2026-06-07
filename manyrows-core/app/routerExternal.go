@@ -66,6 +66,7 @@ func (a *AppService) externalAPIRouter(h *api.RequestHandler, corsMiddleware fun
 			auth.Post("/verify", h.WorkspaceLogin)
 			auth.Post("/request-magic-link", h.WorkspaceLoginRequestMagicLink)
 			auth.Get("/magic-link", h.WorkspaceConsumeMagicLink)
+			auth.Get("/org-invite", h.AcceptOrgInvite)
 			auth.Post("/refresh", h.WorkspaceRefresh)
 			auth.Post("/logout", h.WorkspacePublicLogout)
 			auth.Post("/register", h.WorkspaceRegister)
@@ -255,6 +256,22 @@ func (a *AppService) serverAPIRouter(h *api.RequestHandler) *chi.Mux {
 	// Remove a user from this app; prunes the pool identity if the user is
 	// left with no app memberships.
 	appRouter.Delete("/users/{userId}", h.ServerRemoveUser)
+
+	// Organizations (app-scoped tenants). Lets a customer app (e.g. Pier)
+	// delegate its workspace/org model to ManyRows.
+	appRouter.Post("/organizations", h.ServerCreateOrganization)
+	appRouter.Get("/organizations", h.ServerListOrganizationsForUser)
+	appRouter.Get("/organizations/{orgId}", h.ServerGetOrganization)
+	appRouter.Patch("/organizations/{orgId}", h.ServerUpdateOrganization)
+	appRouter.Delete("/organizations/{orgId}", h.ServerDeleteOrganization)
+	appRouter.Get("/organizations/{orgId}/members", h.ServerListOrgMembers)
+	appRouter.Post("/organizations/{orgId}/members", h.ServerAddOrgMember)
+	appRouter.Get("/organizations/{orgId}/members/{userId}", h.ServerGetOrgMember)
+	appRouter.Patch("/organizations/{orgId}/members/{userId}", h.ServerSetOrgMemberRole)
+	appRouter.Delete("/organizations/{orgId}/members/{userId}", h.ServerRemoveOrgMember)
+	appRouter.Post("/organizations/{orgId}/invites", h.ServerCreateOrgInvite)
+	appRouter.Get("/organizations/{orgId}/invites", h.ServerListOrgInvites)
+	appRouter.Delete("/organizations/{orgId}/invites/{inviteId}", h.ServerRevokeOrgInvite)
 
 	r.Mount("/v1/apps/{appId}", appRouter)
 

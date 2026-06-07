@@ -104,12 +104,16 @@ var apiTranslations = map[string]map[string]string{
 		"error.apiKeyNotFound":        "API key not found",
 		"error.sessionNotFound":       "Session not found",
 		"error.appNotFound":           "App not found",
+		"error.organizationNotFound":  "Organization not found",
 		"error.appDisabled":           "App is disabled",
 		"error.invalidStatus":         "Invalid status (expected \"active\" or \"disabled\")",
 		"error.permissionsInvalid":    "One or more permissions are invalid",
 		"error.invalidEmail":          "Invalid email address",
 		"error.batchTooLarge":         "Batch too large (max %d users per request)",
 		"error.appUrlRequired":        "An App URL must be configured to send invite emails",
+		"error.invitePending":         "A pending invite already exists for this email",
+		"error.inviteEmailFailed":     "Could not send the invite email; please try again",
+		"error.invalidInvite":         "This invitation is invalid or has expired",
 
 		// ID errors
 		"error.missingProjectId":     "Missing project ID",
@@ -145,6 +149,7 @@ var apiTranslations = map[string]map[string]string{
 		"error.keyInvalid":                "Invalid key format",
 		"error.keyExists":                 "Key already exists",
 		"error.conflict":                  "Resource conflict",
+		"error.userNotSignedIn":           "That email isn't a registered user of this app yet — they must sign in once before being added.",
 		"error.secretsNotSupportedViaAPI": "Secret config values must be set via the admin UI",
 
 		// Workspace account errors

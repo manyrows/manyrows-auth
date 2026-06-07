@@ -101,6 +101,10 @@ var translations = map[string]map[string]string{
 		"team_invite.subject": "You've been invited to %s on {brand}",
 		"team_invite.body":    "Hi,\n\n%s has invited you to join \"%s\" as an admin on {brand}.\n\nClick the link below to accept the invitation and create your account:\n\n%s\n\nThis link expires in 7 days.\nIf you didn't expect this, you can ignore this email.\n",
 
+		// Org invite (app end-user invited to an organization)
+		"org_invite.subject": "You've been invited to %s",
+		"org_invite.body":    "%s invited you to join %s.\n\nAccept your invitation and sign in:\n%s\n\nThis link expires in 7 days. If you weren't expecting this, you can ignore this email.",
+
 		// User invite (app user)
 		"user_invite.subject": "You've been added to %s",
 		"user_invite.body":    "Hi,\n\nYou've been added to %s.\n\nTo get started, visit the app and sign in:\n\n%s\n\nIf you don't have a password yet, click \"Forgot password\" on the sign-in page to set one up.\n",

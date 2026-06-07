@@ -301,6 +301,25 @@ func (handler *RequestHandler) HandleCreateApp(w http.ResponseWriter, r *http.Re
 		pool = created
 	}
 
+	// Organizations-enabled is conceptually a project-level setting stored
+	// per-app (duplicated across the project's apps). A new app inherits the
+	// project's current value so it stays in sync with its siblings — enabled
+	// if ANY existing app in the project is enabled (defensive against pre-
+	// existing drift). The first app in a project has no siblings → false.
+	orgsEnabled := false
+	siblings, err := handler.repo.GetAppsByWorkspaceAndProjectID(r.Context(), ws.ID, projectID)
+	if err != nil {
+		log.Err(err).Msg("failed to load project apps for organizations-enabled inheritance")
+		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
+		return
+	}
+	for _, s := range siblings {
+		if s.OrganizationsEnabled {
+			orgsEnabled = true
+			break
+		}
+	}
+
 	a := core.App{
 		ID:                   utils.NewUUID(),
 		WorkspaceID:          ws.ID,
@@ -311,6 +330,7 @@ func (handler *RequestHandler) HandleCreateApp(w http.ResponseWriter, r *http.Re
 		Enabled:              enabled,
 		AppURL:               appURL,
 		PrimaryAuthMethod:    primaryAuthMethod,
+		OrganizationsEnabled: orgsEnabled,
 		AllowAccountDeletion: true,  // safe default, users can self-serve
 		AllowEmailChange:     false, // advanced; opt-in per app (see admin UI)
 	}

@@ -117,6 +117,16 @@ func (a *AuthService) CreateSessionWithOptions(
 		RememberMe: rememberMe,
 	}
 
+	// Default active org: when the app is org-enabled and the user belongs to
+	// exactly one org, pin it as the session's active org so single-org users
+	// land authorized without an explicit switch. Best-effort — never fail an
+	// otherwise-successful login over this.
+	if app, err := a.repo.GetAppByID(ctx, appID); err == nil && app.OrganizationsEnabled {
+		if orgs, err := a.repo.ListOrganizationsForUserInApp(ctx, appID, userID); err == nil && len(orgs) == 1 {
+			ses.OrganizationID = &orgs[0].ID
+		}
+	}
+
 	if err := a.repo.InsertClientSession(ctx, &ses); err != nil {
 		return nil, err
 	}

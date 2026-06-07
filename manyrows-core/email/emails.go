@@ -382,3 +382,23 @@ func (s *Service) SendTeamInviteEmail(toEmail string, inviterName string, worksp
 	}
 	return s.Send(&email)
 }
+
+// BuildOrgInviteEmail composes the org-invite email (plain text). Unlike the
+// admin-facing Send* methods, it only builds the message — it does NOT send.
+// The caller (the create-invite handler) delivers it via sendWorkspaceEmail so
+// it picks up per-workspace branding, and so the handler can roll back the
+// invite if the send fails.
+//
+// Placeholder order mirrors the "org_invite.*" templates:
+//   - subject: orgName
+//   - body:    inviterLabel, orgName, acceptLink
+func BuildOrgInviteEmail(lang, toEmail, fromName, inviterLabel, orgName, acceptLink string) *Email {
+	subject := fmt.Sprintf(T(lang, "org_invite.subject"), orgName)
+	body := fmt.Sprintf(T(lang, "org_invite.body"), inviterLabel, orgName, acceptLink)
+	return &Email{
+		To:      toEmail,
+		From:    fromName,
+		Subject: subject,
+		Body:    body,
+	}
+}

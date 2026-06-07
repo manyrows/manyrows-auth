@@ -36,11 +36,13 @@ type AppMeResponse struct {
 // is included so AppKit can configure itself on boot — no separate
 // `cookieMode` prop required on the React adapter.
 type AppMeAppPart struct {
-	Name          string   `json:"name"`
-	HasAccess     bool     `json:"hasAccess"`
-	Roles         []string `json:"roles"`
-	Permissions   []string `json:"permissions"`
-	TransportMode string   `json:"transportMode"`
+	Name          string                            `json:"name"`
+	HasAccess     bool                              `json:"hasAccess"`
+	Roles         []string                          `json:"roles"`
+	Permissions   []string                          `json:"permissions"`
+	TransportMode string                            `json:"transportMode"`
+	Organization  *core.OrganizationMembershipView  `json:"organization,omitempty"`
+	Organizations []core.OrganizationMembershipView `json:"organizations,omitempty"`
 }
 
 // CheckPermissionResponse is returned by the permission-check endpoint.
@@ -212,6 +214,125 @@ func (handler *RequestHandler) resolveRolesAndPermissions(
 	return roles, perms, nil
 }
 
+// resolveOrgMemberRoleIDs returns the project-role IDs for a user's membership
+// in a specific org, but ONLY when that org is a live (active, non-archived)
+// tenant of the given app AND the user is an active member. Any other case —
+// org missing/archived, org belongs to a different app, membership missing or
+// not active — returns (nil, nil, nil): no access. This is the single guarded
+// chokepoint shared by the session resolution path (effectiveRoleIDs) and the
+// server-to-server permission check, so revocation (disabling a member,
+// archiving an org) takes effect on the very next request.
+func (handler *RequestHandler) resolveOrgMemberRoleIDs(
+	ctx context.Context, app *core.App, userID, orgID uuid.UUID,
+) ([]uuid.UUID, *core.OrganizationMember, error) {
+	if orgID == uuid.Nil {
+		return nil, nil, nil
+	}
+	org, err := handler.repo.GetOrganizationByID(ctx, orgID)
+	if err != nil {
+		if errors.Is(err, repo.ErrNotFound) {
+			return nil, nil, nil
+		}
+		return nil, nil, err
+	}
+	if org.AppID != app.ID || org.Status != core.OrgStatusActive {
+		return nil, nil, nil
+	}
+	member, err := handler.repo.GetOrganizationMember(ctx, orgID, userID)
+	if err != nil {
+		if errors.Is(err, repo.ErrNotFound) {
+			return nil, nil, nil
+		}
+		return nil, nil, err
+	}
+	if member.Status != core.OrgMemberStatusActive {
+		return nil, nil, nil
+	}
+	roleIDs, err := handler.repo.GetOrgMemberRoleIDs(ctx, member.ID)
+	if err != nil {
+		return nil, nil, err
+	}
+	return roleIDs, member, nil
+}
+
+// effectiveRoleIDs returns the project-role IDs that apply to this user in this
+// app right now: org-member roles when the app is org-enabled and the session
+// has an active org, otherwise the legacy per-app user_roles. The returned
+// member is non-nil only in the org branch (caller uses it for the tier).
+func (handler *RequestHandler) effectiveRoleIDs(
+	ctx context.Context, app *core.App, projectID, userID uuid.UUID, ses *core.ClientSession,
+) ([]uuid.UUID, *core.OrganizationMember, error) {
+	if app.OrganizationsEnabled {
+		// Org-enabled: org membership is the single source of truth. No active
+		// org (0-org user, or not yet switched) → no roles. Never fall back to
+		// the legacy per-app user_roles path on an org-enabled app. The helper
+		// re-validates org status, org→app ownership, and member status so a
+		// disabled member or archived org loses access on the next request.
+		if ses.OrganizationID == nil || *ses.OrganizationID == uuid.Nil {
+			return nil, nil, nil
+		}
+		return handler.resolveOrgMemberRoleIDs(ctx, app, userID, *ses.OrganizationID)
+	}
+
+	// Legacy per-app path (org-disabled apps only).
+	memberRoles, err := handler.repo.GetUserRolesByUserAndAppID(ctx, projectID, userID, app.ID)
+	if err != nil {
+		return nil, nil, err
+	}
+	roleIDs := make([]uuid.UUID, len(memberRoles))
+	for i, mr := range memberRoles {
+		roleIDs[i] = mr.RoleID
+	}
+	return roleIDs, nil, nil
+}
+
+// resolveActiveRolesAndPermissions resolves slugs for the active context. In the
+// org branch, direct per-app user_permissions are NOT merged (org membership is
+// the single source of truth). Legacy branch keeps the existing direct-perm merge.
+func (handler *RequestHandler) resolveActiveRolesAndPermissions(
+	ctx context.Context, app *core.App, projectID, userID uuid.UUID, ses *core.ClientSession,
+) ([]string, []string, *core.OrganizationMember, error) {
+	roleIDs, member, err := handler.effectiveRoleIDs(ctx, app, projectID, userID, ses)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+
+	var roles, perms []string
+	if len(roleIDs) > 0 {
+		roles, perms, err = handler.repo.GetRoleSlugsAndPermissionSlugsForRoleIDs(ctx, projectID, roleIDs)
+		if err != nil {
+			return nil, nil, nil, err
+		}
+	}
+
+	// Legacy branch only (org-disabled apps): merge direct user_permissions.
+	// Org-enabled apps never merge direct per-app permissions — org membership
+	// is the single source of truth, even when there's no active org.
+	if member == nil && !app.OrganizationsEnabled {
+		directPerms, err := handler.repo.GetDirectPermissionSlugs(ctx, projectID, userID, app.ID)
+		if err != nil {
+			return nil, nil, nil, err
+		}
+		seen := make(map[string]struct{}, len(perms))
+		for _, p := range perms {
+			seen[p] = struct{}{}
+		}
+		for _, p := range directPerms {
+			if _, ok := seen[p]; !ok {
+				perms = append(perms, p)
+			}
+		}
+	}
+
+	if roles == nil {
+		roles = []string{}
+	}
+	if perms == nil {
+		perms = []string{}
+	}
+	return roles, perms, member, nil
+}
+
 // =====================
 // Handlers
 // =====================
@@ -228,11 +349,30 @@ func (handler *RequestHandler) GetAppMe(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	roles, perms, err := handler.resolveRolesAndPermissions(ctx, project.ID, identity.User.ID, app.ID)
+	roles, perms, member, err := handler.resolveActiveRolesAndPermissions(ctx, app, project.ID, identity.User.ID, ses)
 	if err != nil {
 		log.Err(err).Msg("Could not resolve roles/permissions")
 		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 		return
+	}
+
+	var activeOrg *core.OrganizationMembershipView
+	var orgList []core.OrganizationMembershipView
+	if app.OrganizationsEnabled {
+		orgList, err = handler.repo.ListOrganizationsForUserInApp(ctx, app.ID, identity.User.ID)
+		if err != nil {
+			log.Err(err).Msg("Could not list organizations")
+			WriteError(w, r, "error.internalError", http.StatusInternalServerError)
+			return
+		}
+		if member != nil {
+			for i := range orgList {
+				if orgList[i].ID == member.OrgID {
+					activeOrg = &orgList[i]
+					break
+				}
+			}
+		}
 	}
 
 	transportMode := app.TransportMode
@@ -248,6 +388,8 @@ func (handler *RequestHandler) GetAppMe(w http.ResponseWriter, r *http.Request) 
 			Roles:         roles,
 			Permissions:   perms,
 			TransportMode: transportMode,
+			Organization:  activeOrg,
+			Organizations: orgList,
 		},
 	}
 
@@ -282,11 +424,15 @@ func (handler *RequestHandler) GetAppData(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	// Get user's role IDs for role-based flag filtering
-	memberRoles, _ := handler.repo.GetUserRolesByUserAndAppID(ctx, project.ID, identity.User.ID, app.ID)
-	userRoleIDs := make(map[uuid.UUID]struct{}, len(memberRoles))
-	for _, mr := range memberRoles {
-		userRoleIDs[mr.RoleID] = struct{}{}
+	roleIDList, _, err := handler.effectiveRoleIDs(ctx, app, project.ID, identity.User.ID, ses)
+	if err != nil {
+		log.Err(err).Msg("Could not resolve effective role ids")
+		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
+		return
+	}
+	userRoleIDs := make(map[uuid.UUID]struct{}, len(roleIDList))
+	for _, rid := range roleIDList {
+		userRoleIDs[rid] = struct{}{}
 	}
 
 	filtered := make([]core.EvaluatedFeatureFlag, 0, len(flags))
@@ -352,7 +498,7 @@ func (handler *RequestHandler) CheckPermission(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	_, perms, err := handler.resolveRolesAndPermissions(ctx, project.ID, identity.User.ID, app.ID)
+	_, perms, _, err := handler.resolveActiveRolesAndPermissions(ctx, app, project.ID, identity.User.ID, ses)
 	if err != nil {
 		log.Err(err).Msg("Could not resolve permissions")
 		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
@@ -412,16 +558,44 @@ func (handler *RequestHandler) ServerCheckPermission(w http.ResponseWriter, r *h
 		return
 	}
 
-	// Only answer for members of the calling app (see requireAppMember).
-	if !handler.requireAppMember(w, r, app.ID, accountID) {
-		return
-	}
-
-	_, perms, err := handler.resolveRolesAndPermissions(ctx, project.ID, accountID, app.ID)
-	if err != nil {
-		log.Err(err).Msg("Could not resolve permissions for server check-permission")
-		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
-		return
+	var perms []string
+	if app.OrganizationsEnabled {
+		// No session/active-org server-side, so the caller must name the org.
+		// Fail closed (400) rather than fall back to the legacy per-app roles
+		// the org model ignores. App membership is implied by org membership.
+		orgIDStr := strings.TrimSpace(r.URL.Query().Get("organizationId"))
+		orgID, perr := uuid.FromString(orgIDStr)
+		if orgIDStr == "" || perr != nil || orgID == uuid.Nil {
+			WriteError(w, r, "error.badRequest", http.StatusBadRequest)
+			return
+		}
+		roleIDs, _, rerr := handler.resolveOrgMemberRoleIDs(ctx, app, accountID, orgID)
+		if rerr != nil {
+			log.Err(rerr).Msg("Could not resolve org permissions for server check-permission")
+			WriteError(w, r, "error.internalError", http.StatusInternalServerError)
+			return
+		}
+		if len(roleIDs) > 0 {
+			var serr error
+			_, perms, serr = handler.repo.GetRoleSlugsAndPermissionSlugsForRoleIDs(ctx, project.ID, roleIDs)
+			if serr != nil {
+				log.Err(serr).Msg("Could not resolve org permission slugs for server check-permission")
+				WriteError(w, r, "error.internalError", http.StatusInternalServerError)
+				return
+			}
+		}
+	} else {
+		// Only answer for members of the calling app (see requireAppMember).
+		if !handler.requireAppMember(w, r, app.ID, accountID) {
+			return
+		}
+		var rerr error
+		_, perms, rerr = handler.resolveRolesAndPermissions(ctx, project.ID, accountID, app.ID)
+		if rerr != nil {
+			log.Err(rerr).Msg("Could not resolve permissions for server check-permission")
+			WriteError(w, r, "error.internalError", http.StatusInternalServerError)
+			return
+		}
 	}
 
 	allowed := slices.Contains(perms, permission)

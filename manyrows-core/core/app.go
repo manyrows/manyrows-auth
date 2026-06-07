@@ -145,6 +145,13 @@ type App struct {
 	DefaultRoleID       *uuid.UUID `json:"defaultRoleId,omitempty"`
 	AllowedEmailDomains []string   `json:"allowedEmailDomains,omitempty"` // e.g., ["acme.com", "example.org"]
 
+	// OrganizationsEnabled turns this app into a multi-tenant app: end-user
+	// role/permission resolution keys off the session's active org instead
+	// of per-app user_roles. Default false → legacy flat behavior.
+	OrganizationsEnabled bool `json:"organizationsEnabled"`
+	// OrgCreationPolicy gates who may create an org: self_serve | invite_only | admin_only.
+	OrgCreationPolicy string `json:"orgCreationPolicy"`
+
 	// AllowAccountDeletion gates the "Delete my account" button in
 	// AppKit's profile dialog. Default true preserves the existing
 	// behaviour for every app already in the wild. The server-side

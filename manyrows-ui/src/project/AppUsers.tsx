@@ -1326,10 +1326,9 @@ export default function AppUsers({ project, appId: appIdProp }: Props) {
         <Stack direction="row" alignItems="flex-end" spacing={1.5} sx={{ flexWrap: "wrap", gap: 1 }}>
           <Box sx={{ flex: 1, minWidth: 0 }}>
             <Stack direction="row" spacing={1.5} alignItems="center" sx={{ mb: 0.5 }}>
-              <Box sx={{ width: 28, height: 2, bgcolor: "primary.main", borderRadius: 1, flexShrink: 0 }} />
               <Typography
                 sx={{
-                  fontFamily: "var(--font-serif)",
+                  fontFamily: "var(--font-sans)",
                   fontSize: 28,
                   fontWeight: 500,
                   letterSpacing: "-0.025em",

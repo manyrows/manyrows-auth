@@ -35,8 +35,8 @@ func (r *Repo) InsertApp(ctx context.Context, a core.App) (core.App, error) {
 	}
 
 	const q = `
-		INSERT INTO apps (id, workspace_id, project_id, type, enabled, allow_registration, allow_account_deletion, allow_email_change, default_role_id, allowed_email_domains, primary_auth_method, auth_method_google, require_2fa, google_oauth_client_id, description, app_url, user_pool_id)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+		INSERT INTO apps (id, workspace_id, project_id, type, enabled, allow_registration, allow_account_deletion, allow_email_change, default_role_id, allowed_email_domains, primary_auth_method, auth_method_google, require_2fa, google_oauth_client_id, description, app_url, user_pool_id, organizations_enabled)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
 		RETURNING ` + appColumnsReturning
 
 	var out core.App
@@ -58,6 +58,7 @@ func (r *Repo) InsertApp(ctx context.Context, a core.App) (core.App, error) {
 		a.Description,
 		a.AppURL,
 		a.UserPoolID,
+		a.OrganizationsEnabled,
 	), &out)
 	if err != nil {
 		return core.App{}, err
@@ -256,12 +257,14 @@ func scanAppFull(row appRowScanner, a *core.App) error {
 		&a.QRSignInEnabled,
 		&a.NewDeviceAlertsEnabled,
 		&a.BruteForceProtectionEnabled,
+		&a.OrganizationsEnabled,
+		&a.OrgCreationPolicy,
 		&a.UserPoolID,
 		&a.UserPoolName,
 	)
 }
 
-const appColumnsReturning = `id, workspace_id, project_id, type, (select name from projects where id = apps.project_id) as project_name, enabled, allow_registration, allow_account_deletion, allow_email_change, default_role_id, allowed_email_domains, primary_auth_method, auth_method_google, require_2fa, google_oauth_client_id, google_oauth_client_secret_encrypted, auth_method_apple, apple_services_id, apple_team_id, apple_key_id, apple_private_key_encrypted, auth_method_microsoft, microsoft_client_id, microsoft_client_secret_encrypted, microsoft_tenant, auth_method_github, github_client_id, github_client_secret_encrypted, auth_method_kakao, kakao_client_id, kakao_client_secret_encrypted, auth_method_naver, naver_client_id, naver_client_secret_encrypted, naver_trust_unverified_email, app_url, auth_domain, session_ttl_minutes, idle_timeout_minutes, remember_me_ttl_minutes, access_token_ttl_minutes, max_sessions_per_user, created_at, updated_at, description, password_min_length, password_min_zxcvbn_score, cookie_domain, transport_mode, session_cookie_samesite, qr_sign_in_enabled, new_device_alerts_enabled, brute_force_protection_enabled, user_pool_id, (select name from user_pools where id = apps.user_pool_id) as user_pool_name`
+const appColumnsReturning = `id, workspace_id, project_id, type, (select name from projects where id = apps.project_id) as project_name, enabled, allow_registration, allow_account_deletion, allow_email_change, default_role_id, allowed_email_domains, primary_auth_method, auth_method_google, require_2fa, google_oauth_client_id, google_oauth_client_secret_encrypted, auth_method_apple, apple_services_id, apple_team_id, apple_key_id, apple_private_key_encrypted, auth_method_microsoft, microsoft_client_id, microsoft_client_secret_encrypted, microsoft_tenant, auth_method_github, github_client_id, github_client_secret_encrypted, auth_method_kakao, kakao_client_id, kakao_client_secret_encrypted, auth_method_naver, naver_client_id, naver_client_secret_encrypted, naver_trust_unverified_email, app_url, auth_domain, session_ttl_minutes, idle_timeout_minutes, remember_me_ttl_minutes, access_token_ttl_minutes, max_sessions_per_user, created_at, updated_at, description, password_min_length, password_min_zxcvbn_score, cookie_domain, transport_mode, session_cookie_samesite, qr_sign_in_enabled, new_device_alerts_enabled, brute_force_protection_enabled, organizations_enabled, org_creation_policy, user_pool_id, (select name from user_pools where id = apps.user_pool_id) as user_pool_name`
 
 // AppRegistrationUpdate carries self-registration settings + the
 // require-2FA flag (a cross-cutting policy that applies to all sign-in
@@ -678,4 +681,25 @@ func (r *Repo) CountAppsByProjectID(ctx context.Context, projectID uuid.UUID) (i
 func (r *Repo) CountAppsByWorkspaceID(ctx context.Context, workspaceID uuid.UUID) (int, error) {
 	const q = `select count(*) from apps where workspace_id = $1`
 	return r.scalarCount(ctx, q, workspaceID)
+}
+
+// SetAppOrganizationsEnabled flips the per-app org-mode flag.
+func (r *Repo) SetAppOrganizationsEnabled(ctx context.Context, appID uuid.UUID, enabled bool) error {
+	const q = `UPDATE apps SET organizations_enabled = $2, updated_at = now() WHERE id = $1;`
+	return r.execAffectingOne(ctx, ErrNotFound, q, appID, enabled)
+}
+
+// SetProjectOrganizationsEnabled flips organizations_enabled for every app in a
+// project. The flag is conceptually project-level but stored per-app (duplicated
+// across the project's apps); this keeps every copy in sync. Scoped to
+// workspace+project so an admin can't reach another workspace's apps by guessing
+// a project id. A project with no apps yet is a no-op success.
+func (r *Repo) SetProjectOrganizationsEnabled(ctx context.Context, workspaceID, projectID uuid.UUID, enabled bool) error {
+	const q = `
+		update apps
+		set organizations_enabled = $3,
+		    updated_at = now()
+		where workspace_id = $1 and project_id = $2;`
+	_, err := r.db.Pool().Exec(ctx, q, workspaceID, projectID, enabled)
+	return err
 }

@@ -60,11 +60,13 @@ func newTestSession() *core.ClientSession {
 	sid := uuid.Must(uuid.NewV4())
 	uid := uuid.Must(uuid.NewV4())
 	aid := uuid.Must(uuid.NewV4())
+	oid := uuid.Must(uuid.NewV4())
 	return &core.ClientSession{
-		ID:        sid,
-		UserID:    uid,
-		AppID:     &aid,
-		ExpiresAt: time.Now().Add(24 * time.Hour).UTC(),
+		ID:             sid,
+		UserID:         uid,
+		AppID:          &aid,
+		OrganizationID: &oid,
+		ExpiresAt:      time.Now().Add(24 * time.Hour).UTC(),
 	}
 }
 
@@ -94,6 +96,9 @@ func TestIssueAccessToken_SetsIssuerAndAudience(t *testing.T) {
 	}
 	if c.AppID != s.AppID.String() {
 		t.Errorf("app claim: got %q want %q", c.AppID, s.AppID.String())
+	}
+	if c.OrgID != s.OrganizationID.String() {
+		t.Errorf("org claim: got %q want %q", c.OrgID, s.OrganizationID.String())
 	}
 	if c.SessionID != s.ID.String() {
 		t.Errorf("sid: got %q want %q", c.SessionID, s.ID.String())

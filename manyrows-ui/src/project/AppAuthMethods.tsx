@@ -102,6 +102,7 @@ export type App = {
   // app id + /qr-sign-in). Present whenever BASE_URL is pinned.
   qrSignInUrl?: string;
   bruteForceProtectionEnabled?: boolean;
+  organizationsEnabled?: boolean;
 };
 
 type RolesResponse = { roles: Role[] };

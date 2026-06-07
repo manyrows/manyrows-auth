@@ -75,7 +75,7 @@ export default function Home() {
           </Typography>
           <Typography
             sx={{
-              fontFamily: "var(--font-serif)",
+              fontFamily: "var(--font-sans)",
               fontSize: 44,
               fontWeight: 500,
               letterSpacing: "-0.025em",
