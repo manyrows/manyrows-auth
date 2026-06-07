@@ -282,6 +282,21 @@ func (r *Repo) ArchiveOrganization(ctx context.Context, id uuid.UUID) error {
 	return nil
 }
 
+// RestoreOrganization sets status='active' (inverse of ArchiveOrganization).
+// Idempotent for an already-active org (the row still matches). ErrNotFound if
+// the org no longer exists.
+func (r *Repo) RestoreOrganization(ctx context.Context, id uuid.UUID) error {
+	const q = `UPDATE organizations SET status = 'active', updated_at = now() WHERE id = $1;`
+	ct, err := r.db.Pool().Exec(ctx, q, id)
+	if err != nil {
+		return err
+	}
+	if ct.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
 // DeleteOrganization hard-deletes an org row. Members, member-roles and invites
 // cascade (FK ON DELETE CASCADE); client_sessions.organization_id is set NULL.
 // ErrNotFound if the org doesn't exist. Used by the server API when a consuming

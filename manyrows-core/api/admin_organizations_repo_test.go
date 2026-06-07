@@ -103,3 +103,35 @@ func TestRemoveOrganizationMemberGuarded_LastOwner(t *testing.T) {
 		t.Fatalf("demote last owner: want ErrLastOwner, got %v", err)
 	}
 }
+
+func TestRestoreOrganization(t *testing.T) {
+	ctx := context.Background()
+	acc := testEnv.CreateTestAccount(t, "rest-"+GenerateUniqueSlug("u")+"@example.com")
+	ws := testEnv.CreateTestWorkspace(t, acc, "WS", GenerateUniqueSlug("ws"))
+	app := testEnv.CreateTestApp(t, ws, acc)
+	defer testEnv.CleanupTestData(t, &TestFixtures{Account: acc, Workspace: ws})
+
+	owner, _, _ := testEnv.Repo.GetOrCreateUser(ctx, "own-"+GenerateUniqueSlug("u")+"@example.com", app, core.UserSourceInvited)
+	org, _ := testEnv.Repo.CreateOrganization(ctx, app.ID, "Acme", GenerateUniqueSlug("acme"), &owner.ID)
+	if err := testEnv.Repo.ArchiveOrganization(ctx, org.ID); err != nil {
+		t.Fatalf("archive setup: %v", err)
+	}
+
+	if err := testEnv.Repo.RestoreOrganization(ctx, org.ID); err != nil {
+		t.Fatalf("restore: %v", err)
+	}
+	reloaded, err := testEnv.Repo.GetOrganizationByID(ctx, org.ID)
+	if err != nil || reloaded.Status != core.OrgStatusActive {
+		t.Fatalf("expected active status, err=%v org=%+v", err, reloaded)
+	}
+
+	// Restoring an already-active org is a no-op success (row still matches).
+	if err := testEnv.Repo.RestoreOrganization(ctx, org.ID); err != nil {
+		t.Fatalf("restore-already-active: expected nil, got %v", err)
+	}
+
+	// Restoring a non-existent org returns ErrNotFound.
+	if err := testEnv.Repo.RestoreOrganization(ctx, uuid.Must(uuid.NewV4())); !errors.Is(err, repo.ErrNotFound) {
+		t.Fatalf("restore missing: expected ErrNotFound, got %v", err)
+	}
+}
