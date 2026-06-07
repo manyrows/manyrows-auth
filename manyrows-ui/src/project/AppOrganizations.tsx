@@ -449,7 +449,7 @@ export default function AppOrganizations({ project, appId }: Props) {
         <DialogContent>
           <Typography variant="body2" color="text.secondary">
             {t("organizations.archiveConfirm", {
-              defaultValue: 'Archive "{{name}}"? Members lose access; this can be reversed by the consuming app.',
+              defaultValue: 'Archive "{{name}}"? Members lose access. You can restore it later from this list.',
               name: archiveOrg?.name,
             })}
           </Typography>
