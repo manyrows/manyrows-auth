@@ -28,7 +28,7 @@ import {
   Tooltip,
   Typography,
 } from "@mui/material";
-import { Archive, SquarePen, Users } from "lucide-react";
+import { Archive, ArchiveRestore, SquarePen, Users } from "lucide-react";
 import type { Project, Workspace } from "../core.ts";
 import type { App } from "./AppAuthMethods.tsx";
 import { errText } from "./AppAuthMethods.tsx";
@@ -100,6 +100,9 @@ export default function AppOrganizations({ project, appId }: Props) {
   const [archiveOpen, setArchiveOpen] = React.useState(false);
   const [archiveOrg, setArchiveOrg] = React.useState<OrgRow | null>(null);
   const [archiveSaving, setArchiveSaving] = React.useState(false);
+
+  // Restore (unarchive) — direct action, no confirm dialog. Tracks the in-flight row.
+  const [restoringId, setRestoringId] = React.useState<string | null>(null);
 
   const loadOrgs = React.useCallback(async () => {
     try {
@@ -204,6 +207,19 @@ export default function AppOrganizations({ project, appId }: Props) {
       enqueueSnackbar(errText(e), { variant: "error" });
     } finally {
       setArchiveSaving(false);
+    }
+  }
+
+  async function doRestore(org: OrgRow) {
+    setRestoringId(org.id);
+    try {
+      await axios.post(`${appURL}/organizations/${org.id}/restore`);
+      await loadOrgs();
+      enqueueSnackbar(t("organizations.restored", { defaultValue: "Organization restored" }), { variant: "success" });
+    } catch (e) {
+      enqueueSnackbar(errText(e), { variant: "error" });
+    } finally {
+      setRestoringId(null);
     }
   }
 
@@ -324,13 +340,27 @@ export default function AppOrganizations({ project, appId }: Props) {
                               <SquarePen size={14} strokeWidth={1.75} />
                             </IconButton>
                           </Tooltip>
-                          <Tooltip title={t("organizations.archive", { defaultValue: "Archive" })}>
-                            <span>
-                              <IconButton size="small" disabled={archived} onClick={() => openArchive(org)}>
-                                <Archive size={14} strokeWidth={1.75} />
-                              </IconButton>
-                            </span>
-                          </Tooltip>
+                          {archived ? (
+                            <Tooltip title={t("organizations.restore", { defaultValue: "Restore" })}>
+                              <span>
+                                <IconButton
+                                  size="small"
+                                  disabled={restoringId === org.id}
+                                  onClick={() => void doRestore(org)}
+                                >
+                                  <ArchiveRestore size={14} strokeWidth={1.75} />
+                                </IconButton>
+                              </span>
+                            </Tooltip>
+                          ) : (
+                            <Tooltip title={t("organizations.archive", { defaultValue: "Archive" })}>
+                              <span>
+                                <IconButton size="small" onClick={() => openArchive(org)}>
+                                  <Archive size={14} strokeWidth={1.75} />
+                                </IconButton>
+                              </span>
+                            </Tooltip>
+                          )}
                         </Stack>
                       </TableCell>
                     </TableRow>
