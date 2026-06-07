@@ -1,14 +1,19 @@
 package api_test
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
 
 	"manyrows-core/core"
 	"manyrows-core/core/repo"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/gofrs/uuid/v5"
 )
 
@@ -93,6 +98,90 @@ func TestOrgInvite_Revoke(t *testing.T) {
 	// Revoking a non-pending invite → ErrNotFound.
 	if err := testEnv.Repo.RevokeOrganizationInvite(ctx, org.ID, inv.ID); !errors.Is(err, repo.ErrNotFound) {
 		t.Fatalf("expected ErrNotFound revoking non-pending, got %v", err)
+	}
+}
+
+// setupServerInviteRouter mounts the server invite handlers behind test
+// middleware that injects workspace + app into context (mirrors
+// setupServerOrgRouter). The handlers read the app from context.
+func setupServerInviteRouter(t *testing.T, ws *core.Workspace, app *core.App) *chi.Mux {
+	t.Helper()
+	svc := NewTestServices(t)
+	r := chi.NewRouter()
+	r.Use(func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+			ctx := req.Context()
+			ctx = core.WithWorkspace(ctx, ws)
+			ctx = core.WithApp(ctx, app)
+			next.ServeHTTP(w, req.WithContext(ctx))
+		})
+	})
+	r.Route("/v1/apps/{appId}/organizations/{orgId}/invites", func(ir chi.Router) {
+		ir.Post("/", svc.Handler.ServerCreateOrgInvite)
+		ir.Get("/", svc.Handler.ServerListOrgInvites)
+		ir.Delete("/{inviteId}", svc.Handler.ServerRevokeOrgInvite)
+	})
+	return r
+}
+
+func TestServerCreateOrgInvite_PersistsAndLists(t *testing.T) {
+	ctx := context.Background()
+	acc := testEnv.CreateTestAccount(t, "sci-"+GenerateUniqueSlug("u")+"@example.com")
+	ws := testEnv.CreateTestWorkspace(t, acc, "WS", GenerateUniqueSlug("ws"))
+	app := testEnv.CreateTestApp(t, ws, acc)
+	defer testEnv.CleanupTestData(t, &TestFixtures{Account: acc, Workspace: ws})
+
+	// org-invite create requires an app URL for the accept link. Set it via
+	// the catch-all app updater (keeps enabled=true), then reload.
+	appURL := "https://app.example.com"
+	if _, err := testEnv.Repo.UpdateAppEnabled(ctx, ws.ID, app.ProjectID, app.ID, true, repo.AppCoreUpdate{AppURL: &appURL}); err != nil {
+		t.Fatalf("set app url: %v", err)
+	}
+	app = mustReloadApp(t, ctx, app.ID)
+
+	owner, _, _ := testEnv.GetOrCreateUserWithMembership(ctx, "own-"+GenerateUniqueSlug("u")+"@example.com", app, core.UserSourceInvited)
+	org, _ := testEnv.Repo.CreateOrganization(ctx, app.ID, "Acme", GenerateUniqueSlug("acme"), &owner.ID)
+	_, _ = testEnv.Repo.AddOrganizationMember(ctx, org.ID, owner.ID, core.OrgRoleOwner)
+
+	router := setupServerInviteRouter(t, ws, app)
+	base := "/v1/apps/" + app.ID.String() + "/organizations/" + org.ID.String() + "/invites"
+
+	email := "newbie-" + GenerateUniqueSlug("u") + "@example.com"
+	body, _ := json.Marshal(map[string]any{"email": email, "orgRole": "admin"})
+	req := httptest.NewRequest(http.MethodPost, base, bytes.NewReader(body))
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+	if rr.Code != http.StatusCreated {
+		t.Fatalf("create invite: expected 201, got %d (%s)", rr.Code, rr.Body.String())
+	}
+
+	// List shows it.
+	req = httptest.NewRequest(http.MethodGet, base, nil)
+	rr = httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+	var listResp struct {
+		Invites []struct{ ID, Email, OrgRole, Status string } `json:"invites"`
+	}
+	_ = json.Unmarshal(rr.Body.Bytes(), &listResp)
+	if len(listResp.Invites) != 1 || listResp.Invites[0].Email != email {
+		t.Fatalf("expected 1 pending invite for %s, got %+v", email, listResp.Invites)
+	}
+
+	// Duplicate pending → 409.
+	req = httptest.NewRequest(http.MethodPost, base, bytes.NewReader(body))
+	rr = httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+	if rr.Code != http.StatusConflict {
+		t.Fatalf("dup invite: expected 409, got %d (%s)", rr.Code, rr.Body.String())
+	}
+
+	// Revoke.
+	inviteID := listResp.Invites[0].ID
+	req = httptest.NewRequest(http.MethodDelete, base+"/"+inviteID, nil)
+	rr = httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+	if rr.Code != http.StatusNoContent {
+		t.Fatalf("revoke: expected 204, got %d (%s)", rr.Code, rr.Body.String())
 	}
 }
 

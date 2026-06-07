@@ -111,6 +111,8 @@ var apiTranslations = map[string]map[string]string{
 		"error.invalidEmail":          "Invalid email address",
 		"error.batchTooLarge":         "Batch too large (max %d users per request)",
 		"error.appUrlRequired":        "An App URL must be configured to send invite emails",
+		"error.invitePending":         "A pending invite already exists for this email",
+		"error.inviteEmailFailed":     "Could not send the invite email; please try again",
 
 		// ID errors
 		"error.missingProjectId":     "Missing project ID",

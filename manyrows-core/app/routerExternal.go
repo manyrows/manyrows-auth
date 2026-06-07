@@ -268,6 +268,9 @@ func (a *AppService) serverAPIRouter(h *api.RequestHandler) *chi.Mux {
 	appRouter.Get("/organizations/{orgId}/members/{userId}", h.ServerGetOrgMember)
 	appRouter.Patch("/organizations/{orgId}/members/{userId}", h.ServerSetOrgMemberRole)
 	appRouter.Delete("/organizations/{orgId}/members/{userId}", h.ServerRemoveOrgMember)
+	appRouter.Post("/organizations/{orgId}/invites", h.ServerCreateOrgInvite)
+	appRouter.Get("/organizations/{orgId}/invites", h.ServerListOrgInvites)
+	appRouter.Delete("/organizations/{orgId}/invites/{inviteId}", h.ServerRevokeOrgInvite)
 
 	r.Mount("/v1/apps/{appId}", appRouter)
 
