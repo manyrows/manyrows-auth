@@ -23,6 +23,7 @@ func setupAdminOrgRouter(t *testing.T) (*chi.Mux, *TestServices) {
 	wsRouter.Get("/projects/{projectId}/apps/{appId}/organizations/{orgId}/members", svc.Handler.HandleListAppOrganizationMembers)
 	wsRouter.Patch("/projects/{projectId}/apps/{appId}/organizations/{orgId}", svc.Handler.HandleRenameAppOrganization)
 	wsRouter.Delete("/projects/{projectId}/apps/{appId}/organizations/{orgId}", svc.Handler.HandleArchiveAppOrganization)
+	wsRouter.Post("/projects/{projectId}/apps/{appId}/organizations/{orgId}/restore", svc.Handler.HandleRestoreAppOrganization)
 	return r, svc
 }
 
@@ -298,5 +299,42 @@ func TestAdminOrgs_ForeignApp_404(t *testing.T) {
 	}
 	if code := hit(http.MethodDelete, base+"/organizations/"+orgB.ID.String(), false); code != http.StatusNotFound {
 		t.Fatalf("archive foreign app: expected 404, got %d", code)
+	}
+	if code := hit(http.MethodPost, base+"/organizations/"+orgB.ID.String()+"/restore", false); code != http.StatusNotFound {
+		t.Fatalf("restore foreign app: expected 404, got %d", code)
+	}
+}
+
+func TestAdminOrgs_Restore(t *testing.T) {
+	ctx := context.Background()
+	router, _ := setupAdminOrgRouter(t)
+	acc := testEnv.CreateTestAccount(t, "aore-"+GenerateUniqueSlug("u")+"@example.com")
+	ws := testEnv.CreateTestWorkspace(t, acc, "WS", GenerateUniqueSlug("ws"))
+	app := testEnv.CreateTestApp(t, ws, acc)
+	sess, claims := testEnv.CreateTestSession(t, acc)
+	defer testEnv.CleanupTestData(t, &TestFixtures{Account: acc, Workspace: ws, Session: sess})
+
+	owner, _, _ := testEnv.Repo.GetOrCreateUser(ctx, "own-"+GenerateUniqueSlug("u")+"@example.com", app, core.UserSourceInvited)
+	org, _ := testEnv.Repo.CreateOrganization(ctx, app.ID, "Acme", GenerateUniqueSlug("acme"), &owner.ID)
+	if err := testEnv.Repo.ArchiveOrganization(ctx, org.ID); err != nil {
+		t.Fatalf("archive setup: %v", err)
+	}
+
+	post := func() int {
+		req := httptest.NewRequest(http.MethodPost, adminAppOrgBase(ws, app)+"/organizations/"+org.ID.String()+"/restore", nil)
+		testEnv.SetSessionCookie(t, req, claims)
+		rr := httptest.NewRecorder()
+		router.ServeHTTP(rr, req)
+		return rr.Code
+	}
+	if code := post(); code != http.StatusNoContent {
+		t.Fatalf("restore: expected 204, got %d", code)
+	}
+	reloaded, err := testEnv.Repo.GetOrganizationByID(ctx, org.ID)
+	if err != nil || reloaded.Status != core.OrgStatusActive {
+		t.Fatalf("expected active status, err=%v status=%v", err, reloaded)
+	}
+	if code := post(); code != http.StatusNoContent {
+		t.Fatalf("re-restore: expected 204 (idempotent), got %d", code)
 	}
 }

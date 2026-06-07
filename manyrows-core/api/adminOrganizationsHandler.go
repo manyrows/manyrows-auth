@@ -243,3 +243,29 @@ func (handler *RequestHandler) HandleArchiveAppOrganization(w http.ResponseWrite
 	}
 	w.WriteHeader(http.StatusNoContent)
 }
+
+// HandleRestoreAppOrganization restores an archived org (status='active').
+// Idempotent for an already-active org. adminOrgFromURL has already loaded and
+// ownership-checked the org, so the ErrNotFound->404 branch below is a defensive
+// guard against a concurrent hard-delete between that load and the update
+// (restoring a gone row is an error, unlike archive's idempotent-gone 204).
+func (handler *RequestHandler) HandleRestoreAppOrganization(w http.ResponseWriter, r *http.Request) {
+	_, appID, ok := handler.adminAppScope(w, r)
+	if !ok {
+		return
+	}
+	org, ok := handler.adminOrgFromURL(w, r, appID)
+	if !ok {
+		return
+	}
+	if err := handler.repo.RestoreOrganization(r.Context(), org.ID); err != nil {
+		if errors.Is(err, repo.ErrNotFound) {
+			WriteError(w, r, "error.organizationNotFound", http.StatusNotFound)
+			return
+		}
+		log.Err(err).Msg("failed to restore organization")
+		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
