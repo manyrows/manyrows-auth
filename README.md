@@ -87,6 +87,13 @@ docker compose down
   projects under workspaces.
 - **Role-based access control** - per-project permissions and roles,
   default-role assignment on signup.
+- **Organizations (multi-tenant)** - opt-in per app: your end-users
+  belong to organizations (their tenants), one user can join many, each
+  with a tier (`owner` / `admin` / `member`). Roles and permissions
+  resolve within the user's active organization and are re-checked on
+  every request, so a removed member or archived org loses access
+  immediately. Provision orgs, members, and email invites from your
+  backend via the server API, or manage them from the admin dashboard.
 - **Session management** - per-app session TTL, cookie-domain control,
   IP allowlists, CORS origin lists, revocation.
 - **Audit logs** - every authentication event recorded per
