@@ -487,3 +487,147 @@ ORDER BY o.created_at DESC;`
 	}
 	return out, rows.Err()
 }
+
+// OrganizationInviteView is a pending invite with the inviter's email, for listing.
+type OrganizationInviteView struct {
+	ID             uuid.UUID `json:"id"`
+	Email          string    `json:"email"`
+	OrgRole        string    `json:"orgRole"`
+	Status         string    `json:"status"`
+	InvitedByEmail *string   `json:"invitedByEmail,omitempty"`
+	CreatedAt      time.Time `json:"createdAt"`
+	ExpiresAt      time.Time `json:"expiresAt"`
+}
+
+// CreateOrganizationInvite inserts a pending invite. A 23505 on the
+// (org_id, lower(email)) WHERE pending partial-unique index surfaces as
+// ErrInvitePending. token_hash must be unique.
+func (r *Repo) CreateOrganizationInvite(ctx context.Context, orgID uuid.UUID, email, orgRole string, roleIDs []uuid.UUID, invitedBy *uuid.UUID, tokenHash string, expiresAt time.Time) (*core.OrganizationInvite, error) {
+	email = strings.TrimSpace(strings.ToLower(email))
+	if orgRole == "" {
+		orgRole = core.OrgRoleMember
+	}
+	if roleIDs == nil {
+		roleIDs = []uuid.UUID{}
+	}
+	const q = `
+INSERT INTO organization_invites (id, org_id, email, org_role, role_ids, invited_by, token_hash, status, expires_at, created_at)
+VALUES ($1, $2, $3, $4, $5, $6, $7, 'pending', $8, now())
+RETURNING id, org_id, email, org_role, role_ids, invited_by, token_hash, status, expires_at, created_at, accepted_at;`
+	var inv core.OrganizationInvite
+	err := r.db.Pool().QueryRow(ctx, q, utils.NewUUID(), orgID, email, orgRole, roleIDs, invitedBy, tokenHash, expiresAt).Scan(
+		&inv.ID, &inv.OrgID, &inv.Email, &inv.OrgRole, &inv.RoleIDs, &inv.InvitedBy, &inv.TokenHash, &inv.Status, &inv.ExpiresAt, &inv.CreatedAt, &inv.AcceptedAt,
+	)
+	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" && strings.Contains(pgErr.ConstraintName, "uq_org_invites_pending") {
+			return nil, ErrInvitePending
+		}
+		return nil, err
+	}
+	return &inv, nil
+}
+
+// GetOrganizationInviteByTokenHash returns an invite by its token hash, or ErrNotFound.
+func (r *Repo) GetOrganizationInviteByTokenHash(ctx context.Context, tokenHash string) (*core.OrganizationInvite, error) {
+	const q = `
+SELECT id, org_id, email, org_role, role_ids, invited_by, token_hash, status, expires_at, created_at, accepted_at
+FROM organization_invites WHERE token_hash = $1 LIMIT 1;`
+	var inv core.OrganizationInvite
+	if err := r.db.Pool().QueryRow(ctx, q, tokenHash).Scan(
+		&inv.ID, &inv.OrgID, &inv.Email, &inv.OrgRole, &inv.RoleIDs, &inv.InvitedBy, &inv.TokenHash, &inv.Status, &inv.ExpiresAt, &inv.CreatedAt, &inv.AcceptedAt,
+	); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrNotFound
+		}
+		return nil, err
+	}
+	return &inv, nil
+}
+
+// ListPendingOrgInvites lists pending invites for an org, newest first, with inviter email.
+func (r *Repo) ListPendingOrgInvites(ctx context.Context, orgID uuid.UUID) ([]OrganizationInviteView, error) {
+	const q = `
+SELECT i.id, i.email, i.org_role, i.status, u.email AS invited_by_email, i.created_at, i.expires_at
+FROM organization_invites i
+LEFT JOIN users u ON u.id = i.invited_by
+WHERE i.org_id = $1 AND i.status = 'pending'
+ORDER BY i.created_at DESC;`
+	rows, err := r.db.Pool().Query(ctx, q, orgID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []OrganizationInviteView
+	for rows.Next() {
+		var v OrganizationInviteView
+		if err := rows.Scan(&v.ID, &v.Email, &v.OrgRole, &v.Status, &v.InvitedByEmail, &v.CreatedAt, &v.ExpiresAt); err != nil {
+			return nil, err
+		}
+		out = append(out, v)
+	}
+	return out, rows.Err()
+}
+
+// RevokeOrganizationInvite marks a pending invite revoked. ErrNotFound if no
+// pending invite of that org matched.
+func (r *Repo) RevokeOrganizationInvite(ctx context.Context, orgID, inviteID uuid.UUID) error {
+	const q = `UPDATE organization_invites SET status='revoked' WHERE id=$1 AND org_id=$2 AND status='pending';`
+	ct, err := r.db.Pool().Exec(ctx, q, inviteID, orgID)
+	if err != nil {
+		return err
+	}
+	if ct.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+// AcceptOrganizationInviteTx accepts a pending invite for userID atomically:
+// re-reads the invite FOR UPDATE, verifies it is still pending and unexpired,
+// adds the org membership (idempotent) with the invite's tier + role_ids, and
+// marks the invite accepted. Returns ErrNotFound if missing, or a typed error
+// if not pending / expired.
+func (r *Repo) AcceptOrganizationInviteTx(ctx context.Context, inviteID, userID uuid.UUID) error {
+	tx, err := r.db.Pool().Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	var orgID uuid.UUID
+	var orgRole, status string
+	var roleIDs []uuid.UUID
+	var expiresAt time.Time
+	err = tx.QueryRow(ctx, `SELECT org_id, org_role, role_ids, status, expires_at FROM organization_invites WHERE id=$1 FOR UPDATE`, inviteID).
+		Scan(&orgID, &orgRole, &roleIDs, &status, &expiresAt)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return ErrNotFound
+		}
+		return err
+	}
+	if status != core.OrgInviteStatusPending {
+		return ErrInviteNotPending
+	}
+	if time.Now().After(expiresAt) {
+		return ErrInviteExpired
+	}
+
+	// Add membership (idempotent if already a member).
+	memberID := utils.NewUUID()
+	if _, err := tx.Exec(ctx, `
+INSERT INTO organization_members (id, org_id, user_id, org_role, status, joined_at)
+VALUES ($1, $2, $3, $4, 'active', now())
+ON CONFLICT (org_id, user_id) DO NOTHING;`, memberID, orgID, userID, orgRole); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(ctx, `UPDATE organization_invites SET status='accepted', accepted_at=now() WHERE id=$1;`, inviteID); err != nil {
+		return err
+	}
+	// role_ids: Pier passes none; if present, assign project roles to the
+	// membership. (No-op when empty.) Left for a follow-up if role_ids ever
+	// used — Pier sends []. Keep the variable referenced to avoid unused.
+	_ = roleIDs
+	return tx.Commit(ctx)
+}

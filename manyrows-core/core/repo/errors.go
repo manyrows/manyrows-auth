@@ -29,6 +29,17 @@ var (
 	// (the typical case is "this Google account is linked to a different
 	// pool user").
 	ErrIdentitySubjectMismatch = errors.New("user identity subject mismatch")
+
+	// ErrInvitePending means a pending invite already exists for this (org, email).
+	ErrInvitePending = errors.New("a pending invite already exists for this email")
+
+	// ErrInviteNotPending is returned by AcceptOrganizationInviteTx when the
+	// invite has already been accepted/revoked/expired (status != pending).
+	ErrInviteNotPending = errors.New("invite is not pending")
+
+	// ErrInviteExpired is returned by AcceptOrganizationInviteTx when the
+	// invite is still pending but past its expires_at.
+	ErrInviteExpired = errors.New("invite has expired")
 )
 
 func IsUniqueViolation(err error) bool {

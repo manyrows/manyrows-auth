@@ -34,6 +34,14 @@ const (
 	OrgCreationAdminOnly  = "admin_only"
 )
 
+// Organization invite status.
+const (
+	OrgInviteStatusPending  = "pending"
+	OrgInviteStatusAccepted = "accepted"
+	OrgInviteStatusRevoked  = "revoked"
+	OrgInviteStatusExpired  = "expired"
+)
+
 // Organization is a tenant inside an app's end-user base.
 type Organization struct {
 	ID        uuid.UUID  `db:"id" json:"id"`
