@@ -65,6 +65,10 @@ func init() {
 		"team_invite.subject": "{brand}의 %s에 초대되었습니다",
 		"team_invite.body":    "안녕하세요,\n\n%s님이 회원님을 {brand}의 \"%s\" 관리자로 초대했습니다.\n\n아래 링크를 클릭하여 초대를 수락하고 계정을 만드세요:\n\n%s\n\n이 링크는 7일 후에 만료됩니다.\n예상하지 못한 초대라면 이 이메일을 무시하셔도 됩니다.\n",
 
+		// Org invite (app end-user invited to an organization)
+		"org_invite.subject": "%s에 초대되었습니다",
+		"org_invite.body":    "%s님이 회원님을 %s에 초대했습니다.\n\n초대를 수락하고 로그인하세요:\n%s\n\n이 링크는 7일 후에 만료됩니다. 예상하지 못한 초대라면 이 이메일을 무시하셔도 됩니다.",
+
 		// User invite (app user)
 		"user_invite.subject": "%s에 추가되었습니다",
 		"user_invite.body":    "안녕하세요,\n\n회원님이 %s에 추가되었습니다.\n\n시작하려면 앱에 접속하여 로그인하세요:\n\n%s\n\n아직 비밀번호가 없다면 로그인 페이지에서 \"비밀번호 찾기\"를 클릭하여 설정하세요.\n",
