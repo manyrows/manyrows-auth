@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -24,6 +25,7 @@ func setupAdminOrgRouter(t *testing.T) (*chi.Mux, *TestServices) {
 	wsRouter.Patch("/projects/{projectId}/apps/{appId}/organizations/{orgId}", svc.Handler.HandleRenameAppOrganization)
 	wsRouter.Delete("/projects/{projectId}/apps/{appId}/organizations/{orgId}", svc.Handler.HandleArchiveAppOrganization)
 	wsRouter.Post("/projects/{projectId}/apps/{appId}/organizations/{orgId}/restore", svc.Handler.HandleRestoreAppOrganization)
+	wsRouter.Delete("/projects/{projectId}/apps/{appId}/organizations/{orgId}/permanent", svc.Handler.HandleDeleteAppOrganization)
 	return r, svc
 }
 
@@ -302,6 +304,64 @@ func TestAdminOrgs_ForeignApp_404(t *testing.T) {
 	}
 	if code := hit(http.MethodPost, base+"/organizations/"+orgB.ID.String()+"/restore", false); code != http.StatusNotFound {
 		t.Fatalf("restore foreign app: expected 404, got %d", code)
+	}
+	if code := hit(http.MethodDelete, base+"/organizations/"+orgB.ID.String()+"/permanent", false); code != http.StatusNotFound {
+		t.Fatalf("delete foreign app: expected 404, got %d", code)
+	}
+}
+
+func TestAdminOrgs_DeletePermanent(t *testing.T) {
+	ctx := context.Background()
+	router, _ := setupAdminOrgRouter(t)
+	acc := testEnv.CreateTestAccount(t, "aodp-"+GenerateUniqueSlug("u")+"@example.com")
+	ws := testEnv.CreateTestWorkspace(t, acc, "WS", GenerateUniqueSlug("ws"))
+	app := testEnv.CreateTestApp(t, ws, acc)
+	sess, claims := testEnv.CreateTestSession(t, acc)
+	defer testEnv.CleanupTestData(t, &TestFixtures{Account: acc, Workspace: ws, Session: sess})
+
+	owner, _, _ := testEnv.Repo.GetOrCreateUser(ctx, "own-"+GenerateUniqueSlug("u")+"@example.com", app, core.UserSourceInvited)
+	org, _ := testEnv.Repo.CreateOrganization(ctx, app.ID, "Acme", GenerateUniqueSlug("acme"), &owner.ID)
+	if err := testEnv.Repo.ArchiveOrganization(ctx, org.ID); err != nil {
+		t.Fatalf("archive setup: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodDelete, adminAppOrgBase(ws, app)+"/organizations/"+org.ID.String()+"/permanent", nil)
+	testEnv.SetSessionCookie(t, req, claims)
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+	if rr.Code != http.StatusNoContent {
+		t.Fatalf("delete: expected 204, got %d (%s)", rr.Code, rr.Body.String())
+	}
+	if _, err := testEnv.Repo.GetOrganizationByID(ctx, org.ID); !errors.Is(err, repo.ErrNotFound) {
+		t.Fatalf("expected org gone (ErrNotFound), got %v", err)
+	}
+}
+
+func TestAdminOrgs_DeleteActive_409(t *testing.T) {
+	ctx := context.Background()
+	router, _ := setupAdminOrgRouter(t)
+	acc := testEnv.CreateTestAccount(t, "aoda-"+GenerateUniqueSlug("u")+"@example.com")
+	ws := testEnv.CreateTestWorkspace(t, acc, "WS", GenerateUniqueSlug("ws"))
+	app := testEnv.CreateTestApp(t, ws, acc)
+	sess, claims := testEnv.CreateTestSession(t, acc)
+	defer testEnv.CleanupTestData(t, &TestFixtures{Account: acc, Workspace: ws, Session: sess})
+
+	owner, _, _ := testEnv.Repo.GetOrCreateUser(ctx, "own-"+GenerateUniqueSlug("u")+"@example.com", app, core.UserSourceInvited)
+	org, _ := testEnv.Repo.CreateOrganization(ctx, app.ID, "Acme", GenerateUniqueSlug("acme"), &owner.ID)
+	// NOT archived — delete must be refused with 409.
+
+	req := httptest.NewRequest(http.MethodDelete, adminAppOrgBase(ws, app)+"/organizations/"+org.ID.String()+"/permanent", nil)
+	testEnv.SetSessionCookie(t, req, claims)
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+	if rr.Code != http.StatusConflict {
+		t.Fatalf("delete active: expected 409, got %d", rr.Code)
+	}
+	if !bytes.Contains(rr.Body.Bytes(), []byte("error.organizationNotArchived")) {
+		t.Fatalf("expected error.organizationNotArchived in body, got %s", rr.Body.String())
+	}
+	if _, err := testEnv.Repo.GetOrganizationByID(ctx, org.ID); err != nil {
+		t.Fatalf("expected org to still exist, got err %v", err)
 	}
 }
 

@@ -269,3 +269,33 @@ func (handler *RequestHandler) HandleRestoreAppOrganization(w http.ResponseWrite
 	}
 	w.WriteHeader(http.StatusNoContent)
 }
+
+// HandleDeleteAppOrganization permanently hard-deletes an org. Gated to archived
+// orgs: an active org returns 409 (must archive first). Members, member-roles and
+// invites cascade; client_sessions.organization_id is set NULL. adminOrgFromURL has
+// already loaded and ownership-checked the org, so the ErrNotFound->404 branch is a
+// defensive guard against a concurrent delete.
+func (handler *RequestHandler) HandleDeleteAppOrganization(w http.ResponseWriter, r *http.Request) {
+	_, appID, ok := handler.adminAppScope(w, r)
+	if !ok {
+		return
+	}
+	org, ok := handler.adminOrgFromURL(w, r, appID)
+	if !ok {
+		return
+	}
+	if org.Status != core.OrgStatusArchived {
+		WriteError(w, r, "error.organizationNotArchived", http.StatusConflict)
+		return
+	}
+	if err := handler.repo.DeleteOrganization(r.Context(), org.ID); err != nil {
+		if errors.Is(err, repo.ErrNotFound) {
+			WriteError(w, r, "error.organizationNotFound", http.StatusNotFound)
+			return
+		}
+		log.Err(err).Msg("failed to delete organization")
+		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
