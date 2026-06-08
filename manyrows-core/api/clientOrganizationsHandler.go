@@ -261,6 +261,59 @@ func (handler *RequestHandler) ClientSetOrgMember(w http.ResponseWriter, r *http
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// ClientRemoveOrgMember: DELETE /a/organizations/{orgId}/members/{userId} --
+// remove a member (owner/admin) or leave (self). Last-owner protected.
+func (handler *RequestHandler) ClientRemoveOrgMember(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	// Any active member passes the gate; tier is enforced below per self-vs-other.
+	_, org, caller, ok := handler.requireOrgRole(w, r, core.OrgRoleOwner, core.OrgRoleAdmin, core.OrgRoleMember)
+	if !ok {
+		return
+	}
+	targetID, ok := handler.userIDFromURL(w, r)
+	if !ok {
+		return
+	}
+	isSelf := targetID == caller.UserID
+	if !isSelf {
+		// Removing someone else requires owner/admin.
+		if caller.OrgRole != core.OrgRoleOwner && caller.OrgRole != core.OrgRoleAdmin {
+			WriteError(w, r, "error.forbidden", http.StatusForbidden)
+			return
+		}
+		// admin cannot remove an owner.
+		if caller.OrgRole == core.OrgRoleAdmin {
+			target, err := handler.repo.GetOrganizationMember(ctx, org.ID, targetID)
+			if err != nil {
+				if errors.Is(err, repo.ErrNotFound) {
+					WriteError(w, r, "error.notFound", http.StatusNotFound)
+					return
+				}
+				log.Err(err).Msg("ClientRemoveOrgMember: load target failed")
+				WriteError(w, r, "error.internalError", http.StatusInternalServerError)
+				return
+			}
+			if target.OrgRole == core.OrgRoleOwner {
+				WriteError(w, r, "error.forbidden", http.StatusForbidden)
+				return
+			}
+		}
+	}
+	if err := handler.repo.RemoveOrganizationMemberGuarded(ctx, org.ID, targetID); err != nil {
+		switch {
+		case errors.Is(err, repo.ErrNotFound):
+			WriteError(w, r, "error.notFound", http.StatusNotFound)
+		case errors.Is(err, repo.ErrLastOwner):
+			WriteError(w, r, "error.conflict", http.StatusConflict)
+		default:
+			log.Err(err).Msg("ClientRemoveOrgMember: delete failed")
+			WriteError(w, r, "error.internalError", http.StatusInternalServerError)
+		}
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 func dedupeUUIDs(in []uuid.UUID) []uuid.UUID {
 	seen := make(map[uuid.UUID]struct{}, len(in))
 	out := make([]uuid.UUID, 0, len(in))

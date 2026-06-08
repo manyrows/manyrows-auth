@@ -269,6 +269,44 @@ func TestClientSetMemberRole_Matrix(t *testing.T) {
 	}
 }
 
+func TestClientRemoveOrLeaveMember(t *testing.T) {
+	ctx := context.Background()
+	ws, app, owner, ownerTok := clientOrgTestApp(t)
+	org, _ := testEnv.Repo.CreateOrganization(ctx, app.ID, "Acme", GenerateUniqueSlug("acme"), &owner.ID)
+	_, _ = testEnv.Repo.AddOrganizationMember(ctx, org.ID, owner.ID, core.OrgRoleOwner)
+	accM := testEnv.CreateTestAccount(t, "mem-"+GenerateUniqueSlug("u")+"@example.com")
+	mem, _, _ := testEnv.GetOrCreateUserWithMembership(ctx, accM.Email, app, core.UserSourceInvited)
+	_, _ = testEnv.Repo.AddOrganizationMember(ctx, org.ID, mem.ID, core.OrgRoleMember)
+	_, memTok := createTestClientSessionForApp(t, ws, accM, app)
+
+	router := setupClientAPIRouter(t)
+	del := func(tok, target string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(http.MethodDelete, clientOrgURL(ws, app, "/"+org.ID.String()+"/members/"+target), nil)
+		req.Header.Set("Authorization", "Bearer "+tok)
+		rr := httptest.NewRecorder()
+		router.ServeHTTP(rr, req)
+		return rr
+	}
+
+	// member leaves self -> 204
+	if rr := del(memTok, mem.ID.String()); rr.Code != http.StatusNoContent {
+		t.Fatalf("self-leave: got %d (%s)", rr.Code, rr.Body.String())
+	}
+	// owner self-leave as last owner -> 409
+	if rr := del(ownerTok, owner.ID.String()); rr.Code != http.StatusConflict {
+		t.Fatalf("last-owner leave must be 409, got %d", rr.Code)
+	}
+
+	// admin removing owner -> 403
+	accA := testEnv.CreateTestAccount(t, "adm-"+GenerateUniqueSlug("u")+"@example.com")
+	adm, _, _ := testEnv.GetOrCreateUserWithMembership(ctx, accA.Email, app, core.UserSourceInvited)
+	_, _ = testEnv.Repo.AddOrganizationMember(ctx, org.ID, adm.ID, core.OrgRoleAdmin)
+	_, admTok := createTestClientSessionForApp(t, ws, accA, app)
+	if rr := del(admTok, owner.ID.String()); rr.Code != http.StatusForbidden {
+		t.Fatalf("admin remove owner must be 403, got %d", rr.Code)
+	}
+}
+
 func TestCountRolesInProject(t *testing.T) {
 	ctx := context.Background()
 	acc := testEnv.CreateTestAccount(t, "crp-"+GenerateUniqueSlug("u")+"@example.com")
