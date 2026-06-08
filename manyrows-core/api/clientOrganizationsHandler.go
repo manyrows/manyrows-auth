@@ -388,6 +388,47 @@ func (handler *RequestHandler) ClientCreateOrgInvite(w http.ResponseWriter, r *h
 	}, http.StatusCreated)
 }
 
+// ClientListOrgInvites: GET /a/organizations/{orgId}/invites -- owner/admin.
+func (handler *RequestHandler) ClientListOrgInvites(w http.ResponseWriter, r *http.Request) {
+	_, org, _, ok := handler.requireOrgRole(w, r, core.OrgRoleOwner, core.OrgRoleAdmin)
+	if !ok {
+		return
+	}
+	invites, err := handler.repo.ListPendingOrgInvites(r.Context(), org.ID)
+	if err != nil {
+		log.Err(err).Msg("ClientListOrgInvites failed")
+		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
+		return
+	}
+	if invites == nil {
+		invites = []repo.OrganizationInviteView{}
+	}
+	utils.WriteJson(w, map[string]any{"invites": invites})
+}
+
+// ClientRevokeOrgInvite: DELETE /a/organizations/{orgId}/invites/{inviteId} -- owner/admin.
+func (handler *RequestHandler) ClientRevokeOrgInvite(w http.ResponseWriter, r *http.Request) {
+	_, org, _, ok := handler.requireOrgRole(w, r, core.OrgRoleOwner, core.OrgRoleAdmin)
+	if !ok {
+		return
+	}
+	inviteID, err := uuid.FromString(chi.URLParam(r, "inviteId"))
+	if err != nil || inviteID == uuid.Nil {
+		WriteError(w, r, "error.badRequest", http.StatusBadRequest)
+		return
+	}
+	if err := handler.repo.RevokeOrganizationInvite(r.Context(), org.ID, inviteID); err != nil {
+		if errors.Is(err, repo.ErrNotFound) {
+			WriteError(w, r, "error.notFound", http.StatusNotFound)
+			return
+		}
+		log.Err(err).Msg("ClientRevokeOrgInvite failed")
+		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 func dedupeUUIDs(in []uuid.UUID) []uuid.UUID {
 	seen := make(map[uuid.UUID]struct{}, len(in))
 	out := make([]uuid.UUID, 0, len(in))

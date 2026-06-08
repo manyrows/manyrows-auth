@@ -193,6 +193,8 @@ func setupClientAPIRouter(t *testing.T) *chi.Mux {
 			authed.Patch("/organizations/{orgId}/members/{userId}", requestHandler.ClientSetOrgMember)
 			authed.Delete("/organizations/{orgId}/members/{userId}", requestHandler.ClientRemoveOrgMember)
 			authed.Post("/organizations/{orgId}/invites", requestHandler.ClientCreateOrgInvite)
+			authed.Get("/organizations/{orgId}/invites", requestHandler.ClientListOrgInvites)
+			authed.Delete("/organizations/{orgId}/invites/{inviteId}", requestHandler.ClientRevokeOrgInvite)
 			authed.Get("/me", requestHandler.GetAppMe)
 			authed.Get("/check-permission", requestHandler.CheckPermission)
 			authed.Get("/runtime", requestHandler.GetAppData)

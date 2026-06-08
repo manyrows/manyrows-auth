@@ -344,6 +344,35 @@ func TestClientCreateInvite(t *testing.T) {
 	}
 }
 
+func TestClientListAndRevokeInvites(t *testing.T) {
+	ctx := context.Background()
+	ws, app, owner, ownerTok := clientOrgTestApp(t)
+	org, _ := testEnv.Repo.CreateOrganization(ctx, app.ID, "Acme", GenerateUniqueSlug("acme"), &owner.ID)
+	_, _ = testEnv.Repo.AddOrganizationMember(ctx, org.ID, owner.ID, core.OrgRoleOwner)
+	inv, err := testEnv.Repo.CreateOrganizationInvite(ctx, org.ID, "p-"+GenerateUniqueSlug("e")+"@example.com", core.OrgRoleAdmin, nil, &owner.ID, "hash-"+GenerateUniqueSlug("h"), time.Now().UTC().Add(72*time.Hour))
+	if err != nil {
+		t.Fatalf("seed invite: %v", err)
+	}
+
+	router := setupClientAPIRouter(t)
+	// list
+	req := httptest.NewRequest(http.MethodGet, clientOrgURL(ws, app, "/"+org.ID.String()+"/invites"), nil)
+	req.Header.Set("Authorization", "Bearer "+ownerTok)
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("list invites: got %d (%s)", rr.Code, rr.Body.String())
+	}
+	// revoke
+	reqD := httptest.NewRequest(http.MethodDelete, clientOrgURL(ws, app, "/"+org.ID.String()+"/invites/"+inv.ID.String()), nil)
+	reqD.Header.Set("Authorization", "Bearer "+ownerTok)
+	rrD := httptest.NewRecorder()
+	router.ServeHTTP(rrD, reqD)
+	if rrD.Code != http.StatusNoContent {
+		t.Fatalf("revoke invite: got %d (%s)", rrD.Code, rrD.Body.String())
+	}
+}
+
 func TestCountRolesInProject(t *testing.T) {
 	ctx := context.Background()
 	acc := testEnv.CreateTestAccount(t, "crp-"+GenerateUniqueSlug("u")+"@example.com")
