@@ -665,3 +665,21 @@ ON CONFLICT (org_id, user_id) DO NOTHING;`, memberID, orgID, userID, orgRole); e
 	_ = roleIDs
 	return tx.Commit(ctx)
 }
+
+// CountRolesInProject returns how many of roleIDs belong to projectID. Callers
+// assigning org-member project roles compare this to len(unique roleIDs) to
+// reject ids that don't belong to the app's catalog.
+func (r *Repo) CountRolesInProject(ctx context.Context, projectID uuid.UUID, roleIDs []uuid.UUID) (int, error) {
+	if len(roleIDs) == 0 {
+		return 0, nil
+	}
+	var n int
+	err := r.db.Pool().QueryRow(ctx,
+		`SELECT count(*) FROM roles WHERE project_id = $1 AND id = ANY($2::uuid[])`,
+		projectID, roleIDs,
+	).Scan(&n)
+	if err != nil {
+		return 0, err
+	}
+	return n, nil
+}
