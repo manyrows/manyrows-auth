@@ -46,6 +46,13 @@ export type AppKitConfigValue = {
   value?: unknown;
 };
 
+export type AppKitOrganization = {
+  id: string;
+  name: string;
+  slug: string;
+  orgRole: string;
+};
+
 export type AppKitAppData = {
   account?: AppKitAccount;
   workspaceSlug: string;
@@ -55,6 +62,12 @@ export type AppKitAppData = {
   permissions: string[];
   featureFlags?: AppKitFeatureFlag[];
   config?: AppKitConfigValue[];
+  // The session's active organization, or null when there is none. Absent
+  // (undefined) when the app doesn't have organizations enabled.
+  organization?: AppKitOrganization | null;
+  // Every organization the user belongs to. Absent (undefined) when the orgs
+  // feature is off; [] when enabled but the user belongs to none.
+  organizations?: AppKitOrganization[];
 };
 
 export type ManyRowsAppKitSnapshot = {

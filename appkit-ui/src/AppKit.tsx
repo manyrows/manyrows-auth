@@ -174,6 +174,13 @@ interface WorkspaceAccount {
 }
 
 // Combined identity response — workspace user + app-scoped claims in one call.
+interface OrgMembership {
+  id: string;
+  name: string;
+  slug: string;
+  orgRole: string;
+}
+
 // Replaces the previous WorkspaceMeResponse + AppMeResponse pair.
 interface AppMeResponse {
   user?: WorkspaceAccount;
@@ -183,6 +190,10 @@ interface AppMeResponse {
     hasAccess: boolean;
     roles: string[];
     permissions: string[];
+    // Active org (null when none) + the user's org list. Both absent when
+    // the app doesn't have organizations enabled.
+    organization?: OrgMembership | null;
+    organizations?: OrgMembership[];
   };
 }
 
@@ -236,6 +247,8 @@ interface AppData {
 
   featureFlags?: any[];
   config?: Array<{ key: string; type: string; value?: any }>;
+  organization?: OrgMembership | null;
+  organizations?: OrgMembership[];
 }
 
 export type AppKitStateSnapshot = {
@@ -1286,6 +1299,12 @@ export default function AppKit(props: AppKitProps) {
               hasAppAccess: !!me.app?.hasAccess,
               roles: me.app?.roles || [],
               permissions: me.app?.permissions || [],
+              // Pass org context through to the snapshot for appkit-react's
+              // org hooks. organizations stays undefined when the feature is
+              // off (key omitted by the server) and is [] when enabled with
+              // no memberships — preserving that distinction.
+              organization: me.app?.organization ?? null,
+              organizations: me.app?.organizations,
             };
 
             // /a/app/ (feature flags + config) is opt-in via `loadAppRuntime`.
