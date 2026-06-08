@@ -10,6 +10,7 @@ export type {
   AppKitAppData,
   AppKitFeatureFlag,
   AppKitConfigValue,
+  AppKitOrganization,
 } from "./types";
 
 // Convenience hooks
@@ -27,4 +28,7 @@ export {
   useAuthFetch,
   useUpdateProfile,
   useSetPassword,
+  useOrganization,
+  useOrganizationList,
+  useSetActiveOrganization,
 } from "./hooks";

@@ -1,7 +1,7 @@
 // appkit-react/hooks.ts — convenience hooks for common data access
 import { useCallback } from "react";
 import { useAppKit } from "./AppKit";
-import type { AppKitAccount, AppKitFeatureFlag, AppKitConfigValue } from "./types";
+import type { AppKitAccount, AppKitFeatureFlag, AppKitConfigValue, AppKitOrganization } from "./types";
 
 /**
  * Returns the authenticated user's account, or null if not authenticated.
@@ -252,4 +252,75 @@ export function useSetPassword(): (params: SetPasswordParams) => Promise<void> {
       throw new Error(errBody?.issues?.[0]?.message || errBody?.error || "Failed to set password");
     }
   }, [token, baseURL]);
+}
+
+/**
+ * Returns the session's active organization, or null when there is none
+ * (a user in no orgs, or an app without organizations enabled).
+ *
+ * ```tsx
+ * const org = useOrganization();
+ * if (org) return <p>Acting in {org.name} ({org.orgRole})</p>;
+ * ```
+ */
+export function useOrganization(): AppKitOrganization | null {
+  const { snapshot } = useAppKit();
+  return snapshot?.appData?.organization ?? null;
+}
+
+/**
+ * Returns every organization the user belongs to (for a switcher). Empty
+ * when the user belongs to none or the app doesn't have organizations enabled.
+ *
+ * ```tsx
+ * const orgs = useOrganizationList();
+ * ```
+ */
+export function useOrganizationList(): AppKitOrganization[] {
+  const { snapshot } = useAppKit();
+  return snapshot?.appData?.organizations ?? [];
+}
+
+/**
+ * Returns a function that switches the session's active organization.
+ *
+ * On success it refreshes the snapshot — switching changes authorization,
+ * so roles/permissions/active-org re-resolve for the new org — and resolves
+ * with the new active organization. Throws if the user is not an active
+ * member of the target org (or orgs aren't enabled for the app).
+ *
+ * ```tsx
+ * const setActiveOrganization = useSetActiveOrganization();
+ * await setActiveOrganization(org.id);
+ * ```
+ */
+export function useSetActiveOrganization(): (orgId: string) => Promise<AppKitOrganization> {
+  const { snapshot, refresh } = useAppKit();
+  const token = snapshot?.jwtToken;
+  const baseURL = snapshot?.appBaseURL;
+
+  return useCallback(async (orgId: string) => {
+    if (!token || !baseURL) {
+      throw new Error("Not authenticated");
+    }
+
+    const res = await fetch(`${baseURL}/a/session/organization`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ organizationId: orgId }),
+    });
+
+    if (!res.ok) {
+      const errBody = await res.json().catch(() => ({}));
+      throw new Error(errBody?.issues?.[0]?.message || errBody?.error || "Failed to switch organization");
+    }
+
+    const body = await res.json().catch(() => ({}));
+    // Re-resolve appData (roles/permissions/active org) for the new org.
+    refresh();
+    return body?.organization as AppKitOrganization;
+  }, [token, baseURL, refresh]);
 }
