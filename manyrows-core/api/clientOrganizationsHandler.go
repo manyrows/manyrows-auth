@@ -73,6 +73,24 @@ func (handler *RequestHandler) requireOrgRole(
 	return nil, nil, nil, false
 }
 
+// ClientListOrgMembers: GET /a/organizations/{orgId}/members -- any active member.
+func (handler *RequestHandler) ClientListOrgMembers(w http.ResponseWriter, r *http.Request) {
+	_, org, _, ok := handler.requireOrgRole(w, r, core.OrgRoleOwner, core.OrgRoleAdmin, core.OrgRoleMember)
+	if !ok {
+		return
+	}
+	members, err := handler.repo.ListOrganizationMembers(r.Context(), org.ID)
+	if err != nil {
+		log.Err(err).Msg("ClientListOrgMembers failed")
+		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
+		return
+	}
+	if members == nil {
+		members = []repo.OrganizationMemberView{}
+	}
+	utils.WriteJson(w, map[string]any{"members": members})
+}
+
 // ClientListOrganizations: GET /a/organizations -- the caller's orgs in this app.
 func (handler *RequestHandler) ClientListOrganizations(w http.ResponseWriter, r *http.Request) {
 	_, identity, _, app, _, ok := handler.requireActiveClientSessionApp(w, r)

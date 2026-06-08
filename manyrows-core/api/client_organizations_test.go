@@ -39,6 +39,36 @@ func clientOrgURL(ws *core.Workspace, app *core.App, suffix string) string {
 	return "/x/" + ws.Slug + "/apps/" + app.ID.String() + "/a/organizations" + suffix
 }
 
+func TestClientListOrgMembers_MemberOK_NonMember404(t *testing.T) {
+	ctx := context.Background()
+	ws, app, owner, ownerTok := clientOrgTestApp(t)
+	org, _ := testEnv.Repo.CreateOrganization(ctx, app.ID, "Acme", GenerateUniqueSlug("acme"), &owner.ID)
+	_, _ = testEnv.Repo.AddOrganizationMember(ctx, org.ID, owner.ID, core.OrgRoleOwner)
+
+	router := setupClientAPIRouter(t)
+
+	// Member (owner) -> 200 with members.
+	req := httptest.NewRequest(http.MethodGet, clientOrgURL(ws, app, "/"+org.ID.String()+"/members"), nil)
+	req.Header.Set("Authorization", "Bearer "+ownerTok)
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("member list: got %d (%s)", rr.Code, rr.Body.String())
+	}
+
+	// Same-app user who is NOT a member of this org -> 404 (gate must not leak existence).
+	acc2 := testEnv.CreateTestAccount(t, "nm-"+GenerateUniqueSlug("u")+"@example.com")
+	_, _, _ = testEnv.GetOrCreateUserWithMembership(ctx, acc2.Email, app, core.UserSourceInvited)
+	_, otherTok := createTestClientSessionForApp(t, ws, acc2, app)
+	req3 := httptest.NewRequest(http.MethodGet, clientOrgURL(ws, app, "/"+org.ID.String()+"/members"), nil)
+	req3.Header.Set("Authorization", "Bearer "+otherTok)
+	rr3 := httptest.NewRecorder()
+	router.ServeHTTP(rr3, req3)
+	if rr3.Code != http.StatusNotFound {
+		t.Fatalf("same-app non-member must be 404, got %d (%s)", rr3.Code, rr3.Body.String())
+	}
+}
+
 func TestClientListOrganizations(t *testing.T) {
 	ctx := context.Background()
 	ws, app, user, token := clientOrgTestApp(t)
