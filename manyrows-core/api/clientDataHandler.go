@@ -36,13 +36,16 @@ type AppMeResponse struct {
 // is included so AppKit can configure itself on boot — no separate
 // `cookieMode` prop required on the React adapter.
 type AppMeAppPart struct {
-	Name          string                            `json:"name"`
-	HasAccess     bool                              `json:"hasAccess"`
-	Roles         []string                          `json:"roles"`
-	Permissions   []string                          `json:"permissions"`
-	TransportMode string                            `json:"transportMode"`
-	Organization  *core.OrganizationMembershipView  `json:"organization,omitempty"`
-	Organizations []core.OrganizationMembershipView `json:"organizations,omitempty"`
+	Name          string                           `json:"name"`
+	HasAccess     bool                             `json:"hasAccess"`
+	Roles         []string                         `json:"roles"`
+	Permissions   []string                         `json:"permissions"`
+	TransportMode string                           `json:"transportMode"`
+	Organization  *core.OrganizationMembershipView `json:"organization,omitempty"`
+	// Organizations is a pointer so the JSON distinguishes "orgs feature off"
+	// (nil → key omitted, byte-identical to legacy appData) from "org-enabled
+	// but you belong to none" (non-nil empty slice → []).
+	Organizations *[]core.OrganizationMembershipView `json:"organizations,omitempty"`
 }
 
 // CheckPermissionResponse is returned by the permission-check endpoint.
@@ -357,13 +360,18 @@ func (handler *RequestHandler) GetAppMe(w http.ResponseWriter, r *http.Request) 
 	}
 
 	var activeOrg *core.OrganizationMembershipView
-	var orgList []core.OrganizationMembershipView
+	var orgs *[]core.OrganizationMembershipView
 	if app.OrganizationsEnabled {
-		orgList, err = handler.repo.ListOrganizationsForUserInApp(ctx, app.ID, identity.User.ID)
-		if err != nil {
-			log.Err(err).Msg("Could not list organizations")
+		orgList, lerr := handler.repo.ListOrganizationsForUserInApp(ctx, app.ID, identity.User.ID)
+		if lerr != nil {
+			log.Err(lerr).Msg("Could not list organizations")
 			WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 			return
+		}
+		// Coalesce nil → [] so an org-enabled 0-org user serializes as an empty
+		// list, not an omitted key (the resolver returns nil for no rows).
+		if orgList == nil {
+			orgList = []core.OrganizationMembershipView{}
 		}
 		if member != nil {
 			for i := range orgList {
@@ -373,6 +381,7 @@ func (handler *RequestHandler) GetAppMe(w http.ResponseWriter, r *http.Request) 
 				}
 			}
 		}
+		orgs = &orgList
 	}
 
 	transportMode := app.TransportMode
@@ -389,7 +398,7 @@ func (handler *RequestHandler) GetAppMe(w http.ResponseWriter, r *http.Request) 
 			Permissions:   perms,
 			TransportMode: transportMode,
 			Organization:  activeOrg,
-			Organizations: orgList,
+			Organizations: orgs,
 		},
 	}
 
