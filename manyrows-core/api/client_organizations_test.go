@@ -1,6 +1,7 @@
 package api_test
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"net/http"
@@ -8,6 +9,8 @@ import (
 	"testing"
 
 	"manyrows-core/core"
+
+	"github.com/gofrs/uuid/v5"
 )
 
 // clientOrgTestApp spins up an org-enabled app + an authed end-user session.
@@ -90,5 +93,56 @@ func TestClientListOrganizations(t *testing.T) {
 	_ = json.Unmarshal(rr.Body.Bytes(), &out)
 	if len(out.Organizations) != 1 || out.Organizations[0].OrgRole != core.OrgRoleOwner {
 		t.Fatalf("expected 1 owned org, got %+v", out.Organizations)
+	}
+}
+
+func setClientOrgCreationPolicy(t *testing.T, appID uuid.UUID, policy string) *core.App {
+	t.Helper()
+	ctx := context.Background()
+	if _, err := testEnv.DB.Pool().Exec(ctx, "UPDATE apps SET org_creation_policy=$1 WHERE id=$2", policy, appID); err != nil {
+		t.Fatalf("set policy: %v", err)
+	}
+	a, err := testEnv.Repo.GetAppByID(ctx, appID)
+	if err != nil {
+		t.Fatalf("reload: %v", err)
+	}
+	return &a
+}
+
+func TestClientCreateOrganization_SelfServe(t *testing.T) {
+	ctx := context.Background()
+	ws, app, user, token := clientOrgTestApp(t)
+	setClientOrgCreationPolicy(t, app.ID, core.OrgCreationSelfServe)
+
+	router := setupClientAPIRouter(t)
+	body, _ := json.Marshal(map[string]string{"name": "Acme Inc"})
+	req := httptest.NewRequest(http.MethodPost, clientOrgURL(ws, app, ""), bytes.NewReader(body))
+	req.Header.Set("Authorization", "Bearer "+token)
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+	if rr.Code != http.StatusCreated {
+		t.Fatalf("create: got %d (%s)", rr.Code, rr.Body.String())
+	}
+	var org struct {
+		ID string `json:"id"`
+	}
+	_ = json.Unmarshal(rr.Body.Bytes(), &org)
+	m, err := testEnv.Repo.GetOrganizationMember(ctx, mustUUID(t, org.ID), user.ID)
+	if err != nil || m.OrgRole != core.OrgRoleOwner || m.Status != core.OrgMemberStatusActive {
+		t.Fatalf("creator must be active owner: %+v err=%v", m, err)
+	}
+}
+
+func TestClientCreateOrganization_InviteOnly_403(t *testing.T) {
+	ws, app, _, token := clientOrgTestApp(t)
+	setClientOrgCreationPolicy(t, app.ID, core.OrgCreationInviteOnly)
+	router := setupClientAPIRouter(t)
+	body, _ := json.Marshal(map[string]string{"name": "Nope"})
+	req := httptest.NewRequest(http.MethodPost, clientOrgURL(ws, app, ""), bytes.NewReader(body))
+	req.Header.Set("Authorization", "Bearer "+token)
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+	if rr.Code != http.StatusForbidden {
+		t.Fatalf("invite_only create must be 403, got %d (%s)", rr.Code, rr.Body.String())
 	}
 }

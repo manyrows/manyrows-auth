@@ -39,6 +39,7 @@ func registerAuthedAppRoutes(r chi.Router, h *api.RequestHandler, rpo *repo.Repo
 	r.Post("/session/organization", h.SwitchOrganization)
 
 	// Self-serve organization management.
+	r.Post("/organizations", h.ClientCreateOrganization)
 	r.Get("/organizations", h.ClientListOrganizations)
 	r.Get("/organizations/{orgId}/members", h.ClientListOrgMembers)
 

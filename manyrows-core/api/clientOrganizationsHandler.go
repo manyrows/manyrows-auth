@@ -1,8 +1,10 @@
 package api
 
 import (
+	"encoding/json"
 	"errors"
 	"net/http"
+	"strings"
 
 	"manyrows-core/core"
 	"manyrows-core/core/repo"
@@ -111,4 +113,48 @@ func (handler *RequestHandler) ClientListOrganizations(w http.ResponseWriter, r 
 		orgs = []core.OrganizationMembershipView{}
 	}
 	utils.WriteJson(w, map[string]any{"organizations": orgs})
+}
+
+type clientCreateOrgRequest struct {
+	Name string `json:"name"`
+	Slug string `json:"slug"`
+}
+
+// ClientCreateOrganization: POST /a/organizations -- self-serve create, gated by
+// org_creation_policy; the creator is seeded as owner.
+func (handler *RequestHandler) ClientCreateOrganization(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	_, identity, _, app, _, ok := handler.requireActiveClientSessionApp(w, r)
+	if !ok {
+		return
+	}
+	if !app.OrganizationsEnabled {
+		WriteError(w, r, "error.badRequest", http.StatusBadRequest)
+		return
+	}
+	if app.OrgCreationPolicy != core.OrgCreationSelfServe {
+		WriteError(w, r, "error.forbidden", http.StatusForbidden)
+		return
+	}
+	var body clientCreateOrgRequest
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || strings.TrimSpace(body.Name) == "" {
+		WriteError(w, r, "error.badRequest", http.StatusBadRequest)
+		return
+	}
+	name := strings.TrimSpace(body.Name)
+	if len(name) > maxOrgNameLen || len(strings.TrimSpace(body.Slug)) > maxOrgNameLen {
+		WriteError(w, r, "error.badRequest", http.StatusBadRequest)
+		return
+	}
+	slug := strings.TrimSpace(body.Slug)
+	if slug == "" {
+		slug = simpleSlug(name)
+	}
+	org, err := handler.repo.CreateOrganizationWithOwner(ctx, app.ID, name, slug, identity.User.ID)
+	if err != nil {
+		log.Err(err).Msg("ClientCreateOrganization failed")
+		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
+		return
+	}
+	utils.WriteJsonWithStatusCode(w, toServerOrg(org), http.StatusCreated)
 }
