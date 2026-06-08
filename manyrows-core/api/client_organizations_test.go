@@ -215,6 +215,60 @@ func TestClientRenameOrganization(t *testing.T) {
 	}
 }
 
+func TestClientSetMemberRole_Matrix(t *testing.T) {
+	ctx := context.Background()
+	ws, app, owner, ownerTok := clientOrgTestApp(t)
+	org, _ := testEnv.Repo.CreateOrganization(ctx, app.ID, "Acme", GenerateUniqueSlug("acme"), &owner.ID)
+	_, _ = testEnv.Repo.AddOrganizationMember(ctx, org.ID, owner.ID, core.OrgRoleOwner)
+
+	// admin actor
+	accA := testEnv.CreateTestAccount(t, "adm-"+GenerateUniqueSlug("u")+"@example.com")
+	adm, _, _ := testEnv.GetOrCreateUserWithMembership(ctx, accA.Email, app, core.UserSourceInvited)
+	_, _ = testEnv.Repo.AddOrganizationMember(ctx, org.ID, adm.ID, core.OrgRoleAdmin)
+	_, admTok := createTestClientSessionForApp(t, ws, accA, app)
+
+	// plain member target
+	accM := testEnv.CreateTestAccount(t, "mem-"+GenerateUniqueSlug("u")+"@example.com")
+	mem, _, _ := testEnv.GetOrCreateUserWithMembership(ctx, accM.Email, app, core.UserSourceInvited)
+	_, _ = testEnv.Repo.AddOrganizationMember(ctx, org.ID, mem.ID, core.OrgRoleMember)
+
+	router := setupClientAPIRouter(t)
+	patch := func(tok, targetUserID string, payload map[string]any) *httptest.ResponseRecorder {
+		b, _ := json.Marshal(payload)
+		req := httptest.NewRequest(http.MethodPatch, clientOrgURL(ws, app, "/"+org.ID.String()+"/members/"+targetUserID), bytes.NewReader(b))
+		req.Header.Set("Authorization", "Bearer "+tok)
+		rr := httptest.NewRecorder()
+		router.ServeHTTP(rr, req)
+		return rr
+	}
+
+	// owner: member -> admin => 204
+	if rr := patch(ownerTok, mem.ID.String(), map[string]any{"orgRole": "admin"}); rr.Code != http.StatusNoContent {
+		t.Fatalf("owner promote member->admin: got %d (%s)", rr.Code, rr.Body.String())
+	}
+	// admin: promote (now-admin) member -> owner => 403 (only owner makes owners)
+	if rr := patch(admTok, mem.ID.String(), map[string]any{"orgRole": "owner"}); rr.Code != http.StatusForbidden {
+		t.Fatalf("admin promote->owner must be 403, got %d", rr.Code)
+	}
+	// admin: modify the owner => 403 (admin can't act on owner)
+	if rr := patch(admTok, owner.ID.String(), map[string]any{"orgRole": "admin"}); rr.Code != http.StatusForbidden {
+		t.Fatalf("admin modify owner must be 403, got %d", rr.Code)
+	}
+	// owner: demote self (last owner) => 409
+	if rr := patch(ownerTok, owner.ID.String(), map[string]any{"orgRole": "admin"}); rr.Code != http.StatusConflict {
+		t.Fatalf("demote last owner must be 409, got %d", rr.Code)
+	}
+	// owner: assign a stray roleId => 400
+	if rr := patch(ownerTok, mem.ID.String(), map[string]any{"roleIds": []string{utils.NewUUID().String()}}); rr.Code != http.StatusBadRequest {
+		t.Fatalf("stray roleId must be 400, got %d", rr.Code)
+	}
+	// owner: assign a valid project role => 204
+	role, _ := testEnv.Repo.CreateRole(ctx, repo.CreateRoleParams{ProjectID: app.ProjectID, Name: "Ed", Slug: GenerateUniqueSlug("ed"), Now: time.Now().UTC()})
+	if rr := patch(ownerTok, mem.ID.String(), map[string]any{"roleIds": []string{role.ID.String()}}); rr.Code != http.StatusNoContent {
+		t.Fatalf("valid roleId: got %d (%s)", rr.Code, rr.Body.String())
+	}
+}
+
 func TestCountRolesInProject(t *testing.T) {
 	ctx := context.Background()
 	acc := testEnv.CreateTestAccount(t, "crp-"+GenerateUniqueSlug("u")+"@example.com")

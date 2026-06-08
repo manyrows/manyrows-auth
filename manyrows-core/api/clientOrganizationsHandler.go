@@ -171,6 +171,112 @@ func (handler *RequestHandler) ClientArchiveOrganization(w http.ResponseWriter, 
 	w.WriteHeader(http.StatusNoContent)
 }
 
+type clientSetMemberRequest struct {
+	OrgRole *string      `json:"orgRole"`
+	RoleIDs *[]uuid.UUID `json:"roleIds"`
+}
+
+// ClientSetOrgMember: PATCH /a/organizations/{orgId}/members/{userId} -- change a
+// member's tier and/or project roles. owner/admin, with the §7 guards.
+func (handler *RequestHandler) ClientSetOrgMember(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	app, org, caller, ok := handler.requireOrgRole(w, r, core.OrgRoleOwner, core.OrgRoleAdmin)
+	if !ok {
+		return
+	}
+	targetID, ok := handler.userIDFromURL(w, r)
+	if !ok {
+		return
+	}
+	target, err := handler.repo.GetOrganizationMember(ctx, org.ID, targetID)
+	if err != nil {
+		if errors.Is(err, repo.ErrNotFound) {
+			WriteError(w, r, "error.notFound", http.StatusNotFound)
+			return
+		}
+		log.Err(err).Msg("ClientSetOrgMember: load target failed")
+		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
+		return
+	}
+	// admin cannot act on an owner.
+	if caller.OrgRole == core.OrgRoleAdmin && target.OrgRole == core.OrgRoleOwner {
+		WriteError(w, r, "error.forbidden", http.StatusForbidden)
+		return
+	}
+
+	var body clientSetMemberRequest
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		WriteError(w, r, "error.badRequest", http.StatusBadRequest)
+		return
+	}
+
+	// Tier change.
+	if body.OrgRole != nil {
+		newRole := strings.TrimSpace(*body.OrgRole)
+		if !validOrgRole(newRole) {
+			WriteError(w, r, "error.badRequest", http.StatusBadRequest)
+			return
+		}
+		// Only an owner may grant/alter owner.
+		if caller.OrgRole == core.OrgRoleAdmin && newRole == core.OrgRoleOwner {
+			WriteError(w, r, "error.forbidden", http.StatusForbidden)
+			return
+		}
+		if err := handler.repo.SetOrganizationMemberRoleGuarded(ctx, org.ID, targetID, newRole); err != nil {
+			switch {
+			case errors.Is(err, repo.ErrNotFound):
+				WriteError(w, r, "error.notFound", http.StatusNotFound)
+			case errors.Is(err, repo.ErrLastOwner):
+				WriteError(w, r, "error.conflict", http.StatusConflict)
+			default:
+				log.Err(err).Msg("ClientSetOrgMember: tier update failed")
+				WriteError(w, r, "error.internalError", http.StatusInternalServerError)
+			}
+			return
+		}
+	}
+
+	// Project-role assignment.
+	if body.RoleIDs != nil {
+		roleIDs := dedupeUUIDs(*body.RoleIDs)
+		if len(roleIDs) > 0 {
+			n, err := handler.repo.CountRolesInProject(ctx, app.ProjectID, roleIDs)
+			if err != nil {
+				log.Err(err).Msg("ClientSetOrgMember: role validation failed")
+				WriteError(w, r, "error.internalError", http.StatusInternalServerError)
+				return
+			}
+			if n != len(roleIDs) {
+				WriteError(w, r, "error.badRequest", http.StatusBadRequest) // stray role id
+				return
+			}
+		}
+		if err := handler.repo.SetOrganizationMemberRoles(ctx, target.ID, roleIDs); err != nil {
+			log.Err(err).Msg("ClientSetOrgMember: set roles failed")
+			WriteError(w, r, "error.internalError", http.StatusInternalServerError)
+			return
+		}
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func dedupeUUIDs(in []uuid.UUID) []uuid.UUID {
+	seen := make(map[uuid.UUID]struct{}, len(in))
+	out := make([]uuid.UUID, 0, len(in))
+	for _, id := range in {
+		if id == uuid.Nil {
+			continue
+		}
+		if _, dup := seen[id]; dup {
+			continue
+		}
+		seen[id] = struct{}{}
+		out = append(out, id)
+	}
+	return out
+}
+
 type clientCreateOrgRequest struct {
 	Name string `json:"name"`
 	Slug string `json:"slug"`
