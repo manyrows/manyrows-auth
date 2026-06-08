@@ -7,8 +7,11 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"manyrows-core/core"
+	"manyrows-core/core/repo"
+	"manyrows-core/utils"
 
 	"github.com/gofrs/uuid/v5"
 )
@@ -209,5 +212,32 @@ func TestClientRenameOrganization(t *testing.T) {
 	router.ServeHTTP(rr2, req2)
 	if rr2.Code != http.StatusForbidden {
 		t.Fatalf("member rename must be 403, got %d", rr2.Code)
+	}
+}
+
+func TestCountRolesInProject(t *testing.T) {
+	ctx := context.Background()
+	acc := testEnv.CreateTestAccount(t, "crp-"+GenerateUniqueSlug("u")+"@example.com")
+	ws := testEnv.CreateTestWorkspace(t, acc, "WS", GenerateUniqueSlug("ws"))
+	app := testEnv.CreateTestApp(t, ws, acc)
+	t.Cleanup(func() { testEnv.CleanupTestData(t, &TestFixtures{Account: acc, Workspace: ws}) })
+
+	role, err := testEnv.Repo.CreateRole(ctx, repo.CreateRoleParams{ProjectID: app.ProjectID, Name: "R", Slug: GenerateUniqueSlug("r"), Now: time.Now().UTC()})
+	if err != nil {
+		t.Fatalf("create role: %v", err)
+	}
+	stray := utils.NewUUID()
+
+	n, err := testEnv.Repo.CountRolesInProject(ctx, app.ProjectID, []uuid.UUID{role.ID})
+	if err != nil || n != 1 {
+		t.Fatalf("in-project role: n=%d err=%v", n, err)
+	}
+	n2, err := testEnv.Repo.CountRolesInProject(ctx, app.ProjectID, []uuid.UUID{role.ID, stray})
+	if err != nil || n2 != 1 {
+		t.Fatalf("stray excluded: n=%d err=%v", n2, err)
+	}
+	n3, err := testEnv.Repo.CountRolesInProject(ctx, app.ProjectID, []uuid.UUID{})
+	if err != nil || n3 != 0 {
+		t.Fatalf("empty input: n=%d err=%v", n3, err)
 	}
 }
