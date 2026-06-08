@@ -187,6 +187,7 @@ func setupClientAPIRouter(t *testing.T) *chi.Mux {
 			authed.Post("/session/organization", requestHandler.SwitchOrganization)
 			authed.Post("/organizations", requestHandler.ClientCreateOrganization)
 			authed.Get("/organizations", requestHandler.ClientListOrganizations)
+			authed.Patch("/organizations/{orgId}", requestHandler.ClientRenameOrganization)
 			authed.Get("/organizations/{orgId}/members", requestHandler.ClientListOrgMembers)
 			authed.Get("/me", requestHandler.GetAppMe)
 			authed.Get("/check-permission", requestHandler.CheckPermission)

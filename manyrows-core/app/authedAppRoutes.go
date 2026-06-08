@@ -41,6 +41,7 @@ func registerAuthedAppRoutes(r chi.Router, h *api.RequestHandler, rpo *repo.Repo
 	// Self-serve organization management.
 	r.Post("/organizations", h.ClientCreateOrganization)
 	r.Get("/organizations", h.ClientListOrganizations)
+	r.Patch("/organizations/{orgId}", h.ClientRenameOrganization)
 	r.Get("/organizations/{orgId}/members", h.ClientListOrgMembers)
 
 	// User-info / app-scoped routes (formerly under /app/).

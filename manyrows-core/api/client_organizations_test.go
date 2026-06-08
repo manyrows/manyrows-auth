@@ -146,3 +146,35 @@ func TestClientCreateOrganization_InviteOnly_403(t *testing.T) {
 		t.Fatalf("invite_only create must be 403, got %d (%s)", rr.Code, rr.Body.String())
 	}
 }
+
+func TestClientRenameOrganization(t *testing.T) {
+	ctx := context.Background()
+	ws, app, owner, ownerTok := clientOrgTestApp(t)
+	org, _ := testEnv.Repo.CreateOrganization(ctx, app.ID, "Old", GenerateUniqueSlug("old"), &owner.ID)
+	_, _ = testEnv.Repo.AddOrganizationMember(ctx, org.ID, owner.ID, core.OrgRoleOwner)
+	// plain member
+	acc2 := testEnv.CreateTestAccount(t, "mem-"+GenerateUniqueSlug("u")+"@example.com")
+	mem, _, _ := testEnv.GetOrCreateUserWithMembership(ctx, acc2.Email, app, core.UserSourceInvited)
+	_, _ = testEnv.Repo.AddOrganizationMember(ctx, org.ID, mem.ID, core.OrgRoleMember)
+	_, memTok := createTestClientSessionForApp(t, ws, acc2, app)
+
+	router := setupClientAPIRouter(t)
+	body, _ := json.Marshal(map[string]string{"name": "New Name"})
+
+	req := httptest.NewRequest(http.MethodPatch, clientOrgURL(ws, app, "/"+org.ID.String()), bytes.NewReader(body))
+	req.Header.Set("Authorization", "Bearer "+ownerTok)
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("owner rename: got %d (%s)", rr.Code, rr.Body.String())
+	}
+
+	body2, _ := json.Marshal(map[string]string{"name": "Hacked"})
+	req2 := httptest.NewRequest(http.MethodPatch, clientOrgURL(ws, app, "/"+org.ID.String()), bytes.NewReader(body2))
+	req2.Header.Set("Authorization", "Bearer "+memTok)
+	rr2 := httptest.NewRecorder()
+	router.ServeHTTP(rr2, req2)
+	if rr2.Code != http.StatusForbidden {
+		t.Fatalf("member rename must be 403, got %d", rr2.Code)
+	}
+}

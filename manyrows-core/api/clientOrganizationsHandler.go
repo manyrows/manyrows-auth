@@ -115,6 +115,47 @@ func (handler *RequestHandler) ClientListOrganizations(w http.ResponseWriter, r 
 	utils.WriteJson(w, map[string]any{"organizations": orgs})
 }
 
+type clientUpdateOrgRequest struct {
+	Name *string `json:"name"`
+	Slug *string `json:"slug"`
+}
+
+// ClientRenameOrganization: PATCH /a/organizations/{orgId} -- owner/admin.
+func (handler *RequestHandler) ClientRenameOrganization(w http.ResponseWriter, r *http.Request) {
+	_, org, _, ok := handler.requireOrgRole(w, r, core.OrgRoleOwner, core.OrgRoleAdmin)
+	if !ok {
+		return
+	}
+	var body clientUpdateOrgRequest
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		WriteError(w, r, "error.badRequest", http.StatusBadRequest)
+		return
+	}
+	if (body.Name != nil && len(strings.TrimSpace(*body.Name)) > maxOrgNameLen) ||
+		(body.Slug != nil && len(strings.TrimSpace(*body.Slug)) > maxOrgNameLen) {
+		WriteError(w, r, "error.badRequest", http.StatusBadRequest)
+		return
+	}
+	name := org.Name
+	if body.Name != nil && strings.TrimSpace(*body.Name) != "" {
+		name = strings.TrimSpace(*body.Name)
+	}
+	baseSlug := org.Slug
+	switch {
+	case body.Slug != nil && strings.TrimSpace(*body.Slug) != "":
+		baseSlug = strings.TrimSpace(*body.Slug)
+	case body.Name != nil && strings.TrimSpace(*body.Name) != "":
+		baseSlug = simpleSlug(name)
+	}
+	updated, err := handler.repo.UpdateOrganizationWithUniqueSlug(r.Context(), org.ID, name, baseSlug)
+	if err != nil {
+		log.Err(err).Msg("ClientRenameOrganization failed")
+		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
+		return
+	}
+	utils.WriteJson(w, toServerOrg(updated))
+}
+
 type clientCreateOrgRequest struct {
 	Name string `json:"name"`
 	Slug string `json:"slug"`
