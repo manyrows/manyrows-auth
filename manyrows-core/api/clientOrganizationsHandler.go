@@ -156,6 +156,21 @@ func (handler *RequestHandler) ClientRenameOrganization(w http.ResponseWriter, r
 	utils.WriteJson(w, toServerOrg(updated))
 }
 
+// ClientArchiveOrganization: DELETE /a/organizations/{orgId} -- owner-only,
+// reversible (status=archived). Hard-delete/restore stay operator-side.
+func (handler *RequestHandler) ClientArchiveOrganization(w http.ResponseWriter, r *http.Request) {
+	_, org, _, ok := handler.requireOrgRole(w, r, core.OrgRoleOwner)
+	if !ok {
+		return
+	}
+	if err := handler.repo.ArchiveOrganization(r.Context(), org.ID); err != nil {
+		log.Err(err).Msg("ClientArchiveOrganization failed")
+		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 type clientCreateOrgRequest struct {
 	Name string `json:"name"`
 	Slug string `json:"slug"`

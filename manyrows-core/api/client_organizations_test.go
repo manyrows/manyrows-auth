@@ -147,6 +147,39 @@ func TestClientCreateOrganization_InviteOnly_403(t *testing.T) {
 	}
 }
 
+func TestClientArchiveOrganization(t *testing.T) {
+	ctx := context.Background()
+	ws, app, owner, ownerTok := clientOrgTestApp(t)
+	org, _ := testEnv.Repo.CreateOrganization(ctx, app.ID, "Acme", GenerateUniqueSlug("acme"), &owner.ID)
+	_, _ = testEnv.Repo.AddOrganizationMember(ctx, org.ID, owner.ID, core.OrgRoleOwner)
+	acc2 := testEnv.CreateTestAccount(t, "adm-"+GenerateUniqueSlug("u")+"@example.com")
+	adm, _, _ := testEnv.GetOrCreateUserWithMembership(ctx, acc2.Email, app, core.UserSourceInvited)
+	_, _ = testEnv.Repo.AddOrganizationMember(ctx, org.ID, adm.ID, core.OrgRoleAdmin)
+	_, admTok := createTestClientSessionForApp(t, ws, acc2, app)
+
+	router := setupClientAPIRouter(t)
+	// admin -> 403 (owner-only)
+	reqA := httptest.NewRequest(http.MethodDelete, clientOrgURL(ws, app, "/"+org.ID.String()), nil)
+	reqA.Header.Set("Authorization", "Bearer "+admTok)
+	rrA := httptest.NewRecorder()
+	router.ServeHTTP(rrA, reqA)
+	if rrA.Code != http.StatusForbidden {
+		t.Fatalf("admin archive must be 403, got %d", rrA.Code)
+	}
+	// owner -> 204 + archived
+	req := httptest.NewRequest(http.MethodDelete, clientOrgURL(ws, app, "/"+org.ID.String()), nil)
+	req.Header.Set("Authorization", "Bearer "+ownerTok)
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+	if rr.Code != http.StatusNoContent {
+		t.Fatalf("owner archive: got %d (%s)", rr.Code, rr.Body.String())
+	}
+	got, _ := testEnv.Repo.GetOrganizationByID(ctx, org.ID)
+	if got.Status != core.OrgStatusArchived {
+		t.Fatalf("expected archived, got %q", got.Status)
+	}
+}
+
 func TestClientRenameOrganization(t *testing.T) {
 	ctx := context.Background()
 	ws, app, owner, ownerTok := clientOrgTestApp(t)
