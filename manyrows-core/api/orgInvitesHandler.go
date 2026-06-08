@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -35,16 +36,48 @@ type orgInviteResponse struct {
 	ExpiresAt string `json:"expiresAt"`
 }
 
+var (
+	errOrgInviteAppURLMissing = errors.New("org invite: app url required")
+	errOrgInviteMemberExists  = errors.New("org invite: already an active member")
+	errOrgInviteEmailFailed   = errors.New("org invite: email send failed")
+)
+
+// createAndEmailOrgInvite creates a pending invite and emails the accept link,
+// rolling the invite back if the email fails. Shared by the server-API and
+// client self-serve invite handlers.
+func (handler *RequestHandler) createAndEmailOrgInvite(
+	ctx context.Context, app *core.App, ws *core.Workspace, org *core.Organization,
+	emailAddr, orgRole string, roleIDs []uuid.UUID, invitedBy *uuid.UUID,
+) (*core.OrganizationInvite, error) {
+	if app.AppURL == nil || strings.TrimSpace(*app.AppURL) == "" {
+		return nil, errOrgInviteAppURLMissing
+	}
+	if existing, _ := handler.repo.GetUserByEmail(ctx, emailAddr, app); existing != nil {
+		if m, _ := handler.repo.GetOrganizationMember(ctx, org.ID, existing.ID); m != nil && m.Status == core.OrgMemberStatusActive {
+			return nil, errOrgInviteMemberExists
+		}
+	}
+	rawToken, tokenHash, err := handler.adminAuthService.NewMagicToken()
+	if err != nil {
+		return nil, err
+	}
+	inv, err := handler.repo.CreateOrganizationInvite(ctx, org.ID, emailAddr, orgRole, roleIDs, invitedBy, tokenHash, time.Now().UTC().Add(orgInviteTTL))
+	if err != nil {
+		return nil, err // may be repo.ErrInvitePending
+	}
+	acceptLink := buildOrgInviteAcceptURL(handler.AppBaseURL(app), ws.Slug, app.ID, rawToken)
+	msg := email.BuildOrgInviteEmail("en", emailAddr, email.WorkspaceFrom(app.DisplayName()), app.DisplayName(), org.Name, acceptLink)
+	if sendErr := handler.sendWorkspaceEmail(ctx, app.WorkspaceID, msg); sendErr != nil {
+		_ = handler.repo.RevokeOrganizationInvite(ctx, org.ID, inv.ID)
+		return nil, errOrgInviteEmailFailed
+	}
+	return inv, nil
+}
+
 // ServerCreateOrgInvite: POST /v1/apps/{appId}/organizations/{orgId}/invites
 func (handler *RequestHandler) ServerCreateOrgInvite(w http.ResponseWriter, r *http.Request) {
 	app, org, ok := handler.serverOrgFromURL(w, r)
 	if !ok {
-		return
-	}
-	// Accept link needs an app URL.
-	base := handler.AppBaseURL(app)
-	if app.AppURL == nil || strings.TrimSpace(*app.AppURL) == "" {
-		WriteError(w, r, "error.appUrlRequired", http.StatusBadRequest)
 		return
 	}
 	var req createOrgInviteRequest
@@ -65,43 +98,24 @@ func (handler *RequestHandler) ServerCreateOrgInvite(w http.ResponseWriter, r *h
 		WriteError(w, r, "error.badRequest", http.StatusBadRequest)
 		return
 	}
-	// Defensive: if the email already resolves to an active member, 409.
-	if existing, _ := handler.repo.GetUserByEmail(r.Context(), emailAddr, app); existing != nil {
-		if m, _ := handler.repo.GetOrganizationMember(r.Context(), org.ID, existing.ID); m != nil && m.Status == core.OrgMemberStatusActive {
-			WriteError(w, r, "error.conflict", http.StatusConflict)
-			return
-		}
-	}
-
-	rawToken, tokenHash, err := handler.adminAuthService.NewMagicToken()
-	if err != nil {
-		log.Err(err).Msg("ServerCreateOrgInvite: NewMagicToken failed")
-		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
-		return
-	}
-	inv, err := handler.repo.CreateOrganizationInvite(r.Context(), org.ID, emailAddr, orgRole, req.RoleIDs, req.InvitedByUserID, tokenHash, time.Now().UTC().Add(orgInviteTTL))
-	if err != nil {
-		if errors.Is(err, repo.ErrInvitePending) {
-			WriteError(w, r, "error.invitePending", http.StatusConflict)
-			return
-		}
-		log.Err(err).Msg("ServerCreateOrgInvite: create failed")
-		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
-		return
-	}
-
-	// Build accept link + send email; roll back the invite on send failure.
 	ws, _ := core.WorkspaceFromContext(r.Context())
-	acceptLink := buildOrgInviteAcceptURL(base, ws.Slug, app.ID, rawToken)
-	inviterLabel := app.DisplayName()
-	msg := email.BuildOrgInviteEmail("en", emailAddr, email.WorkspaceFrom(app.DisplayName()), inviterLabel, org.Name, acceptLink)
-	if sendErr := handler.sendWorkspaceEmail(r.Context(), app.WorkspaceID, msg); sendErr != nil {
-		log.Err(sendErr).Msg("ServerCreateOrgInvite: email send failed; revoking invite")
-		_ = handler.repo.RevokeOrganizationInvite(r.Context(), org.ID, inv.ID)
-		WriteError(w, r, "error.inviteEmailFailed", http.StatusInternalServerError)
+	inv, err := handler.createAndEmailOrgInvite(r.Context(), app, ws, org, emailAddr, orgRole, req.RoleIDs, req.InvitedByUserID)
+	if err != nil {
+		switch {
+		case errors.Is(err, errOrgInviteAppURLMissing):
+			WriteError(w, r, "error.appUrlRequired", http.StatusBadRequest)
+		case errors.Is(err, errOrgInviteMemberExists):
+			WriteError(w, r, "error.conflict", http.StatusConflict)
+		case errors.Is(err, repo.ErrInvitePending):
+			WriteError(w, r, "error.invitePending", http.StatusConflict)
+		case errors.Is(err, errOrgInviteEmailFailed):
+			WriteError(w, r, "error.inviteEmailFailed", http.StatusInternalServerError)
+		default:
+			log.Err(err).Msg("ServerCreateOrgInvite failed")
+			WriteError(w, r, "error.internalError", http.StatusInternalServerError)
+		}
 		return
 	}
-
 	utils.WriteJsonWithStatusCode(w, orgInviteResponse{
 		ID: inv.ID.String(), Email: inv.Email, OrgRole: inv.OrgRole, Status: inv.Status,
 		CreatedAt: inv.CreatedAt.Format(time.RFC3339), ExpiresAt: inv.ExpiresAt.Format(time.RFC3339),

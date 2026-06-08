@@ -46,6 +46,7 @@ func registerAuthedAppRoutes(r chi.Router, h *api.RequestHandler, rpo *repo.Repo
 	r.Get("/organizations/{orgId}/members", h.ClientListOrgMembers)
 	r.Patch("/organizations/{orgId}/members/{userId}", h.ClientSetOrgMember)
 	r.Delete("/organizations/{orgId}/members/{userId}", h.ClientRemoveOrgMember)
+	r.Post("/organizations/{orgId}/invites", h.ClientCreateOrgInvite)
 
 	// User-info / app-scoped routes (formerly under /app/).
 	r.Get("/me", h.GetAppMe)

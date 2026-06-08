@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"strings"
+	"time"
 
 	"manyrows-core/core"
 	"manyrows-core/core/repo"
@@ -312,6 +313,79 @@ func (handler *RequestHandler) ClientRemoveOrgMember(w http.ResponseWriter, r *h
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+type clientCreateInviteRequest struct {
+	Email   string      `json:"email"`
+	OrgRole string      `json:"orgRole"`
+	RoleIDs []uuid.UUID `json:"roleIds"`
+}
+
+// ClientCreateOrgInvite: POST /a/organizations/{orgId}/invites -- owner/admin.
+func (handler *RequestHandler) ClientCreateOrgInvite(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	app, org, caller, ok := handler.requireOrgRole(w, r, core.OrgRoleOwner, core.OrgRoleAdmin)
+	if !ok {
+		return
+	}
+	ws, _ := core.WorkspaceFromContext(ctx)
+	var body clientCreateInviteRequest
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		WriteError(w, r, "error.badRequest", http.StatusBadRequest)
+		return
+	}
+	emailAddr := strings.TrimSpace(strings.ToLower(body.Email))
+	if emailAddr == "" {
+		WriteError(w, r, "error.badRequest", http.StatusBadRequest)
+		return
+	}
+	orgRole := strings.TrimSpace(body.OrgRole)
+	if orgRole == "" {
+		orgRole = core.OrgRoleAdmin
+	}
+	if !validOrgRole(orgRole) {
+		WriteError(w, r, "error.badRequest", http.StatusBadRequest)
+		return
+	}
+	if caller.OrgRole == core.OrgRoleAdmin && orgRole == core.OrgRoleOwner {
+		WriteError(w, r, "error.forbidden", http.StatusForbidden)
+		return
+	}
+	roleIDs := dedupeUUIDs(body.RoleIDs)
+	if len(roleIDs) > 0 {
+		n, err := handler.repo.CountRolesInProject(ctx, app.ProjectID, roleIDs)
+		if err != nil {
+			log.Err(err).Msg("ClientCreateOrgInvite: role validation failed")
+			WriteError(w, r, "error.internalError", http.StatusInternalServerError)
+			return
+		}
+		if n != len(roleIDs) {
+			WriteError(w, r, "error.badRequest", http.StatusBadRequest)
+			return
+		}
+	}
+	invitedBy := caller.UserID
+	inv, err := handler.createAndEmailOrgInvite(ctx, app, ws, org, emailAddr, orgRole, roleIDs, &invitedBy)
+	if err != nil {
+		switch {
+		case errors.Is(err, errOrgInviteAppURLMissing):
+			WriteError(w, r, "error.appUrlRequired", http.StatusBadRequest)
+		case errors.Is(err, errOrgInviteMemberExists):
+			WriteError(w, r, "error.conflict", http.StatusConflict)
+		case errors.Is(err, repo.ErrInvitePending):
+			WriteError(w, r, "error.invitePending", http.StatusConflict)
+		case errors.Is(err, errOrgInviteEmailFailed):
+			WriteError(w, r, "error.inviteEmailFailed", http.StatusInternalServerError)
+		default:
+			log.Err(err).Msg("ClientCreateOrgInvite failed")
+			WriteError(w, r, "error.internalError", http.StatusInternalServerError)
+		}
+		return
+	}
+	utils.WriteJsonWithStatusCode(w, map[string]any{
+		"id": inv.ID.String(), "email": inv.Email, "orgRole": inv.OrgRole, "status": inv.Status,
+		"createdAt": inv.CreatedAt.Format(time.RFC3339), "expiresAt": inv.ExpiresAt.Format(time.RFC3339),
+	}, http.StatusCreated)
 }
 
 func dedupeUUIDs(in []uuid.UUID) []uuid.UUID {

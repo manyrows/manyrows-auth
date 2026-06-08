@@ -307,6 +307,43 @@ func TestClientRemoveOrLeaveMember(t *testing.T) {
 	}
 }
 
+func TestClientCreateInvite(t *testing.T) {
+	ctx := context.Background()
+	ws, app, owner, ownerTok := clientOrgTestApp(t)
+	// invites need an app URL.
+	if _, err := testEnv.DB.Pool().Exec(ctx, "UPDATE apps SET app_url=$1 WHERE id=$2", "https://app.example.com", app.ID); err != nil {
+		t.Fatalf("set app_url: %v", err)
+	}
+	reloaded, _ := testEnv.Repo.GetAppByID(ctx, app.ID)
+	app = &reloaded
+	org, _ := testEnv.Repo.CreateOrganization(ctx, app.ID, "Acme", GenerateUniqueSlug("acme"), &owner.ID)
+	_, _ = testEnv.Repo.AddOrganizationMember(ctx, org.ID, owner.ID, core.OrgRoleOwner)
+
+	router := setupClientAPIRouter(t)
+	body, _ := json.Marshal(map[string]any{"email": "newperson-" + GenerateUniqueSlug("e") + "@example.com", "orgRole": "admin"})
+	req := httptest.NewRequest(http.MethodPost, clientOrgURL(ws, app, "/"+org.ID.String()+"/invites"), bytes.NewReader(body))
+	req.Header.Set("Authorization", "Bearer "+ownerTok)
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+	if rr.Code != http.StatusCreated {
+		t.Fatalf("owner invite: got %d (%s)", rr.Code, rr.Body.String())
+	}
+
+	// admin cannot invite as owner.
+	accA := testEnv.CreateTestAccount(t, "adm-"+GenerateUniqueSlug("u")+"@example.com")
+	adm, _, _ := testEnv.GetOrCreateUserWithMembership(ctx, accA.Email, app, core.UserSourceInvited)
+	_, _ = testEnv.Repo.AddOrganizationMember(ctx, org.ID, adm.ID, core.OrgRoleAdmin)
+	_, admTok := createTestClientSessionForApp(t, ws, accA, app)
+	b2, _ := json.Marshal(map[string]any{"email": "x-" + GenerateUniqueSlug("e") + "@example.com", "orgRole": "owner"})
+	req2 := httptest.NewRequest(http.MethodPost, clientOrgURL(ws, app, "/"+org.ID.String()+"/invites"), bytes.NewReader(b2))
+	req2.Header.Set("Authorization", "Bearer "+admTok)
+	rr2 := httptest.NewRecorder()
+	router.ServeHTTP(rr2, req2)
+	if rr2.Code != http.StatusForbidden {
+		t.Fatalf("admin invite-as-owner must be 403, got %d (%s)", rr2.Code, rr2.Body.String())
+	}
+}
+
 func TestCountRolesInProject(t *testing.T) {
 	ctx := context.Background()
 	acc := testEnv.CreateTestAccount(t, "crp-"+GenerateUniqueSlug("u")+"@example.com")
