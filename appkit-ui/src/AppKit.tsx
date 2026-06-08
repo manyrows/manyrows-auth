@@ -144,6 +144,32 @@ function coalesce<T>(key: string, fn: () => Promise<T>): Promise<T> {
   return p;
 }
 
+// Access tokens are short-lived, and without help the SDK only refreshes
+// reactively (on a 401 it sees on its own /me etc. calls). Host apps that attach
+// the bearer to their OWN requests can't lean on that, so the SDK also keeps the
+// in-memory token fresh proactively: schedule a refresh shortly before expiry,
+// and top the token up when the tab regains focus (timers are suspended while a
+// tab is backgrounded or the machine sleeps). Both funnel through refreshOnce(),
+// so they coalesce with reactive refreshes — never more than one /auth/refresh
+// in flight.
+const REFRESH_SKEW_MS = 60_000; // refresh this long before exp
+const MIN_REFRESH_DELAY_MS = 1_000; // never schedule a 0ms/negative timer
+
+// Decode a JWT's `exp` (ms since epoch) without verifying it — used only to
+// schedule a proactive refresh. Returns null for a non-JWT / malformed token,
+// in which case proactive scheduling is simply skipped.
+function accessTokenExpMs(token: string): number | null {
+  const payload = token.split(".")[1];
+  if (!payload) return null;
+  try {
+    const json = atob(payload.replace(/-/g, "+").replace(/_/g, "/"));
+    const exp = (JSON.parse(json) as { exp?: unknown }).exp;
+    return typeof exp === "number" ? exp * 1000 : null;
+  } catch {
+    return null;
+  }
+}
+
 type AuthStatus = "checking" | "authenticated" | "unauthenticated";
 
 // Tagged outcome of /auth/refresh — see doRefreshTokens. The
@@ -1030,6 +1056,46 @@ export default function AppKit(props: AppKitProps) {
     refreshInFlightRef.current = p;
     return p;
   }, [doRefreshTokens]);
+
+  // Proactive refresh: schedule a refresh shortly before the access token
+  // expires so it never goes stale mid-session. Reschedules whenever the token
+  // changes (each refresh mints a new exp). refreshOnce() dedupes, so this can't
+  // race the reactive 401 path into a double /auth/refresh.
+  React.useEffect(() => {
+    if (!accessToken) return;
+    const expMs = accessTokenExpMs(accessToken);
+    if (expMs == null) return;
+    const delay = Math.max(
+      expMs - Date.now() - REFRESH_SKEW_MS,
+      MIN_REFRESH_DELAY_MS
+    );
+    const timer = setTimeout(() => {
+      void refreshOnce();
+    }, delay);
+    return () => clearTimeout(timer);
+  }, [accessToken, refreshOnce]);
+
+  // The proactive timer above is suspended while the tab is backgrounded or the
+  // machine sleeps, so a token can expire while the user is away. Top it up when
+  // the tab regains focus, before the host app's next request goes out.
+  React.useEffect(() => {
+    if (!accessToken) return;
+    const refreshIfStale = () => {
+      const expMs = accessTokenExpMs(accessToken);
+      if (expMs != null && expMs - Date.now() <= REFRESH_SKEW_MS) {
+        void refreshOnce();
+      }
+    };
+    const onVisible = () => {
+      if (document.visibilityState === "visible") refreshIfStale();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("focus", refreshIfStale);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("focus", refreshIfStale);
+    };
+  }, [accessToken, refreshOnce]);
 
   const clearTokensSilently = React.useCallback(
     (reason: "expired" | "cleared", broadcast: boolean = true) => {
