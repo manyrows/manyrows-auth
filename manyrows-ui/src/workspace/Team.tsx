@@ -18,7 +18,7 @@ import {
   Tooltip,
   Typography,
 } from "@mui/material";
-import { UserPlus, Trash2, Mail } from "lucide-react";
+import { UserPlus, Trash2, Mail, KeyRound } from "lucide-react";
 import PageHeader from "../components/PageHeader.tsx";
 import { useSnackbar } from "notistack";
 import { useTranslation } from "react-i18next";
@@ -72,6 +72,8 @@ export default function Team({ workspace }: Props) {
   const [addBusy, setAddBusy] = React.useState(false);
   const [addError, setAddError] = React.useState<string | null>(null);
   const [removeTarget, setRemoveTarget] = React.useState<TeamMember | null>(null);
+  const [resetTotpTarget, setResetTotpTarget] = React.useState<TeamMember | null>(null);
+  const [resetTotpBusy, setResetTotpBusy] = React.useState(false);
 
   const isOwner = callerRole === "owner" || workspace.role === "owner";
 
@@ -130,6 +132,22 @@ export default function Team({ workspace }: Props) {
     } catch (e) {
       enqueueSnackbar(extractApiError(e, t("error.generic")), { variant: "error" });
       setRemoveTarget(null);
+    }
+  };
+
+  const onResetTotp = async () => {
+    if (!resetTotpTarget) return;
+    setResetTotpBusy(true);
+    try {
+      await axios.delete(
+        `/admin/workspace/${workspace.id}/team/${resetTotpTarget.accountId}/totp`,
+      );
+      enqueueSnackbar(t("team.totpReset"), { variant: "success" });
+    } catch (e) {
+      enqueueSnackbar(extractApiError(e, t("error.generic")), { variant: "error" });
+    } finally {
+      setResetTotpBusy(false);
+      setResetTotpTarget(null);
     }
   };
 
@@ -228,6 +246,17 @@ export default function Team({ workspace }: Props) {
                 variant="outlined"
                 sx={{ fontWeight: 500, fontSize: 11, height: 22 }}
               />
+
+              {isOwner && (
+                <Tooltip title={t("team.resetTotp")}>
+                  <IconButton
+                    size="small"
+                    onClick={() => setResetTotpTarget(m)}
+                  >
+                    <KeyRound size={14} strokeWidth={1.75} />
+                  </IconButton>
+                </Tooltip>
+              )}
 
               {isOwner && m.role !== "owner" && (
                 <Tooltip title={t("team.removeConfirm")}>
@@ -383,6 +412,33 @@ export default function Team({ workspace }: Props) {
           </Button>
           <Button color="error" variant="contained" onClick={onRemove}>
             {t("common.remove")}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Reset 2FA confirmation dialog */}
+      <Dialog
+        open={!!resetTotpTarget}
+        onClose={() => !resetTotpBusy && setResetTotpTarget(null)}
+      >
+        <DialogTitle>{t("team.resetTotpTitle")}</DialogTitle>
+        <DialogContent>
+          <DialogContentText>{t("team.resetTotpConfirm")}</DialogContentText>
+        </DialogContent>
+        <DialogActions>
+          <Button
+            onClick={() => setResetTotpTarget(null)}
+            disabled={resetTotpBusy}
+          >
+            {t("common.cancel")}
+          </Button>
+          <Button
+            color="warning"
+            variant="contained"
+            onClick={onResetTotp}
+            disabled={resetTotpBusy}
+          >
+            {t("team.resetTotp")}
           </Button>
         </DialogActions>
       </Dialog>

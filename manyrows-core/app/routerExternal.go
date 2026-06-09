@@ -157,7 +157,7 @@ func (a *AppService) serverAPIRouter(h *api.RequestHandler) *chi.Mux {
 	// Per-key throttle, after auth so the key is in context. Created once
 	// here (serverAPIRouter is built a single time at startup) so the
 	// token buckets persist for the process lifetime.
-	r.Use(apiKeyRateLimitMiddleware(newAPIKeyRateLimiter(a.config.GetAPIRateLimitPerMinute())))
+	r.Use(apiKeyRateLimitMiddleware(newAPIKeyRateLimiter(a.repo, a.config.GetAPIRateLimitPerMinute())))
 
 	// App-scoped routes (resolves project+env from app, then CORS/IP)
 	appRouter := chi.NewRouter()
