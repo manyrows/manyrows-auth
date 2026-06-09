@@ -11,6 +11,10 @@ export type {
   AppKitFeatureFlag,
   AppKitConfigValue,
   AppKitOrganization,
+  AppKitOrganizationRole,
+  AppKitOrganizationMember,
+  AppKitOrganizationInvite,
+  AppKitCreatedOrganization,
 } from "./types";
 
 // Convenience hooks
@@ -31,4 +35,14 @@ export {
   useOrganization,
   useOrganizationList,
   useSetActiveOrganization,
+  // Self-serve organization management
+  useCreateOrganization,
+  useRenameOrganization,
+  useArchiveOrganization,
+  useOrganizationMembers,
+  useSetOrganizationMember,
+  useRemoveOrganizationMember,
+  useOrganizationInvites,
+  useCreateOrganizationInvite,
+  useRevokeOrganizationInvite,
 } from "./hooks";

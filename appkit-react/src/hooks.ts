@@ -1,7 +1,15 @@
 // appkit-react/hooks.ts — convenience hooks for common data access
 import { useCallback } from "react";
 import { useAppKit } from "./AppKit";
-import type { AppKitAccount, AppKitFeatureFlag, AppKitConfigValue, AppKitOrganization } from "./types";
+import type {
+  AppKitAccount,
+  AppKitFeatureFlag,
+  AppKitConfigValue,
+  AppKitOrganization,
+  AppKitOrganizationMember,
+  AppKitOrganizationInvite,
+  AppKitCreatedOrganization,
+} from "./types";
 
 /**
  * Returns the authenticated user's account, or null if not authenticated.
@@ -323,4 +331,217 @@ export function useSetActiveOrganization(): (orgId: string) => Promise<AppKitOrg
     refresh();
     return body?.organization as AppKitOrganization;
   }, [token, baseURL, refresh]);
+}
+
+// =====================
+// Self-serve organization management
+// =====================
+//
+// These wrap the authed /a/organizations/* endpoints. Authorization is
+// enforced server-side by the caller's org tier (owner/admin/member); a call
+// the user isn't allowed to make rejects with the server's error code.
+
+/** Internal: authed JSON request against the app's /a/* surface. */
+async function orgFetch(
+  token: string | null | undefined,
+  baseURL: string | null | undefined,
+  path: string,
+  init: RequestInit,
+  failMsg: string,
+): Promise<unknown> {
+  if (!token || !baseURL) {
+    throw new Error("Not authenticated");
+  }
+  const res = await fetch(`${baseURL}${path}`, {
+    ...init,
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}`, ...(init.headers ?? {}) },
+  });
+  if (!res.ok) {
+    const errBody = await res.json().catch(() => ({}));
+    throw new Error((errBody as { issues?: { message?: string }[]; error?: string })?.issues?.[0]?.message
+      || (errBody as { error?: string })?.error || failMsg);
+  }
+  if (res.status === 204) return undefined;
+  return res.json().catch(() => ({}));
+}
+
+/**
+ * Returns a function to create an organization (self-serve). The app must have
+ * `org_creation_policy = self_serve`; otherwise the server rejects with
+ * `error.forbidden`. The creator is seeded as the owner. Refreshes the snapshot
+ * so the new org appears in `useOrganizationList()`.
+ *
+ * ```tsx
+ * const createOrg = useCreateOrganization();
+ * const org = await createOrg({ name: "Acme" });
+ * ```
+ */
+export function useCreateOrganization(): (params: { name: string; slug?: string }) => Promise<AppKitCreatedOrganization> {
+  const { snapshot, refresh } = useAppKit();
+  const token = snapshot?.jwtToken;
+  const baseURL = snapshot?.appBaseURL;
+  return useCallback(
+    async (params: { name: string; slug?: string }) => {
+      const org = (await orgFetch(token, baseURL, `/a/organizations`, {
+        method: "POST",
+        body: JSON.stringify({ name: params.name, slug: params.slug ?? "" }),
+      }, "Failed to create organization")) as AppKitCreatedOrganization;
+      refresh();
+      return org;
+    },
+    [token, baseURL, refresh],
+  );
+}
+
+/**
+ * Returns a function to rename an organization (owner/admin). Refreshes the
+ * snapshot so the new name shows in `useOrganizationList()`.
+ */
+export function useRenameOrganization(): (orgId: string, params: { name?: string; slug?: string }) => Promise<void> {
+  const { snapshot, refresh } = useAppKit();
+  const token = snapshot?.jwtToken;
+  const baseURL = snapshot?.appBaseURL;
+  return useCallback(
+    async (orgId: string, params: { name?: string; slug?: string }) => {
+      await orgFetch(token, baseURL, `/a/organizations/${orgId}`, {
+        method: "PATCH",
+        body: JSON.stringify(params),
+      }, "Failed to rename organization");
+      refresh();
+    },
+    [token, baseURL, refresh],
+  );
+}
+
+/**
+ * Returns a function to archive an organization (owner-only). Reversible
+ * operator-side. Refreshes the snapshot.
+ */
+export function useArchiveOrganization(): (orgId: string) => Promise<void> {
+  const { snapshot, refresh } = useAppKit();
+  const token = snapshot?.jwtToken;
+  const baseURL = snapshot?.appBaseURL;
+  return useCallback(
+    async (orgId: string) => {
+      await orgFetch(token, baseURL, `/a/organizations/${orgId}`, { method: "DELETE" }, "Failed to archive organization");
+      refresh();
+    },
+    [token, baseURL, refresh],
+  );
+}
+
+/**
+ * Returns a function that fetches an organization's members (any active member
+ * may read). Not part of the snapshot — call it on demand.
+ *
+ * ```tsx
+ * const listMembers = useOrganizationMembers();
+ * const members = await listMembers(org.id);
+ * ```
+ */
+export function useOrganizationMembers(): (orgId: string) => Promise<AppKitOrganizationMember[]> {
+  const { snapshot } = useAppKit();
+  const token = snapshot?.jwtToken;
+  const baseURL = snapshot?.appBaseURL;
+  return useCallback(
+    async (orgId: string) => {
+      const body = (await orgFetch(token, baseURL, `/a/organizations/${orgId}/members`, { method: "GET" },
+        "Failed to load members")) as { members?: AppKitOrganizationMember[] };
+      return body?.members ?? [];
+    },
+    [token, baseURL],
+  );
+}
+
+/**
+ * Returns a function to change a member's tier and/or project roles
+ * (owner/admin). Pass either field. Last-owner demotion rejects with
+ * `error.conflict`.
+ */
+export function useSetOrganizationMember(): (
+  orgId: string,
+  userId: string,
+  params: { orgRole?: string; roleIds?: string[] },
+) => Promise<void> {
+  const { snapshot } = useAppKit();
+  const token = snapshot?.jwtToken;
+  const baseURL = snapshot?.appBaseURL;
+  return useCallback(
+    async (orgId: string, userId: string, params: { orgRole?: string; roleIds?: string[] }) => {
+      await orgFetch(token, baseURL, `/a/organizations/${orgId}/members/${userId}`, {
+        method: "PATCH",
+        body: JSON.stringify(params),
+      }, "Failed to update member");
+    },
+    [token, baseURL],
+  );
+}
+
+/**
+ * Returns a function to remove a member, or leave the org (pass your own user
+ * id). Removing someone else needs owner/admin; the last owner can't be
+ * removed (`error.conflict`).
+ */
+export function useRemoveOrganizationMember(): (orgId: string, userId: string) => Promise<void> {
+  const { snapshot } = useAppKit();
+  const token = snapshot?.jwtToken;
+  const baseURL = snapshot?.appBaseURL;
+  return useCallback(
+    async (orgId: string, userId: string) => {
+      await orgFetch(token, baseURL, `/a/organizations/${orgId}/members/${userId}`, { method: "DELETE" },
+        "Failed to remove member");
+    },
+    [token, baseURL],
+  );
+}
+
+/** Returns a function that fetches an organization's pending invites (owner/admin). */
+export function useOrganizationInvites(): (orgId: string) => Promise<AppKitOrganizationInvite[]> {
+  const { snapshot } = useAppKit();
+  const token = snapshot?.jwtToken;
+  const baseURL = snapshot?.appBaseURL;
+  return useCallback(
+    async (orgId: string) => {
+      const body = (await orgFetch(token, baseURL, `/a/organizations/${orgId}/invites`, { method: "GET" },
+        "Failed to load invites")) as { invites?: AppKitOrganizationInvite[] };
+      return body?.invites ?? [];
+    },
+    [token, baseURL],
+  );
+}
+
+/**
+ * Returns a function to invite an email to the organization (owner/admin). The
+ * app must have an App URL configured for the accept link.
+ */
+export function useCreateOrganizationInvite(): (
+  orgId: string,
+  params: { email: string; orgRole?: string; roleIds?: string[] },
+) => Promise<AppKitOrganizationInvite> {
+  const { snapshot } = useAppKit();
+  const token = snapshot?.jwtToken;
+  const baseURL = snapshot?.appBaseURL;
+  return useCallback(
+    async (orgId: string, params: { email: string; orgRole?: string; roleIds?: string[] }) => {
+      return (await orgFetch(token, baseURL, `/a/organizations/${orgId}/invites`, {
+        method: "POST",
+        body: JSON.stringify(params),
+      }, "Failed to send invitation")) as AppKitOrganizationInvite;
+    },
+    [token, baseURL],
+  );
+}
+
+/** Returns a function to revoke a pending invite (owner/admin). */
+export function useRevokeOrganizationInvite(): (orgId: string, inviteId: string) => Promise<void> {
+  const { snapshot } = useAppKit();
+  const token = snapshot?.jwtToken;
+  const baseURL = snapshot?.appBaseURL;
+  return useCallback(
+    async (orgId: string, inviteId: string) => {
+      await orgFetch(token, baseURL, `/a/organizations/${orgId}/invites/${inviteId}`, { method: "DELETE" },
+        "Failed to revoke invitation");
+    },
+    [token, baseURL],
+  );
 }

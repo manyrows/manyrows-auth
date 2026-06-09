@@ -53,6 +53,41 @@ export type AppKitOrganization = {
   orgRole: string;
 };
 
+/** A project (app RBAC) role assigned to an organization membership. */
+export type AppKitOrganizationRole = {
+  id: string;
+  slug: string;
+  name: string;
+};
+
+/** A member of an organization, as returned by the members endpoint. */
+export type AppKitOrganizationMember = {
+  userId: string;
+  email: string;
+  orgRole: string; // tier: owner | admin | member
+  status: string;
+  roles: AppKitOrganizationRole[];
+};
+
+/** A pending invitation to join an organization. */
+export type AppKitOrganizationInvite = {
+  id: string;
+  email: string;
+  orgRole: string;
+  status: string;
+  invitedByEmail?: string;
+  createdAt: string;
+  expiresAt: string;
+};
+
+/** The organization shape returned when an org is created. */
+export type AppKitCreatedOrganization = {
+  id: string;
+  name: string;
+  slug: string;
+  status: string;
+};
+
 export type AppKitAppData = {
   account?: AppKitAccount;
   workspaceSlug: string;
