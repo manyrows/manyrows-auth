@@ -306,6 +306,7 @@ func (a *AppService) initRouter() error {
 			r.Put("/organizations-enabled", requestHandler.HandleUpdateAppOrganizationsEnabled)
 			r.Get("/organizations", requestHandler.HandleListAppOrganizations)
 			r.Get("/organizations/{orgId}/members", requestHandler.HandleListAppOrganizationMembers)
+			r.Put("/organizations/{orgId}/members/{userId}/roles", requestHandler.HandleSetAppOrganizationMemberRoles)
 			r.Patch("/organizations/{orgId}", requestHandler.HandleRenameAppOrganization)
 			r.Delete("/organizations/{orgId}", requestHandler.HandleArchiveAppOrganization)
 			r.Post("/organizations/{orgId}/restore", requestHandler.HandleRestoreAppOrganization)

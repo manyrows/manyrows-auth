@@ -99,6 +99,68 @@ func (handler *RequestHandler) HandleUpdateAppOrganizationsEnabled(w http.Respon
 	utils.WriteJsonWithStatusCode(w, handler.toAdminAppResponse(out, ws), http.StatusOK)
 }
 
+type setAppOrgMemberRolesRequest struct {
+	RoleIDs []uuid.UUID `json:"roleIds"`
+}
+
+// HandleSetAppOrganizationMemberRoles replaces an org member's project-role
+// assignment from the admin panel. App-scoped + ownership-checked via
+// adminAppScope/adminOrgFromURL; the target must be a member of the org. Role
+// ids are validated against the app's project catalog (a stray id -> 400).
+// Replace semantics: the posted set becomes the membership's exact project
+// roles, and an empty array clears them. Independent of the org tier
+// (owner/admin/member), which this endpoint does not touch.
+func (handler *RequestHandler) HandleSetAppOrganizationMemberRoles(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	projectID, appID, ok := handler.adminAppScope(w, r)
+	if !ok {
+		return
+	}
+	org, ok := handler.adminOrgFromURL(w, r, appID)
+	if !ok {
+		return
+	}
+	userID, ok := handler.userIDFromURL(w, r)
+	if !ok {
+		return
+	}
+	member, err := handler.repo.GetOrganizationMember(ctx, org.ID, userID)
+	if err != nil {
+		if errors.Is(err, repo.ErrNotFound) {
+			WriteError(w, r, "error.notFound", http.StatusNotFound)
+			return
+		}
+		log.Err(err).Msg("HandleSetAppOrganizationMemberRoles: load member failed")
+		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
+		return
+	}
+
+	var body setAppOrgMemberRolesRequest
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		WriteError(w, r, "error.invalidJson", http.StatusBadRequest)
+		return
+	}
+	roleIDs := dedupeUUIDs(body.RoleIDs)
+	if len(roleIDs) > 0 {
+		n, err := handler.repo.CountRolesInProject(ctx, projectID, roleIDs)
+		if err != nil {
+			log.Err(err).Msg("HandleSetAppOrganizationMemberRoles: role validation failed")
+			WriteError(w, r, "error.internalError", http.StatusInternalServerError)
+			return
+		}
+		if n != len(roleIDs) {
+			WriteError(w, r, "error.badRequest", http.StatusBadRequest) // stray role id
+			return
+		}
+	}
+	if err := handler.repo.SetOrganizationMemberRoles(ctx, member.ID, roleIDs); err != nil {
+		log.Err(err).Msg("HandleSetAppOrganizationMemberRoles: set roles failed")
+		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 // adminOrgListItem is one row of the admin org list.
 type adminOrgListItem struct {
 	ID          string `json:"id"`
