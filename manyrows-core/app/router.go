@@ -304,9 +304,12 @@ func (a *AppService) initRouter() error {
 			// Organizations (admin oversight: enable flag + list/manage
 			// app-scoped tenants from the admin panel).
 			r.Put("/organizations-enabled", requestHandler.HandleUpdateAppOrganizationsEnabled)
+			r.Put("/organizations-creation-policy", requestHandler.HandleUpdateAppOrgCreationPolicy)
 			r.Get("/organizations", requestHandler.HandleListAppOrganizations)
 			r.Get("/organizations/{orgId}/members", requestHandler.HandleListAppOrganizationMembers)
 			r.Put("/organizations/{orgId}/members/{userId}/roles", requestHandler.HandleSetAppOrganizationMemberRoles)
+			r.Patch("/organizations/{orgId}/members/{userId}", requestHandler.HandleSetAppOrganizationMemberTier)
+			r.Delete("/organizations/{orgId}/members/{userId}", requestHandler.HandleRemoveAppOrganizationMember)
 			r.Patch("/organizations/{orgId}", requestHandler.HandleRenameAppOrganization)
 			r.Delete("/organizations/{orgId}", requestHandler.HandleArchiveAppOrganization)
 			r.Post("/organizations/{orgId}/restore", requestHandler.HandleRestoreAppOrganization)
