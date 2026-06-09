@@ -340,7 +340,7 @@ func (handler *RequestHandler) ServerAddOrgMember(w http.ResponseWriter, r *http
 		user = u
 	} else if e := strings.TrimSpace(strings.ToLower(body.Email)); e != "" {
 		u, err := handler.repo.GetUserByEmail(ctx, e, app)
-		if err != nil && !errors.Is(err, repo.ErrNotFound) {
+		if err != nil {
 			log.Err(err).Msg("ServerAddOrgMember: email lookup failed")
 			WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 			return

@@ -283,7 +283,13 @@ func (handler *RequestHandler) AcceptOrgInvite(w http.ResponseWriter, r *http.Re
 		case errors.Is(err, repo.ErrInviteNotPending):
 			// Already accepted (e.g. a concurrent double-click of the same
 			// link) — the invitee is already a member; fall through and sign
-			// them in.
+			// them in. Defensive: only fall through if they are genuinely an
+			// ACTIVE member, so a non-pending invite that didn't actually
+			// result in a membership can never mint a session.
+			if m, mErr := handler.repo.GetOrganizationMember(r.Context(), inv.OrgID, user.ID); mErr != nil || m == nil || m.Status != core.OrgMemberStatusActive {
+				failRedirect("invalid_token")
+				return
+			}
 		case errors.Is(err, repo.ErrInviteRevoked):
 			failRedirect("invite_revoked")
 			return

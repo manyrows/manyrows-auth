@@ -117,7 +117,7 @@ func (handler *RequestHandler) HandleSetAppOrganizationMemberRoles(w http.Respon
 	if !ok {
 		return
 	}
-	org, ok := handler.adminOrgFromURL(w, r, appID)
+	org, ok := handler.adminActiveOrgFromURL(w, r, appID)
 	if !ok {
 		return
 	}
@@ -234,7 +234,7 @@ func (handler *RequestHandler) HandleAddAppOrganizationMember(w http.ResponseWri
 	if !ok {
 		return
 	}
-	org, ok := handler.adminOrgFromURL(w, r, appID)
+	org, ok := handler.adminActiveOrgFromURL(w, r, appID)
 	if !ok {
 		return
 	}
@@ -242,6 +242,10 @@ func (handler *RequestHandler) HandleAddAppOrganizationMember(w http.ResponseWri
 	if err != nil {
 		log.Err(err).Msg("HandleAddAppOrganizationMember: load app failed")
 		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
+		return
+	}
+	if !appRow.OrganizationsEnabled {
+		WriteError(w, r, "error.conflict", http.StatusConflict)
 		return
 	}
 	var body addAppOrgMemberRequest
@@ -268,14 +272,19 @@ func (handler *RequestHandler) HandleAddAppOrganizationMember(w http.ResponseWri
 			return
 		}
 		u, uerr := handler.repo.GetUserByID(ctx, uid)
-		if uerr != nil || u == nil {
+		if errors.Is(uerr, repo.ErrNotFound) || u == nil {
 			WriteError(w, r, "error.userNotSignedIn", http.StatusConflict)
+			return
+		}
+		if uerr != nil {
+			log.Err(uerr).Msg("HandleAddAppOrganizationMember: user lookup failed")
+			WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 			return
 		}
 		user = u
 	} else if e := strings.TrimSpace(strings.ToLower(body.Email)); e != "" {
 		u, uerr := handler.repo.GetUserByEmail(ctx, e, &appRow)
-		if uerr != nil && !errors.Is(uerr, repo.ErrNotFound) {
+		if uerr != nil {
 			log.Err(uerr).Msg("HandleAddAppOrganizationMember: email lookup failed")
 			WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 			return
@@ -369,7 +378,11 @@ func (handler *RequestHandler) HandleCreateAppOrganizationInvite(w http.Response
 		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 		return
 	}
-	org, ok := handler.adminOrgFromURL(w, r, appID)
+	if !appRow.OrganizationsEnabled {
+		WriteError(w, r, "error.conflict", http.StatusConflict)
+		return
+	}
+	org, ok := handler.adminActiveOrgFromURL(w, r, appID)
 	if !ok {
 		return
 	}
@@ -433,7 +446,7 @@ func (handler *RequestHandler) HandleRevokeAppOrganizationInvite(w http.Response
 	if !ok {
 		return
 	}
-	org, ok := handler.adminOrgFromURL(w, r, appID)
+	org, ok := handler.adminActiveOrgFromURL(w, r, appID)
 	if !ok {
 		return
 	}
@@ -523,7 +536,7 @@ func (handler *RequestHandler) HandleSetAppOrganizationMemberTier(w http.Respons
 	if !ok {
 		return
 	}
-	org, ok := handler.adminOrgFromURL(w, r, appID)
+	org, ok := handler.adminActiveOrgFromURL(w, r, appID)
 	if !ok {
 		return
 	}
@@ -564,7 +577,7 @@ func (handler *RequestHandler) HandleRemoveAppOrganizationMember(w http.Response
 	if !ok {
 		return
 	}
-	org, ok := handler.adminOrgFromURL(w, r, appID)
+	org, ok := handler.adminActiveOrgFromURL(w, r, appID)
 	if !ok {
 		return
 	}
@@ -646,6 +659,23 @@ func (handler *RequestHandler) adminOrgFromURL(w http.ResponseWriter, r *http.Re
 	return org, true
 }
 
+// adminActiveOrgFromURL is adminOrgFromURL but additionally requires the org to
+// be active (409 otherwise). Used by every handler that builds up or changes
+// membership/invite state, so an archived org can't accrue ghost members or
+// invitations — archived orgs are frozen (view/rename/archive/restore/delete
+// only). Mirrors serverOrgFromURL / requireOrgRole, which also reject non-active.
+func (handler *RequestHandler) adminActiveOrgFromURL(w http.ResponseWriter, r *http.Request, appID uuid.UUID) (*core.Organization, bool) {
+	org, ok := handler.adminOrgFromURL(w, r, appID)
+	if !ok {
+		return nil, false
+	}
+	if org.Status != core.OrgStatusActive {
+		WriteError(w, r, "error.organizationArchived", http.StatusConflict)
+		return nil, false
+	}
+	return org, true
+}
+
 type adminOrgMembersResponse struct {
 	Members []repo.OrganizationMemberView `json:"members"`
 }
@@ -701,7 +731,7 @@ func (handler *RequestHandler) HandleRenameAppOrganization(w http.ResponseWriter
 		return
 	}
 	name := strings.TrimSpace(req.Name)
-	if name == "" {
+	if name == "" || len(name) > maxOrgNameLen {
 		WriteError(w, r, "error.badRequest", http.StatusBadRequest)
 		return
 	}
