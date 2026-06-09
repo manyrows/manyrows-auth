@@ -51,11 +51,18 @@ interface OrgRow {
   createdAt: string;
 }
 
+interface OrgMemberRole {
+  id: string;
+  slug: string;
+  name: string;
+}
+
 interface OrgMember {
   userId: string;
   email: string;
-  orgRole: string;
+  orgRole: string; // org tier: owner | admin | member
   status: string;
+  roles: OrgMemberRole[]; // project (app RBAC) roles assigned in THIS org
 }
 
 function fmtDate(d?: string): string {
@@ -437,7 +444,7 @@ export default function AppOrganizations({ project, appId }: Props) {
       </Stack>
 
       {/* Members dialog */}
-      <Dialog open={membersOpen} onClose={() => setMembersOpen(false)} fullWidth maxWidth="sm">
+      <Dialog open={membersOpen} onClose={() => setMembersOpen(false)} fullWidth maxWidth="md">
         <DialogTitle>
           {t("organizations.membersTitle", { defaultValue: "Members" })}
           {membersOrg ? ` — ${membersOrg.name}` : ""}
@@ -456,7 +463,8 @@ export default function AppOrganizations({ project, appId }: Props) {
               <TableHead>
                 <TableRow>
                   <TableCell>{t("organizations.col.email", { defaultValue: "Email" })}</TableCell>
-                  <TableCell>{t("organizations.col.role", { defaultValue: "Role" })}</TableCell>
+                  <TableCell>{t("organizations.col.tier", { defaultValue: "Tier" })}</TableCell>
+                  <TableCell>{t("organizations.col.roles", { defaultValue: "Roles" })}</TableCell>
                   <TableCell>{t("organizations.col.status", { defaultValue: "Status" })}</TableCell>
                 </TableRow>
               </TableHead>
@@ -465,6 +473,19 @@ export default function AppOrganizations({ project, appId }: Props) {
                   <TableRow key={m.userId}>
                     <TableCell>{m.email || m.userId}</TableCell>
                     <TableCell>{m.orgRole}</TableCell>
+                    <TableCell>
+                      {m.roles && m.roles.length > 0 ? (
+                        <Stack direction="row" spacing={0.5} flexWrap="wrap" useFlexGap>
+                          {m.roles.map((r) => (
+                            <Chip key={r.id} size="small" label={r.name || r.slug} />
+                          ))}
+                        </Stack>
+                      ) : (
+                        <Typography variant="body2" color="text.secondary">
+                          —
+                        </Typography>
+                      )}
+                    </TableCell>
                     <TableCell>{m.status}</TableCell>
                   </TableRow>
                 ))}
