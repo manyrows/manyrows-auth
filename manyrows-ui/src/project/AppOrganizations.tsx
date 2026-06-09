@@ -108,6 +108,9 @@ export default function AppOrganizations({ project, appId }: Props) {
   const [membersOrg, setMembersOrg] = React.useState<OrgRow | null>(null);
   const [members, setMembers] = React.useState<OrgMember[]>([]);
   const [membersLoading, setMembersLoading] = React.useState(false);
+  // Bumped each time the members dialog opens; results from a superseded open
+  // (rapidly switching orgs) are discarded so the wrong org's data can't land.
+  const membersGenRef = React.useRef(0);
 
   // Creation-policy selector
   const [savingPolicy, setSavingPolicy] = React.useState(false);
@@ -210,6 +213,7 @@ export default function AppOrganizations({ project, appId }: Props) {
   }
 
   async function openMembers(org: OrgRow) {
+    const gen = ++membersGenRef.current;
     setMembersOrg(org);
     setMembers([]);
     setInvites([]);
@@ -219,23 +223,27 @@ export default function AppOrganizations({ project, appId }: Props) {
     setInviteTier("member");
     setMembersOpen(true);
     setMembersLoading(true);
+    // The role catalog is only needed by the per-member edit dialog — load it
+    // best-effort so a /roles failure never blocks the members/invites view.
+    if (roleCatalog.length === 0) {
+      axios
+        .get<{ roles: OrgMemberRole[] }>(`${projectURL}/roles`)
+        .then((r) => setRoleCatalog(r.data.roles || []))
+        .catch(() => {});
+    }
     try {
-      // Load members, pending invites, and (once) the project's role catalog.
       const [mRes, iRes] = await Promise.all([
         axios.get<{ members: OrgMember[] }>(`${appURL}/organizations/${org.id}/members`),
         axios.get<{ invites: OrgInvite[] }>(`${appURL}/organizations/${org.id}/invites`),
-        roleCatalog.length > 0
-          ? Promise.resolve(null)
-          : axios
-              .get<{ roles: OrgMemberRole[] }>(`${projectURL}/roles`)
-              .then((r) => setRoleCatalog(r.data.roles || [])),
       ]);
+      if (gen !== membersGenRef.current) return; // a newer openMembers superseded this one
       setMembers(mRes.data.members || []);
       setInvites(iRes.data.invites || []);
     } catch (e) {
+      if (gen !== membersGenRef.current) return;
       enqueueSnackbar(errText(e), { variant: "error" });
     } finally {
-      setMembersLoading(false);
+      if (gen === membersGenRef.current) setMembersLoading(false);
     }
   }
 
@@ -317,9 +325,12 @@ export default function AppOrganizations({ project, appId }: Props) {
     setEditRolesSaving(true);
     try {
       const base = `${appURL}/organizations/${membersOrg.id}/members/${editRolesMember.userId}`;
-      // Tier first so a last-owner 409 aborts before any role write.
+      // Tier first so a last-owner 409 aborts before any role write. Reflect it
+      // in local state immediately so a subsequent roles failure can't leave the
+      // UI showing the old tier while the server has the new one.
       if (editTier !== editRolesMember.orgRole) {
         await axios.patch(base, { orgRole: editTier });
+        setMembers((prev) => prev.map((m) => (m.userId === editRolesMember.userId ? { ...m, orgRole: editTier } : m)));
       }
       const curIds = [...(editRolesMember.roles ?? []).map((r) => r.id)].sort();
       const newIds = [...editRoleIds].sort();
@@ -721,18 +732,20 @@ export default function AppOrganizations({ project, appId }: Props) {
                     </TableCell>
                     <TableCell>{m.status}</TableCell>
                     <TableCell align="right">
-                      <Stack direction="row" spacing={0.5} justifyContent="flex-end">
-                        <Tooltip title={t("organizations.editMember", { defaultValue: "Edit member" })}>
-                          <IconButton size="small" onClick={() => openEditMember(m)}>
-                            <SquarePen size={15} />
-                          </IconButton>
-                        </Tooltip>
-                        <Tooltip title={t("organizations.removeMember", { defaultValue: "Remove member" })}>
-                          <IconButton size="small" color="error" onClick={() => setRemoveMember(m)}>
-                            <Trash2 size={15} />
-                          </IconButton>
-                        </Tooltip>
-                      </Stack>
+                      {membersOrg?.status === "active" && (
+                        <Stack direction="row" spacing={0.5} justifyContent="flex-end">
+                          <Tooltip title={t("organizations.editMember", { defaultValue: "Edit member" })}>
+                            <IconButton size="small" onClick={() => openEditMember(m)}>
+                              <SquarePen size={15} />
+                            </IconButton>
+                          </Tooltip>
+                          <Tooltip title={t("organizations.removeMember", { defaultValue: "Remove member" })}>
+                            <IconButton size="small" color="error" onClick={() => setRemoveMember(m)}>
+                              <Trash2 size={15} />
+                            </IconButton>
+                          </Tooltip>
+                        </Stack>
+                      )}
                     </TableCell>
                   </TableRow>
                 ))}
