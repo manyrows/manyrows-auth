@@ -356,7 +356,7 @@ func TestAdminOrgs_Invites(t *testing.T) {
 	if rrD.Code != http.StatusNoContent {
 		t.Fatalf("revoke invite: expected 204, got %d (%s)", rrD.Code, rrD.Body.String())
 	}
-	if list, _ := testEnv.Repo.ListPendingOrgInvites(ctx, org.ID); len(list) != 0 {
+	if list, _, _ := testEnv.Repo.ListPendingOrgInvites(ctx, org.ID, 0, 200, ""); len(list) != 0 {
 		t.Fatalf("expected 0 pending after revoke, got %d", len(list))
 	}
 }
