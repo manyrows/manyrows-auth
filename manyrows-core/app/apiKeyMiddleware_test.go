@@ -31,6 +31,32 @@ func randHex(n int) string {
 	return hex.EncodeToString(b)
 }
 
+// API-key secrets are base64url (RawURLEncoding), whose alphabet includes "_".
+// parseAPIKeyPrefix must extract the 8-char prefix even when the secret contains
+// underscores — splitting on every "_" wrongly rejected ~half of real keys (401).
+func TestParseAPIKeyPrefix_SecretWithUnderscore(t *testing.T) {
+	// Mirrors generateApiKey(): fullKey = "mr_" + secret[:8] + "_" + secret,
+	// and here the secret itself contains a "_" (as base64url often does).
+	prefix, ok := parseAPIKeyPrefix("mr_QhNrVEc7_QhNrVEc7_2kdzAbcd")
+	if !ok {
+		t.Fatalf("valid key with '_' in the secret must parse, got ok=false")
+	}
+	if prefix != "QhNrVEc7" {
+		t.Fatalf("prefix = %q, want %q", prefix, "QhNrVEc7")
+	}
+
+	// Regression guards for the existing validations.
+	if _, ok := parseAPIKeyPrefix("mr_QhNrVEc7"); ok {
+		t.Errorf("key with no secret must be rejected")
+	}
+	if _, ok := parseAPIKeyPrefix("mr__2kdzAbcd"); ok {
+		t.Errorf("empty prefix must be rejected")
+	}
+	if _, ok := parseAPIKeyPrefix("nope_QhNrVEc7_secret"); ok {
+		t.Errorf("missing mr_ prefix must be rejected")
+	}
+}
+
 // makeAPIKey inserts an API key and returns the full presentable key
 // (mr_<prefix>_<secret>). appID nil = workspace-wide (no per-app scope).
 func makeAPIKey(t *testing.T, rpo *repo.Repo, wsID, createdBy uuid.UUID, appID *uuid.UUID) string {
