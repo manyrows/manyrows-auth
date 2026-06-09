@@ -168,12 +168,66 @@ func (handler *RequestHandler) HandleDeleteApiKey(w http.ResponseWriter, r *http
 type CreateAPIKeyRequest struct {
 	Name  string `json:"name"`
 	AppID string `json:"appId"`
+	// Scope is "read" or "read_write". Empty defaults to read_write.
+	Scope string `json:"scope"`
+	// ExpiresInDays, when set and positive, gives the key a hard expiry
+	// that many days from now. Omitted/null means the key never expires.
+	ExpiresInDays *int `json:"expiresInDays"`
 }
 
 type NewApiKeyResponse struct {
-	ID   uuid.UUID `json:"id"`
-	Name string    `json:"name"`
-	Key  string    `json:"key"` // full API key shown once
+	ID        uuid.UUID  `json:"id"`
+	Name      string     `json:"name"`
+	Key       string     `json:"key"` // full API key shown once
+	Scope     string     `json:"scope"`
+	ExpiresAt *time.Time `json:"expiresAt,omitempty"`
+}
+
+// HandleRotateApiKey generates a new secret for an existing key, keeping
+// its id, name, app-scope, permission scope, and expiry. Owner only.
+func (handler *RequestHandler) HandleRotateApiKey(w http.ResponseWriter, r *http.Request) {
+	_, ws, ok := handler.adminAndWorkspace(w, r)
+	if !ok {
+		return
+	}
+	if !handler.requireOwner(w, r) {
+		return
+	}
+
+	keyID, err := uuid.FromString(chi.URLParam(r, "id"))
+	if err != nil {
+		WriteError(w, r, "error.badRequest", http.StatusBadRequest)
+		return
+	}
+
+	// Confirm the key exists in this workspace (and capture its metadata
+	// to echo back) before minting a replacement secret.
+	key, err := handler.repo.GetAPIKey(r.Context(), ws.ID, keyID)
+	if err != nil {
+		WriteError(w, r, "error.notFound", http.StatusNotFound)
+		return
+	}
+
+	generatedKey, prefix, hashed, err := generateApiKey()
+	if err != nil {
+		log.Err(err).Msg("failed to generate API key on rotate")
+		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
+		return
+	}
+
+	if err := handler.repo.RotateAPIKeySecret(r.Context(), ws.ID, keyID, prefix, hashed); err != nil {
+		log.Err(err).Msg("failed to rotate API key secret")
+		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
+		return
+	}
+
+	utils.WriteJsonWithStatusCode(w, NewApiKeyResponse{
+		ID:        key.ID,
+		Name:      key.Name,
+		Key:       generatedKey,
+		Scope:     key.Scope,
+		ExpiresAt: key.ExpiresAt,
+	}, http.StatusOK)
 }
 
 func (handler *RequestHandler) HandleCreateApiKey(w http.ResponseWriter, r *http.Request) {
@@ -196,6 +250,25 @@ func (handler *RequestHandler) HandleCreateApiKey(w http.ResponseWriter, r *http
 	if req.Name == "" {
 		WriteError(w, r, "error.badRequest", http.StatusBadRequest)
 		return
+	}
+
+	scope := req.Scope
+	if scope == "" {
+		scope = core.APIKeyScopeReadWrite
+	}
+	if !core.ValidAPIKeyScope(scope) {
+		WriteError(w, r, "error.badRequest", http.StatusBadRequest)
+		return
+	}
+
+	var expiresAt *time.Time
+	if req.ExpiresInDays != nil {
+		if *req.ExpiresInDays <= 0 {
+			WriteError(w, r, "error.badRequest", http.StatusBadRequest)
+			return
+		}
+		exp := time.Now().UTC().Add(time.Duration(*req.ExpiresInDays) * 24 * time.Hour)
+		expiresAt = &exp
 	}
 
 	var appID *uuid.UUID
@@ -253,6 +326,8 @@ func (handler *RequestHandler) HandleCreateApiKey(w http.ResponseWriter, r *http
 		Name:        req.Name,
 		Prefix:      prefix,
 		Hash:        hashed,
+		Scope:       scope,
+		ExpiresAt:   expiresAt,
 		CreatedAt:   time.Now().UTC(),
 		CreatedBy:   acc.ID,
 	}
@@ -264,9 +339,11 @@ func (handler *RequestHandler) HandleCreateApiKey(w http.ResponseWriter, r *http
 	}
 
 	resp := NewApiKeyResponse{
-		ID:   key.ID,
-		Name: key.Name,
-		Key:  generatedKey,
+		ID:        key.ID,
+		Name:      key.Name,
+		Key:       generatedKey,
+		Scope:     key.Scope,
+		ExpiresAt: key.ExpiresAt,
 	}
 
 	utils.WriteJsonWithStatusCode(w, resp, http.StatusCreated)

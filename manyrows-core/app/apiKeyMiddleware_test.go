@@ -59,7 +59,7 @@ func TestParseAPIKeyPrefix_SecretWithUnderscore(t *testing.T) {
 
 // makeAPIKey inserts an API key and returns the full presentable key
 // (mr_<prefix>_<secret>). appID nil = workspace-wide (no per-app scope).
-func makeAPIKey(t *testing.T, rpo *repo.Repo, wsID, createdBy uuid.UUID, appID *uuid.UUID) string {
+func makeAPIKey(t *testing.T, rpo *repo.Repo, wsID, createdBy uuid.UUID, appID *uuid.UUID, scope string, expiresAt *time.Time) string {
 	t.Helper()
 	prefix := randHex(4) // 8 hex chars, matches parseAPIKeyPrefix's length check
 	secret := randHex(16)
@@ -72,6 +72,8 @@ func makeAPIKey(t *testing.T, rpo *repo.Repo, wsID, createdBy uuid.UUID, appID *
 		Name:        "test key",
 		Prefix:      prefix,
 		Hash:        hex.EncodeToString(sum[:]),
+		Scope:       scope,
+		ExpiresAt:   expiresAt,
 		CreatedAt:   time.Now().UTC(),
 		CreatedBy:   createdBy,
 	}
@@ -142,8 +144,8 @@ func TestAPIKeyMiddleware(t *testing.T) {
 		_, _ = pool.Exec(ctx, "DELETE FROM accounts WHERE id = $1", acc.ID)
 	})
 
-	unscopedKey := makeAPIKey(t, rpo, ws.ID, acc.ID, nil)
-	scopedKey := makeAPIKey(t, rpo, ws.ID, acc.ID, &appA)
+	unscopedKey := makeAPIKey(t, rpo, ws.ID, acc.ID, nil, core.APIKeyScopeReadWrite, nil)
+	scopedKey := makeAPIKey(t, rpo, ws.ID, acc.ID, &appA, core.APIKeyScopeReadWrite, nil)
 	unscopedPrefix, _ := parseAPIKeyPrefix(unscopedKey)
 
 	// Router: inject the workspace (as wsMiddleware would) then the real
@@ -158,6 +160,7 @@ func TestAPIKeyMiddleware(t *testing.T) {
 		})
 		sub.Use(apiKeyMiddleware(rpo, throttle))
 		sub.Get("/probe", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
+		sub.Post("/probe", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
 	})
 
 	do := func(appID, apiKey string) int {
@@ -187,6 +190,38 @@ func TestAPIKeyMiddleware(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			if got := do(tc.appID, tc.apiKey); got != tc.want {
+				t.Fatalf("%s: want %d, got %d", tc.name, tc.want, got)
+			}
+		})
+	}
+
+	// --- scope + expiry enforcement ---
+	readKey := makeAPIKey(t, rpo, ws.ID, acc.ID, nil, core.APIKeyScopeRead, nil)
+	pastExpiry := time.Now().Add(-time.Hour)
+	expiredKey := makeAPIKey(t, rpo, ws.ID, acc.ID, nil, core.APIKeyScopeReadWrite, &pastExpiry)
+
+	doM := func(method, appID, apiKey string) int {
+		req := httptest.NewRequest(method, "/x/"+ws.Slug+"/api/v1/apps/"+appID+"/probe", nil)
+		req.Header.Set("X-API-Key", apiKey)
+		rr := httptest.NewRecorder()
+		r.ServeHTTP(rr, req)
+		return rr.Code
+	}
+
+	scopeCases := []struct {
+		name   string
+		method string
+		apiKey string
+		want   int
+	}{
+		{"read key allows GET", http.MethodGet, readKey, http.StatusOK},
+		{"read key forbids POST", http.MethodPost, readKey, http.StatusForbidden},
+		{"read_write key allows POST", http.MethodPost, unscopedKey, http.StatusOK},
+		{"expired key rejected on GET", http.MethodGet, expiredKey, http.StatusUnauthorized},
+	}
+	for _, tc := range scopeCases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := doM(tc.method, appB.String(), tc.apiKey); got != tc.want {
 				t.Fatalf("%s: want %d, got %d", tc.name, tc.want, got)
 			}
 		})

@@ -353,6 +353,19 @@ func apiKeyMiddleware(rpo *repo.Repo, touch *lastUsedThrottle) func(next http.Ha
 				}
 			}
 
+			// Reject keys past their hard expiry (treated like an invalid key).
+			if key.IsExpired(time.Now()) {
+				api.WriteError(w, r, "error.unauthorized", http.StatusUnauthorized)
+				return
+			}
+
+			// Enforce read-only scope: a "read" key may only perform safe
+			// (GET/HEAD) requests; any mutating method is forbidden.
+			if !key.AllowsWrite() && r.Method != http.MethodGet && r.Method != http.MethodHead {
+				api.WriteError(w, r, "error.forbidden", http.StatusForbidden)
+				return
+			}
+
 			if f := serverAccessLogFieldsFrom(r.Context()); f != nil {
 				f.apiKeyID = key.ID.String()
 				f.apiKeyName = key.Name

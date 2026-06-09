@@ -195,6 +195,7 @@ func (a *AppService) initRouter() error {
 	adminWorkspaceRouter.Patch("/apiKeys/{id}", requestHandler.HandleUpdateApiKey)
 	adminWorkspaceRouter.Delete("/apiKeys/{id}", requestHandler.HandleDeleteApiKey)
 	adminWorkspaceRouter.Post("/apiKeys", requestHandler.HandleCreateApiKey)
+	adminWorkspaceRouter.Post("/apiKeys/{id}/rotate", requestHandler.HandleRotateApiKey)
 
 	// team
 	adminWorkspaceRouter.Get("/team", requestHandler.HandleListTeamMembers)

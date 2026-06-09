@@ -20,11 +20,20 @@ func (r *Repo) InsertAPIKey(ctx context.Context, key *core.APIKey) error {
 			prefix,
 			hash,
 			created_at,
-			created_by
+			created_by,
+			scope,
+			expires_at
 		) values (
-			$1, $2, $3, $4, $5, $6, $7, $8
+			$1, $2, $3, $4, $5, $6, $7, $8, $9, $10
 		)
 	`
+
+	// An empty scope retains the historical full-access behaviour (and the
+	// CHECK constraint rejects ''), so default it here.
+	scope := key.Scope
+	if scope == "" {
+		scope = core.APIKeyScopeReadWrite
+	}
 
 	_, err := r.db.Pool().Exec(
 		ctx,
@@ -37,9 +46,31 @@ func (r *Repo) InsertAPIKey(ctx context.Context, key *core.APIKey) error {
 		key.Hash,
 		key.CreatedAt,
 		key.CreatedBy,
+		scope,
+		key.ExpiresAt,
 	)
 
 	return err
+}
+
+// RotateAPIKeySecret replaces the secret (prefix + hash) of an existing
+// key in place, preserving its id, name, app-scope, permission scope, and
+// expiry. last_used_at is reset since the old secret no longer works.
+func (r *Repo) RotateAPIKeySecret(ctx context.Context, workspaceID, keyID uuid.UUID, prefix, hash string) error {
+	const q = `
+		update api_keys
+		set prefix = $1, hash = $2, last_used_at = null
+		where id = $3
+		  and workspace_id = $4
+	`
+	ct, err := r.db.Pool().Exec(ctx, q, prefix, hash, keyID, workspaceID)
+	if err != nil {
+		return err
+	}
+	if ct.RowsAffected() == 0 {
+		return pgx.ErrNoRows
+	}
+	return nil
 }
 
 func (r *Repo) UpdateAPIKeyName(ctx context.Context, workspaceID, keyID uuid.UUID, name string) error {
@@ -83,7 +114,9 @@ func (r *Repo) GetAPIKey(
 			hash,
 			created_at,
 			created_by,
-			last_used_at
+			last_used_at,
+			scope,
+			expires_at
 		from api_keys
 		where id = $1
 		  and workspace_id = $2
@@ -113,7 +146,9 @@ func (r *Repo) GetAPIKeys(
 			hash,
 			created_at,
 			created_by,
-			last_used_at
+			last_used_at,
+			scope,
+			expires_at
 		from api_keys
 		where workspace_id = $1
 		order by created_at desc
@@ -152,7 +187,9 @@ func (r *Repo) GetAPIKeysForApp(
 			hash,
 			created_at,
 			created_by,
-			last_used_at
+			last_used_at,
+			scope,
+			expires_at
 		from api_keys
 		where workspace_id = $1
 		  and app_id = $2
@@ -210,6 +247,8 @@ func scanAPIKey(s apiKeyScanner, key *core.APIKey) error {
 		&key.CreatedAt,
 		&key.CreatedBy,
 		&key.LastUsedAt,
+		&key.Scope,
+		&key.ExpiresAt,
 	)
 }
 
@@ -243,7 +282,9 @@ func (r *Repo) GetAPIKeyByPrefix(
       hash,
       created_at,
       created_by,
-      last_used_at
+      last_used_at,
+      scope,
+      expires_at
     from api_keys
     where workspace_id = $1
       and prefix = $2

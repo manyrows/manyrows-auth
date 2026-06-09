@@ -94,6 +94,7 @@ func setupAPIKeysRouter(t *testing.T) *chi.Mux {
 	adminWorkspaceRouter.Post("/apiKeys", requestHandler.HandleCreateApiKey)
 	adminWorkspaceRouter.Get("/apiKeys/{id}", requestHandler.HandleGetApiKey)
 	adminWorkspaceRouter.Delete("/apiKeys/{id}", requestHandler.HandleDeleteApiKey)
+	adminWorkspaceRouter.Post("/apiKeys/{id}/rotate", requestHandler.HandleRotateApiKey)
 
 	adminRouter.Mount("/workspace/{workspaceId}", adminWorkspaceRouter)
 	r.Mount("/admin", adminRouter)
