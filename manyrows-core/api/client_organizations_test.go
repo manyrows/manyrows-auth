@@ -136,6 +136,34 @@ func TestClientCreateOrganization_SelfServe(t *testing.T) {
 	}
 }
 
+func TestClientCreateOrganization_PerUserCap(t *testing.T) {
+	ctx := context.Background()
+	ws, app, user, token := clientOrgTestApp(t)
+	setClientOrgCreationPolicy(t, app.ID, core.OrgCreationSelfServe)
+
+	// Seed the per-user creation cap with active orgs created by this user.
+	// orgCap must match maxSelfServeOrgsPerUser in clientOrganizationsHandler.go.
+	const orgCap = 25
+	if _, err := testEnv.DB.Pool().Exec(ctx,
+		`INSERT INTO organizations (id, app_id, name, slug, status, created_by, created_at, updated_at)
+		 SELECT gen_random_uuid(), $1, 'seed-'||g, 'seed-'||$3||'-'||g, 'active', $2, now(), now()
+		 FROM generate_series(1, $4) AS g`,
+		app.ID, user.ID, GenerateUniqueSlug("s"), orgCap,
+	); err != nil {
+		t.Fatalf("seed orgs: %v", err)
+	}
+
+	router := setupClientAPIRouter(t)
+	body, _ := json.Marshal(map[string]string{"name": "One Too Many"})
+	req := httptest.NewRequest(http.MethodPost, clientOrgURL(ws, app, ""), bytes.NewReader(body))
+	req.Header.Set("Authorization", "Bearer "+token)
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+	if rr.Code != http.StatusConflict {
+		t.Fatalf("create past per-user cap must be 409, got %d (%s)", rr.Code, rr.Body.String())
+	}
+}
+
 func TestClientCreateOrganization_InviteOnly_403(t *testing.T) {
 	ws, app, _, token := clientOrgTestApp(t)
 	setClientOrgCreationPolicy(t, app.ID, core.OrgCreationInviteOnly)

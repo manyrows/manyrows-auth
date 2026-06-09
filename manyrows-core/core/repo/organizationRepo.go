@@ -384,6 +384,13 @@ func (r *Repo) RemoveOrganizationMember(ctx context.Context, orgID, userID uuid.
 	return r.execAffectingOne(ctx, ErrNotFound, q, orgID, userID)
 }
 
+// CountActiveOrgsCreatedByUserInApp counts the active orgs a user created in an
+// app. Drives the self-serve per-user creation cap (abuse guard).
+func (r *Repo) CountActiveOrgsCreatedByUserInApp(ctx context.Context, appID, createdBy uuid.UUID) (int, error) {
+	const q = `SELECT count(*) FROM organizations WHERE app_id = $1 AND created_by = $2 AND status = 'active';`
+	return r.scalarCount(ctx, q, appID, createdBy)
+}
+
 // CountActiveOrgOwners counts active owner-tier members — drives the last-owner guard.
 func (r *Repo) CountActiveOrgOwners(ctx context.Context, orgID uuid.UUID) (int, error) {
 	const q = `SELECT count(*) FROM organization_members WHERE org_id = $1 AND org_role = 'owner' AND status = 'active';`
@@ -639,9 +646,16 @@ func (r *Repo) AcceptOrganizationInviteTx(ctx context.Context, inviteID, userID 
 		// ok, continue
 	case core.OrgInviteStatusRevoked:
 		return ErrInviteRevoked
+	case core.OrgInviteStatusExpired:
+		// Distinct from ErrInviteNotPending on purpose: the handler treats
+		// ErrInviteNotPending as "already accepted → the invitee is a member,
+		// sign them in", which is only safe for an 'accepted' invite. A stored
+		// 'expired' status (e.g. from a future sweeper) never added a
+		// membership, so it must fail the accept, not mint a session.
+		return ErrInviteExpired
 	case core.OrgInviteStatusAccepted:
 		return ErrInviteNotPending
-	default: // expired or anything else non-pending
+	default: // any other non-pending status — never sign in off it
 		return ErrInviteNotPending
 	}
 	if time.Now().After(expiresAt) {
@@ -659,10 +673,26 @@ ON CONFLICT (org_id, user_id) DO NOTHING;`, memberID, orgID, userID, orgRole); e
 	if _, err := tx.Exec(ctx, `UPDATE organization_invites SET status='accepted', accepted_at=now() WHERE id=$1;`, inviteID); err != nil {
 		return err
 	}
-	// role_ids: Pier passes none; if present, assign project roles to the
-	// membership. (No-op when empty.) Left for a follow-up if role_ids ever
-	// used — Pier sends []. Keep the variable referenced to avoid unused.
-	_ = roleIDs
+	// Apply the invite's project roles to the membership. The create path
+	// already validated these role_ids belong to the app's project, so we just
+	// attach them. Resolve the real member id first (the INSERT above may have
+	// hit ON CONFLICT and left memberID unused for a pre-existing member).
+	// Additive (ON CONFLICT DO NOTHING) so re-processing the same invite is
+	// idempotent and an existing member never loses roles. No-op when empty.
+	if len(roleIDs) > 0 {
+		var memberRowID uuid.UUID
+		if err := tx.QueryRow(ctx, `SELECT id FROM organization_members WHERE org_id=$1 AND user_id=$2`, orgID, userID).Scan(&memberRowID); err != nil {
+			return err
+		}
+		for _, rid := range roleIDs {
+			if _, err := tx.Exec(ctx, `
+INSERT INTO organization_member_roles (id, member_id, role_id, created_at)
+VALUES ($1, $2, $3, now())
+ON CONFLICT (member_id, role_id) DO NOTHING;`, utils.NewUUID(), memberRowID, rid); err != nil {
+				return err
+			}
+		}
+	}
 	return tx.Commit(ctx)
 }
 

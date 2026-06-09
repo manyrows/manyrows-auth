@@ -85,6 +85,76 @@ func TestOrgInvite_RepoLifecycle(t *testing.T) {
 	}
 }
 
+// TestAcceptOrganizationInviteTx_StoredExpiredStatus guards the handler's
+// "ErrInviteNotPending => already a member, sign them in" fall-through. The tx
+// must surface ErrInviteExpired (not the generic ErrInviteNotPending) for an
+// invite whose stored status is 'expired', so a future expiry sweeper can never
+// turn an unaccepted invite into a session without an actual membership.
+func TestAcceptOrganizationInviteTx_StoredExpiredStatus(t *testing.T) {
+	ctx, _, _, _, org, owner := seedOrgForInvite(t)
+	email := "stexp-" + GenerateUniqueSlug("u") + "@example.com"
+	// Not time-expired (expires_at in the future) — only the stored status is
+	// 'expired', isolating the status branch from the time check.
+	exp := time.Now().UTC().Add(7 * 24 * time.Hour)
+	inv, err := testEnv.Repo.CreateOrganizationInvite(ctx, org.ID, email, core.OrgRoleAdmin, nil, &owner.ID, "h-"+GenerateUniqueSlug("h"), exp)
+	if err != nil {
+		t.Fatalf("create invite: %v", err)
+	}
+	if _, err := testEnv.DB.Pool().Exec(ctx, "UPDATE organization_invites SET status='expired' WHERE id=$1", inv.ID); err != nil {
+		t.Fatalf("force expired status: %v", err)
+	}
+
+	invitee, _, _ := testEnv.GetOrCreateUserWithMembership(ctx, email, mustReloadApp(t, ctx, org.AppID), core.UserSourceInvited)
+	if err := testEnv.Repo.AcceptOrganizationInviteTx(ctx, inv.ID, invitee.ID); !errors.Is(err, repo.ErrInviteExpired) {
+		t.Fatalf("accept of stored-expired invite: want ErrInviteExpired, got %v", err)
+	}
+	if _, err := testEnv.Repo.GetOrganizationMember(ctx, org.ID, invitee.ID); !errors.Is(err, repo.ErrNotFound) {
+		t.Fatalf("stored-expired accept must not create a membership, got err=%v", err)
+	}
+}
+
+// TestAcceptOrganizationInviteTx_AppliesRoleIDs asserts that the project roles
+// carried on an invite (validated + stored at create time) are actually applied
+// to the membership on accept — they were previously dropped, so an admin who
+// scoped an invite to specific roles silently granted none.
+func TestAcceptOrganizationInviteTx_AppliesRoleIDs(t *testing.T) {
+	ctx, app, _, _, org, owner := seedOrgForInvite(t)
+	role, err := testEnv.Repo.CreateRole(ctx, repo.CreateRoleParams{ProjectID: app.ProjectID, Name: "Editor", Slug: GenerateUniqueSlug("ed"), Now: time.Now().UTC()})
+	if err != nil {
+		t.Fatalf("create role: %v", err)
+	}
+	email := "rl-" + GenerateUniqueSlug("u") + "@example.com"
+	exp := time.Now().UTC().Add(7 * 24 * time.Hour)
+	inv, err := testEnv.Repo.CreateOrganizationInvite(ctx, org.ID, email, core.OrgRoleMember, []uuid.UUID{role.ID}, &owner.ID, "h-"+GenerateUniqueSlug("h"), exp)
+	if err != nil {
+		t.Fatalf("create invite: %v", err)
+	}
+
+	invitee, _, _ := testEnv.GetOrCreateUserWithMembership(ctx, email, app, core.UserSourceInvited)
+	if err := testEnv.Repo.AcceptOrganizationInviteTx(ctx, inv.ID, invitee.ID); err != nil {
+		t.Fatalf("accept: %v", err)
+	}
+
+	m, err := testEnv.Repo.GetOrganizationMember(ctx, org.ID, invitee.ID)
+	if err != nil {
+		t.Fatalf("member: %v", err)
+	}
+	roleIDs, err := testEnv.Repo.GetOrgMemberRoleIDs(ctx, m.ID)
+	if err != nil {
+		t.Fatalf("member roles: %v", err)
+	}
+	found := false
+	for _, rid := range roleIDs {
+		if rid == role.ID {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("invite role_ids must be applied on accept; got %v want to include %s", roleIDs, role.ID)
+	}
+}
+
 func TestOrgInvite_Revoke(t *testing.T) {
 	ctx, _, _, _, org, owner := seedOrgForInvite(t)
 	email := "rv-" + GenerateUniqueSlug("u") + "@example.com"
@@ -197,6 +267,48 @@ func TestServerCreateOrgInvite_PersistsAndLists(t *testing.T) {
 	router.ServeHTTP(rr, req)
 	if rr.Code != http.StatusNoContent {
 		t.Fatalf("revoke: expected 204, got %d (%s)", rr.Code, rr.Body.String())
+	}
+}
+
+// TestServerCreateOrgInvite_DefaultsToMember asserts that an invite created
+// without an explicit orgRole lands on the least-privileged tier (member), not
+// admin — a backend integration that forgets the field must not silently grant
+// admin to every invitee.
+func TestServerCreateOrgInvite_DefaultsToMember(t *testing.T) {
+	ctx := context.Background()
+	acc := testEnv.CreateTestAccount(t, "scidm-"+GenerateUniqueSlug("u")+"@example.com")
+	ws := testEnv.CreateTestWorkspace(t, acc, "WS", GenerateUniqueSlug("ws"))
+	app := testEnv.CreateTestApp(t, ws, acc)
+	defer testEnv.CleanupTestData(t, &TestFixtures{Account: acc, Workspace: ws})
+
+	appURL := "https://app.example.com"
+	if _, err := testEnv.Repo.UpdateAppEnabled(ctx, ws.ID, app.ProjectID, app.ID, true, repo.AppCoreUpdate{AppURL: &appURL}); err != nil {
+		t.Fatalf("set app url: %v", err)
+	}
+	app = mustReloadApp(t, ctx, app.ID)
+
+	owner, _, _ := testEnv.GetOrCreateUserWithMembership(ctx, "own-"+GenerateUniqueSlug("u")+"@example.com", app, core.UserSourceInvited)
+	org, _ := testEnv.Repo.CreateOrganization(ctx, app.ID, "Acme", GenerateUniqueSlug("acme"), &owner.ID)
+	_, _ = testEnv.Repo.AddOrganizationMember(ctx, org.ID, owner.ID, core.OrgRoleOwner)
+
+	router := setupServerInviteRouter(t, ws, app)
+	base := "/v1/apps/" + app.ID.String() + "/organizations/" + org.ID.String() + "/invites"
+
+	// orgRole omitted entirely → must default to the least-privileged tier.
+	email := "newbie-" + GenerateUniqueSlug("u") + "@example.com"
+	body, _ := json.Marshal(map[string]any{"email": email})
+	req := httptest.NewRequest(http.MethodPost, base, bytes.NewReader(body))
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+	if rr.Code != http.StatusCreated {
+		t.Fatalf("create invite: expected 201, got %d (%s)", rr.Code, rr.Body.String())
+	}
+	var resp struct {
+		OrgRole string `json:"orgRole"`
+	}
+	_ = json.Unmarshal(rr.Body.Bytes(), &resp)
+	if resp.OrgRole != core.OrgRoleMember {
+		t.Fatalf("omitted orgRole should default to member, got %q", resp.OrgRole)
 	}
 }
 
@@ -384,6 +496,55 @@ func TestAcceptOrgInvite_RevokedToken(t *testing.T) {
 		if _, err := testEnv.Repo.GetOrganizationMember(ctx, org.ID, invitee.ID); !errors.Is(err, repo.ErrNotFound) {
 			t.Fatalf("revoked invite must not create a membership, got err=%v", err)
 		}
+	}
+}
+
+// TestAcceptOrgInvite_SuspendedAppMemberDenied asserts that accepting an org
+// invite is NOT a backdoor around app-level suspension. Every normal sign-in
+// path runs through ResolveSignInIdentity, which refuses a member whose
+// app_users.status='disabled' (ErrAppUserDisabled). The invite-accept flow must
+// uphold the same control: a suspended member must not receive a session, and
+// the invite must not add an org membership while they're suspended.
+func TestAcceptOrgInvite_SuspendedAppMemberDenied(t *testing.T) {
+	ctx := context.Background()
+	acc, ws, app, org, owner := seedOrgWithAppURL(t, ctx)
+	defer testEnv.CleanupTestData(t, &TestFixtures{Account: acc, Workspace: ws})
+
+	router, _ := setupAcceptInviteRouter(t, ws, app)
+
+	// The invitee already has an app membership that has been suspended.
+	// (Pool-level identity stays enabled — only the per-app membership is
+	// disabled, which is exactly the gap the invite path must not skip.)
+	inviteeEmail := "susp-" + GenerateUniqueSlug("u") + "@example.com"
+	invitee, _, _ := testEnv.GetOrCreateUserWithMembership(ctx, inviteeEmail, app, core.UserSourceInvited)
+	if err := testEnv.Repo.SetAppUserStatus(ctx, app.ID, invitee.ID, core.AppUserStatusDisabled); err != nil {
+		t.Fatalf("suspend app member: %v", err)
+	}
+
+	// Seed a pending invite for the suspended email.
+	raw, hash := generateTestMagicToken(t)
+	if _, err := testEnv.Repo.CreateOrganizationInvite(ctx, org.ID, inviteeEmail, core.OrgRoleAdmin, nil, &owner.ID, hash, time.Now().UTC().Add(7*24*time.Hour)); err != nil {
+		t.Fatalf("seed invite: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/x/"+ws.Slug+"/apps/"+app.ID.String()+"/auth/org-invite?token="+raw, nil)
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+
+	// Suspended -> redirect to app URL with mr_invite_error, NO session.
+	if rr.Code != http.StatusFound {
+		t.Fatalf("suspended accept: expected 302, got %d (%s)", rr.Code, rr.Body.String())
+	}
+	loc := rr.Header().Get("Location")
+	if strings.Contains(loc, "mr_session=") {
+		t.Fatalf("suspended app member must not get a session via invite accept, got %q", loc)
+	}
+	if !strings.Contains(loc, "mr_invite_error=") {
+		t.Fatalf("expected mr_invite_error in redirect, got %q", loc)
+	}
+	// And it must NOT have added the org membership while suspended.
+	if _, err := testEnv.Repo.GetOrganizationMember(ctx, org.ID, invitee.ID); !errors.Is(err, repo.ErrNotFound) {
+		t.Fatalf("suspended accept must not create an org membership, got err=%v", err)
 	}
 }
 

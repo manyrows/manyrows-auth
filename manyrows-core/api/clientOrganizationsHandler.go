@@ -341,7 +341,7 @@ func (handler *RequestHandler) ClientCreateOrgInvite(w http.ResponseWriter, r *h
 	}
 	orgRole := strings.TrimSpace(body.OrgRole)
 	if orgRole == "" {
-		orgRole = core.OrgRoleAdmin
+		orgRole = core.OrgRoleMember // least privilege: an omitted tier must not grant admin
 	}
 	if !validOrgRole(orgRole) {
 		WriteError(w, r, "error.badRequest", http.StatusBadRequest)
@@ -445,6 +445,13 @@ func dedupeUUIDs(in []uuid.UUID) []uuid.UUID {
 	return out
 }
 
+// maxSelfServeOrgsPerUser caps how many active orgs one end-user may self-serve
+// create in an app. Without it, any verified user on a self_serve app could
+// spin up unbounded orgs (each seeding them as owner) — a resource-exhaustion
+// vector. Well above any realistic legitimate count; operators wanting a
+// different cap can change the constant.
+const maxSelfServeOrgsPerUser = 25
+
 type clientCreateOrgRequest struct {
 	Name string `json:"name"`
 	Slug string `json:"slug"`
@@ -479,6 +486,16 @@ func (handler *RequestHandler) ClientCreateOrganization(w http.ResponseWriter, r
 	slug := strings.TrimSpace(body.Slug)
 	if slug == "" {
 		slug = simpleSlug(name)
+	}
+	// Per-user creation cap (abuse guard) — count the user's existing active
+	// orgs in this app before minting another.
+	if n, cerr := handler.repo.CountActiveOrgsCreatedByUserInApp(ctx, app.ID, identity.User.ID); cerr != nil {
+		log.Err(cerr).Msg("ClientCreateOrganization: count existing orgs failed")
+		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
+		return
+	} else if n >= maxSelfServeOrgsPerUser {
+		WriteError(w, r, "error.orgLimitReached", http.StatusConflict)
+		return
 	}
 	org, err := handler.repo.CreateOrganizationWithOwner(ctx, app.ID, name, slug, identity.User.ID)
 	if err != nil {
