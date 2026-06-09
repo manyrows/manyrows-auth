@@ -133,6 +133,15 @@ func (conf *Config) GetBrandName() string {
 	return strings.TrimSpace(getStringFromEnv(conf.envPrefix+"BRAND_NAME", "ManyRows"))
 }
 
+// GetMetricsToken returns the bearer token guarding the Prometheus
+// /metrics endpoint. Empty (the default) means /metrics is served
+// without auth — appropriate when the operator restricts it at the
+// reverse proxy or private network. Set MANYROWS_METRICS_TOKEN to
+// require `Authorization: Bearer <token>` on every scrape.
+func (conf *Config) GetMetricsToken() string {
+	return strings.TrimSpace(getStringFromEnv(conf.envPrefix+"METRICS_TOKEN", ""))
+}
+
 // GetJanitorIntervalMinutes returns the period between background-
 // cleanup sweeps in minutes. Zero / unset = leave the janitor on its
 // internal default (60 minutes). Set higher when the install is huge

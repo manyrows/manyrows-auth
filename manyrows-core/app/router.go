@@ -30,6 +30,12 @@ func (a *AppService) initRouter() error {
 	// DATABASE_URL set.comm
 	r := createBaseRouter(a.config.GetBaseURL, useHTTPSOnly)
 
+	// Prometheus instrumentation: count + time every request, labelled by
+	// matched route pattern. Registered before any route is added to r.
+	m := newMetrics(a.config.GetVersion())
+	m.registerDBPool(a.repo.DB().Pool())
+	r.Use(m.middleware)
+
 	// set robots.txt
 	r.Get("/robots.txt", web.Robots)
 
@@ -67,6 +73,12 @@ func (a *AppService) initRouter() error {
 
 	// health check (unauthenticated, for k8s probes)
 	r.Get("/health", requestHandler.HandleHealth)
+	r.Get("/livez", requestHandler.HandleLivez)   // liveness: process is up (no dependency check)
+	r.Get("/readyz", requestHandler.HandleReadyz) // readiness: database is reachable
+
+	// Prometheus metrics. Open by default; gated by a bearer token when
+	// MANYROWS_METRICS_TOKEN is set (see metrics.handler).
+	r.Handle("/metrics", m.handler(a.config.GetMetricsToken()))
 
 	// JWKS — public, unauthenticated. Customer backends point
 	// manyrows-go at this install's base URL; the SDK fetches here
