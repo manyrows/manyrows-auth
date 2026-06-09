@@ -184,6 +184,7 @@ func (handler *RequestHandler) HandleSetAppOrganizationMemberRoles(w http.Respon
 		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 		return
 	}
+	handler.dispatchOrgMemberEvent(whOrgMemberUpdated, appID, org.ID, userID)
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -239,6 +240,7 @@ func (handler *RequestHandler) HandleCreateAppOrganization(w http.ResponseWriter
 		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 		return
 	}
+	handler.dispatchOrgLifecycleEvent(whOrgCreated, org)
 	utils.WriteJsonWithStatusCode(w, adminOrgResponse{
 		ID: org.ID.String(), Name: org.Name, Slug: org.Slug, Status: org.Status,
 	}, http.StatusCreated)
@@ -346,6 +348,7 @@ func (handler *RequestHandler) HandleAddAppOrganizationMember(w http.ResponseWri
 		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 		return
 	}
+	handler.dispatchOrgMemberEvent(whOrgMemberAdded, appID, org.ID, user.ID)
 	utils.WriteJsonWithStatusCode(w, repo.OrganizationMemberView{
 		UserID: user.ID, Email: user.Email, OrgRole: m.OrgRole, Status: m.Status, Roles: []repo.OrgMemberRoleRef{},
 	}, http.StatusCreated)
@@ -591,6 +594,7 @@ func (handler *RequestHandler) HandleSetAppOrganizationMemberTier(w http.Respons
 		}
 		return
 	}
+	handler.dispatchOrgMemberEvent(whOrgMemberUpdated, appID, org.ID, userID)
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -622,6 +626,7 @@ func (handler *RequestHandler) HandleRemoveAppOrganizationMember(w http.Response
 		}
 		return
 	}
+	handler.dispatchOrgMemberEvent(whOrgMemberRemoved, appID, org.ID, userID)
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -766,6 +771,7 @@ func (handler *RequestHandler) HandleRenameAppOrganization(w http.ResponseWriter
 		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 		return
 	}
+	handler.dispatchOrgLifecycleEvent(whOrgUpdated, updated)
 	utils.WriteJsonWithStatusCode(w, adminOrgResponse{
 		ID:     updated.ID.String(),
 		Name:   updated.Name,
@@ -796,6 +802,7 @@ func (handler *RequestHandler) HandleArchiveAppOrganization(w http.ResponseWrite
 		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 		return
 	}
+	handler.dispatchOrgLifecycleEvent(whOrgArchived, org)
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -822,6 +829,7 @@ func (handler *RequestHandler) HandleRestoreAppOrganization(w http.ResponseWrite
 		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 		return
 	}
+	handler.dispatchOrgLifecycleEvent(whOrgUnarchived, org)
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -852,5 +860,6 @@ func (handler *RequestHandler) HandleDeleteAppOrganization(w http.ResponseWriter
 		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 		return
 	}
+	handler.dispatchOrgLifecycleEvent(whOrgDeleted, org)
 	w.WriteHeader(http.StatusNoContent)
 }

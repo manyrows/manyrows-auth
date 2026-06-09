@@ -152,6 +152,7 @@ func (handler *RequestHandler) ClientRenameOrganization(w http.ResponseWriter, r
 		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 		return
 	}
+	handler.dispatchOrgLifecycleEvent(whOrgUpdated, updated)
 	utils.WriteJson(w, toServerOrg(updated))
 }
 
@@ -167,6 +168,7 @@ func (handler *RequestHandler) ClientArchiveOrganization(w http.ResponseWriter, 
 		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 		return
 	}
+	handler.dispatchOrgLifecycleEvent(whOrgArchived, org)
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -257,6 +259,9 @@ func (handler *RequestHandler) ClientSetOrgMember(w http.ResponseWriter, r *http
 		}
 	}
 
+	if body.OrgRole != nil || body.RoleIDs != nil {
+		handler.dispatchOrgMemberEvent(whOrgMemberUpdated, org.AppID, org.ID, targetID)
+	}
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -310,6 +315,7 @@ func (handler *RequestHandler) ClientRemoveOrgMember(w http.ResponseWriter, r *h
 		}
 		return
 	}
+	handler.dispatchOrgMemberEvent(whOrgMemberRemoved, org.AppID, org.ID, targetID)
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -422,6 +428,9 @@ func (handler *RequestHandler) ClientRevokeOrgInvite(w http.ResponseWriter, r *h
 		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 		return
 	}
+	handler.dispatchWebhook(org.AppID, whOrgInviteRevoked, map[string]any{
+		"appId": org.AppID, "orgId": org.ID, "inviteId": inviteID,
+	})
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -499,5 +508,7 @@ func (handler *RequestHandler) ClientCreateOrganization(w http.ResponseWriter, r
 		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 		return
 	}
+	handler.dispatchOrgLifecycleEvent(whOrgCreated, org)
+	handler.dispatchOrgMemberEvent(whOrgMemberAdded, org.AppID, org.ID, identity.User.ID)
 	utils.WriteJsonWithStatusCode(w, toServerOrg(org), http.StatusCreated)
 }

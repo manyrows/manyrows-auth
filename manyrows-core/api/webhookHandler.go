@@ -32,8 +32,8 @@ func generateWebhookSecret() (string, error) {
 }
 
 // validWebhookEvents is the allowlist of event names that can be subscribed to.
-// Currently limited to auth-related events only.
 var validWebhookEvents = map[string]struct{}{
+	// User / account lifecycle.
 	"user.login":            {},
 	"user.register":         {},
 	"user.logout":           {},
@@ -44,6 +44,20 @@ var validWebhookEvents = map[string]struct{}{
 	"user.email_change":     {},
 	"user.passkey_register": {},
 	"user.passkey_delete":   {},
+	// Organization (multi-tenant) lifecycle.
+	"organization.created":    {},
+	"organization.updated":    {},
+	"organization.archived":   {},
+	"organization.unarchived": {},
+	"organization.deleted":    {},
+	// Organization membership.
+	"organization.member_added":   {},
+	"organization.member_removed": {},
+	"organization.member_updated": {},
+	// Organization invites.
+	"organization.invite_created":  {},
+	"organization.invite_accepted": {},
+	"organization.invite_revoked":  {},
 }
 
 // validateWebhookEvents checks that all event names are in the allowlist and at least one is provided.

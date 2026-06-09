@@ -145,6 +145,8 @@ func (handler *RequestHandler) ServerCreateOrganization(w http.ResponseWriter, r
 		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 		return
 	}
+	handler.dispatchOrgLifecycleEvent(whOrgCreated, org)
+	handler.dispatchOrgMemberEvent(whOrgMemberAdded, org.AppID, org.ID, ownerID)
 	utils.WriteJsonWithStatusCode(w, toServerOrg(org), http.StatusCreated)
 }
 
@@ -228,6 +230,7 @@ func (handler *RequestHandler) ServerUpdateOrganization(w http.ResponseWriter, r
 		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 		return
 	}
+	handler.dispatchOrgLifecycleEvent(whOrgUpdated, updated)
 	utils.WriteJson(w, toServerOrg(updated))
 }
 
@@ -268,6 +271,7 @@ func (handler *RequestHandler) ServerDeleteOrganization(w http.ResponseWriter, r
 		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 		return
 	}
+	handler.dispatchOrgLifecycleEvent(whOrgDeleted, org)
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -374,6 +378,7 @@ func (handler *RequestHandler) ServerAddOrgMember(w http.ResponseWriter, r *http
 		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 		return
 	}
+	handler.dispatchOrgMemberEvent(whOrgMemberAdded, org.AppID, org.ID, user.ID)
 	utils.WriteJsonWithStatusCode(w, repo.OrganizationMemberView{UserID: user.ID, Email: user.Email, OrgRole: m.OrgRole, Status: m.Status, Roles: []repo.OrgMemberRoleRef{}}, http.StatusCreated)
 }
 
@@ -444,6 +449,7 @@ func (handler *RequestHandler) ServerSetOrgMemberRole(w http.ResponseWriter, r *
 		}
 		return
 	}
+	handler.dispatchOrgMemberEvent(whOrgMemberUpdated, org.AppID, org.ID, userID)
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -473,5 +479,6 @@ func (handler *RequestHandler) ServerRemoveOrgMember(w http.ResponseWriter, r *h
 		}
 		return
 	}
+	handler.dispatchOrgMemberEvent(whOrgMemberRemoved, org.AppID, org.ID, userID)
 	w.WriteHeader(http.StatusNoContent)
 }

@@ -71,6 +71,9 @@ func (handler *RequestHandler) createAndEmailOrgInvite(
 		_ = handler.repo.RevokeOrganizationInvite(ctx, org.ID, inv.ID)
 		return nil, errOrgInviteEmailFailed
 	}
+	// Shared by the server-API and client self-serve create handlers, so a
+	// single emit here covers both surfaces.
+	handler.dispatchOrgInviteEvent(whOrgInviteCreated, app.ID, org.ID, emailAddr)
 	return inv, nil
 }
 
@@ -181,6 +184,9 @@ func (handler *RequestHandler) ServerRevokeOrgInvite(w http.ResponseWriter, r *h
 		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 		return
 	}
+	handler.dispatchWebhook(org.AppID, whOrgInviteRevoked, map[string]any{
+		"appId": org.AppID, "orgId": org.ID, "inviteId": inviteID,
+	})
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -308,6 +314,11 @@ func (handler *RequestHandler) AcceptOrgInvite(w http.ResponseWriter, r *http.Re
 			failRedirect("server_error")
 			return
 		}
+	} else {
+		// Fresh acceptance (not the already-accepted fall-through above): the
+		// invitee just joined the org.
+		handler.dispatchOrgInviteEvent(whOrgInviteAccepted, app.ID, org.ID, inv.Email)
+		handler.dispatchOrgMemberEvent(whOrgMemberAdded, app.ID, org.ID, user.ID)
 	}
 
 	// Reload the user so the sign-in tail sees the freshly-verified flag.
