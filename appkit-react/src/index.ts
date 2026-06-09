@@ -15,6 +15,9 @@ export type {
   AppKitOrganizationMember,
   AppKitOrganizationInvite,
   AppKitCreatedOrganization,
+  AppKitOrgListParams,
+  AppKitOrganizationMemberPage,
+  AppKitOrganizationInvitePage,
 } from "./types";
 
 // Convenience hooks

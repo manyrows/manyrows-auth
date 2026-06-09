@@ -88,6 +88,32 @@ export type AppKitCreatedOrganization = {
   status: string;
 };
 
+/** Pagination + search options for the org member/invite listings. */
+export type AppKitOrgListParams = {
+  /** 0-based page index. */
+  page?: number;
+  /** Page size (default 50, capped at 200 server-side). */
+  pageSize?: number;
+  /** Case-insensitive email substring filter. */
+  search?: string;
+};
+
+/** A page of organization members plus the total match count. */
+export type AppKitOrganizationMemberPage = {
+  members: AppKitOrganizationMember[];
+  total: number;
+  page: number;
+  pageSize: number;
+};
+
+/** A page of organization invites plus the total match count. */
+export type AppKitOrganizationInvitePage = {
+  invites: AppKitOrganizationInvite[];
+  total: number;
+  page: number;
+  pageSize: number;
+};
+
 export type AppKitAppData = {
   account?: AppKitAccount;
   workspaceSlug: string;
