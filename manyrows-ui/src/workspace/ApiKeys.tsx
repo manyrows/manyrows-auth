@@ -7,18 +7,23 @@ import {
   Button,
   Card,
   CardContent,
+  Chip,
   Divider,
   Dialog,
   DialogActions,
   DialogContent,
   DialogContentText,
   DialogTitle,
+  FormControl,
   IconButton,
+  InputLabel,
+  MenuItem,
+  Select,
   Stack,
   TextField,
   Typography,
 } from "@mui/material";
-import { Plus, Trash2, SquarePen, Copy } from "lucide-react";
+import { Plus, Trash2, SquarePen, Copy, RotateCcw } from "lucide-react";
 import PageHeader from "../components/PageHeader.tsx";
 import { useTranslation } from "react-i18next";
 import { useSnackbar } from "notistack";
@@ -35,6 +40,8 @@ interface NewApiKeyResponse {
   id: string;
   name: string;
   key: string; // full key shown once
+  scope?: string;
+  expiresAt?: string | null;
 }
 
 export default function ApiKeys({ workspaceId, appId }: Props) {
@@ -45,8 +52,11 @@ export default function ApiKeys({ workspaceId, appId }: Props) {
 
   const [createOpen, setCreateOpen] = React.useState(false);
   const [newName, setNewName] = React.useState("");
+  const [newScope, setNewScope] = React.useState("read_write");
+  const [newExpiryDays, setNewExpiryDays] = React.useState(0); // 0 = never
 
   const [deleteKey, setDeleteKey] = React.useState<APIKey | null>(null);
+  const [rotateKey, setRotateKey] = React.useState<APIKey | null>(null);
 
   const [editKey, setEditKey] = React.useState<APIKey | null>(null);
   const [editName, setEditName] = React.useState("");
@@ -54,9 +64,21 @@ export default function ApiKeys({ workspaceId, appId }: Props) {
   const [createdKey, setCreatedKey] = React.useState<NewApiKeyResponse | null>(
     null,
   );
+  const [createdMode, setCreatedMode] = React.useState<"create" | "rotate">("create");
   const [copied, setCopied] = React.useState(false);
 
   const basePath = `/admin/workspace/${workspaceId}/apiKeys`;
+
+  const isExpired = (key: APIKey) =>
+    !!key.expiresAt && new Date(key.expiresAt).getTime() < Date.now();
+
+  const expiryLabel = (key: APIKey): string => {
+    if (!key.expiresAt) return t("apiKeys.noExpiry");
+    if (isExpired(key)) return t("apiKeys.expired");
+    return t("apiKeys.expiresOn", {
+      date: new Date(key.expiresAt).toLocaleDateString(),
+    });
+  };
 
   const loadKeys = async () => {
     setLoading(true);
@@ -76,6 +98,8 @@ export default function ApiKeys({ workspaceId, appId }: Props) {
 
   const openCreate = () => {
     setNewName("");
+    setNewScope("read_write");
+    setNewExpiryDays(0);
     setCreateOpen(true);
   };
 
@@ -93,16 +117,39 @@ export default function ApiKeys({ workspaceId, appId }: Props) {
     try {
       const res = await axios.post<NewApiKeyResponse>(
         basePath,
-        { name, appId: appId || undefined },
+        {
+          name,
+          appId: appId || undefined,
+          scope: newScope,
+          expiresInDays: newExpiryDays > 0 ? newExpiryDays : undefined,
+        },
       );
 
       setCreateOpen(false);
       setNewName("");
       setCopied(false);
+      setCreatedMode("create");
       setCreatedKey(res.data);
       loadKeys();
     } catch (e) {
       enqueueSnackbar(extractApiError(e, t("error.generic")), { variant: "error" });
+    }
+  };
+
+  const confirmRotate = async () => {
+    if (!rotateKey) return;
+    try {
+      const res = await axios.post<NewApiKeyResponse>(
+        `${basePath}/${rotateKey.id}/rotate`,
+      );
+      setRotateKey(null);
+      setCopied(false);
+      setCreatedMode("rotate");
+      setCreatedKey(res.data);
+      loadKeys();
+    } catch (e) {
+      enqueueSnackbar(extractApiError(e, t("error.generic")), { variant: "error" });
+      setRotateKey(null);
     }
   };
 
@@ -210,9 +257,19 @@ export default function ApiKeys({ workspaceId, appId }: Props) {
                   sx={{ p: 2 }}
                 >
                   <Box sx={{ flexGrow: 1, minWidth: 0 }}>
-                    <Typography sx={{ fontSize: 13.5, fontWeight: 600 }} noWrap>
-                      {key.name}
-                    </Typography>
+                    <Stack direction="row" spacing={1} alignItems="center">
+                      <Typography sx={{ fontSize: 13.5, fontWeight: 600 }} noWrap>
+                        {key.name}
+                      </Typography>
+                      {key.scope === "read" && (
+                        <Chip
+                          size="small"
+                          variant="outlined"
+                          label={t("apiKeys.readOnlyBadge")}
+                          sx={{ height: 18, fontSize: 10 }}
+                        />
+                      )}
+                    </Stack>
                     <Typography
                       sx={{
                         fontFamily: "var(--font-mono)",
@@ -224,7 +281,25 @@ export default function ApiKeys({ workspaceId, appId }: Props) {
                     >
                       mr_{key.prefix}••••••••
                     </Typography>
+                    <Typography
+                      sx={{
+                        fontSize: 11,
+                        color: isExpired(key) ? "error.main" : "text.disabled",
+                        mt: 0.25,
+                      }}
+                      noWrap
+                    >
+                      {expiryLabel(key)}
+                    </Typography>
                   </Box>
+
+                  <IconButton
+                    size="small"
+                    title={t("apiKeys.rotate")}
+                    onClick={() => setRotateKey(key)}
+                  >
+                    <RotateCcw size={14} strokeWidth={1.75} />
+                  </IconButton>
 
                   <IconButton
                     size="small"
@@ -274,6 +349,35 @@ export default function ApiKeys({ workspaceId, appId }: Props) {
                 if (e.key === "Enter") createKey();
               }}
             />
+
+            <FormControl fullWidth size="small" disabled={atLimit}>
+              <InputLabel>{t("apiKeys.scope")}</InputLabel>
+              <Select
+                label={t("apiKeys.scope")}
+                value={newScope}
+                onChange={(e) => setNewScope(e.target.value)}
+              >
+                <MenuItem value="read_write">{t("apiKeys.scopeReadWrite")}</MenuItem>
+                <MenuItem value="read">{t("apiKeys.scopeRead")}</MenuItem>
+              </Select>
+            </FormControl>
+            <Typography variant="caption" color="text.secondary" sx={{ mt: -1 }}>
+              {t("apiKeys.scopeHint")}
+            </Typography>
+
+            <FormControl fullWidth size="small" disabled={atLimit}>
+              <InputLabel>{t("apiKeys.expiry")}</InputLabel>
+              <Select
+                label={t("apiKeys.expiry")}
+                value={String(newExpiryDays)}
+                onChange={(e) => setNewExpiryDays(Number(e.target.value))}
+              >
+                <MenuItem value="0">{t("apiKeys.expiryNever")}</MenuItem>
+                <MenuItem value="30">{t("apiKeys.expiry30")}</MenuItem>
+                <MenuItem value="90">{t("apiKeys.expiry90")}</MenuItem>
+                <MenuItem value="365">{t("apiKeys.expiry365")}</MenuItem>
+              </Select>
+            </FormControl>
           </Stack>
         </DialogContent>
         <DialogActions>
@@ -295,7 +399,11 @@ export default function ApiKeys({ workspaceId, appId }: Props) {
         maxWidth="sm"
         fullWidth
       >
-        <DialogTitle>{t("apiKeys.createdTitle")}</DialogTitle>
+        <DialogTitle>
+          {createdMode === "rotate"
+            ? t("apiKeys.rotatedTitle")
+            : t("apiKeys.createdTitle")}
+        </DialogTitle>
         <DialogContent>
           <Stack spacing={2}>
             <DialogContentText>
@@ -347,6 +455,22 @@ export default function ApiKeys({ workspaceId, appId }: Props) {
           <Button onClick={() => setDeleteKey(null)}>{t("common.cancel")}</Button>
           <Button color="error" variant="contained" onClick={confirmDelete}>
             {t("common.delete")}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Rotate dialog */}
+      <Dialog open={!!rotateKey} onClose={() => setRotateKey(null)}>
+        <DialogTitle>{t("apiKeys.rotateTitle")}</DialogTitle>
+        <DialogContent>
+          <DialogContentText>
+            {rotateKey ? t("apiKeys.rotateDescription", { name: rotateKey.name }) : ""}
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setRotateKey(null)}>{t("common.cancel")}</Button>
+          <Button color="warning" variant="contained" onClick={confirmRotate}>
+            {t("apiKeys.rotate")}
           </Button>
         </DialogActions>
       </Dialog>

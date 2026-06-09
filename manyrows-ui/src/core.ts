@@ -231,6 +231,9 @@ export interface APIKey {
   id: string;
   name: string;
   prefix: string;
+  scope: string; // "read" | "read_write"
+  expiresAt?: string | null;
+  lastUsedAt?: string | null;
   createdAt: string;
 }
 
