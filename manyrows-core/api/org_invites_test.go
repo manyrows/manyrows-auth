@@ -387,6 +387,55 @@ func TestAcceptOrgInvite_RevokedToken(t *testing.T) {
 	}
 }
 
+// TestAcceptOrgInvite_SuspendedAppMemberDenied asserts that accepting an org
+// invite is NOT a backdoor around app-level suspension. Every normal sign-in
+// path runs through ResolveSignInIdentity, which refuses a member whose
+// app_users.status='disabled' (ErrAppUserDisabled). The invite-accept flow must
+// uphold the same control: a suspended member must not receive a session, and
+// the invite must not add an org membership while they're suspended.
+func TestAcceptOrgInvite_SuspendedAppMemberDenied(t *testing.T) {
+	ctx := context.Background()
+	acc, ws, app, org, owner := seedOrgWithAppURL(t, ctx)
+	defer testEnv.CleanupTestData(t, &TestFixtures{Account: acc, Workspace: ws})
+
+	router, _ := setupAcceptInviteRouter(t, ws, app)
+
+	// The invitee already has an app membership that has been suspended.
+	// (Pool-level identity stays enabled — only the per-app membership is
+	// disabled, which is exactly the gap the invite path must not skip.)
+	inviteeEmail := "susp-" + GenerateUniqueSlug("u") + "@example.com"
+	invitee, _, _ := testEnv.GetOrCreateUserWithMembership(ctx, inviteeEmail, app, core.UserSourceInvited)
+	if err := testEnv.Repo.SetAppUserStatus(ctx, app.ID, invitee.ID, core.AppUserStatusDisabled); err != nil {
+		t.Fatalf("suspend app member: %v", err)
+	}
+
+	// Seed a pending invite for the suspended email.
+	raw, hash := generateTestMagicToken(t)
+	if _, err := testEnv.Repo.CreateOrganizationInvite(ctx, org.ID, inviteeEmail, core.OrgRoleAdmin, nil, &owner.ID, hash, time.Now().UTC().Add(7*24*time.Hour)); err != nil {
+		t.Fatalf("seed invite: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/x/"+ws.Slug+"/apps/"+app.ID.String()+"/auth/org-invite?token="+raw, nil)
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+
+	// Suspended -> redirect to app URL with mr_invite_error, NO session.
+	if rr.Code != http.StatusFound {
+		t.Fatalf("suspended accept: expected 302, got %d (%s)", rr.Code, rr.Body.String())
+	}
+	loc := rr.Header().Get("Location")
+	if strings.Contains(loc, "mr_session=") {
+		t.Fatalf("suspended app member must not get a session via invite accept, got %q", loc)
+	}
+	if !strings.Contains(loc, "mr_invite_error=") {
+		t.Fatalf("expected mr_invite_error in redirect, got %q", loc)
+	}
+	// And it must NOT have added the org membership while suspended.
+	if _, err := testEnv.Repo.GetOrganizationMember(ctx, org.ID, invitee.ID); !errors.Is(err, repo.ErrNotFound) {
+		t.Fatalf("suspended accept must not create an org membership, got err=%v", err)
+	}
+}
+
 // mustReloadApp returns the app with its pool id populated (CreateTestApp may
 // not include it on the returned struct in all cases).
 func mustReloadApp(t *testing.T, ctx context.Context, appID uuid.UUID) *core.App {

@@ -249,9 +249,22 @@ func (handler *RequestHandler) AcceptOrgInvite(w http.ResponseWriter, r *http.Re
 		failRedirect("server_error")
 		return
 	}
-	if _, _, err := handler.repo.EnsureAppMember(r.Context(), app.ID, user.ID, core.UserSourceInvited); err != nil {
+	appMember, _, err := handler.repo.EnsureAppMember(r.Context(), app.ID, user.ID, core.UserSourceInvited)
+	if err != nil {
 		log.Err(err).Msg("AcceptOrgInvite: EnsureAppMember failed")
 		failRedirect("server_error")
+		return
+	}
+	// Uphold app-level suspension. EnsureAppMember leaves a pre-existing
+	// disabled membership disabled (ON CONFLICT DO NOTHING), so a suspended
+	// (app_users.status='disabled') member reaches here. Every other sign-in
+	// path refuses such a member via ResolveSignInIdentity (ErrAppUserDisabled);
+	// the invite path must too, or an org invite becomes a backdoor around an
+	// app-level suspension. Refuse BEFORE adding the org membership or minting a
+	// session (fail closed if the row is somehow missing); the invite stays
+	// pending so it can be accepted once the suspension is lifted.
+	if appMember == nil || !appMember.IsActive() {
+		failRedirect("account_disabled")
 		return
 	}
 	if !user.IsEmailVerified() {
