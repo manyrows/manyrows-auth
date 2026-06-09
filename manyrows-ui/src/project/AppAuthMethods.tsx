@@ -103,6 +103,7 @@ export type App = {
   qrSignInUrl?: string;
   bruteForceProtectionEnabled?: boolean;
   organizationsEnabled?: boolean;
+  orgCreationPolicy?: string; // self_serve | invite_only | admin_only
 };
 
 type RolesResponse = { roles: Role[] };

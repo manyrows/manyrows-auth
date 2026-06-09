@@ -99,11 +99,17 @@ export default function AppOrganizations({ project, appId }: Props) {
   const [members, setMembers] = React.useState<OrgMember[]>([]);
   const [membersLoading, setMembersLoading] = React.useState(false);
 
-  // Per-member project-role editing (admin assignment).
+  // Creation-policy selector
+  const [savingPolicy, setSavingPolicy] = React.useState(false);
+
+  // Per-member editing (tier + project roles) and removal (admin).
   const [roleCatalog, setRoleCatalog] = React.useState<OrgMemberRole[]>([]);
   const [editRolesMember, setEditRolesMember] = React.useState<OrgMember | null>(null);
+  const [editTier, setEditTier] = React.useState<string>("member");
   const [editRoleIds, setEditRoleIds] = React.useState<string[]>([]);
   const [editRolesSaving, setEditRolesSaving] = React.useState(false);
+  const [removeMember, setRemoveMember] = React.useState<OrgMember | null>(null);
+  const [removeSaving, setRemoveSaving] = React.useState(false);
 
   // Rename dialog
   const [renameOpen, setRenameOpen] = React.useState(false);
@@ -199,27 +205,67 @@ export default function AppOrganizations({ project, appId }: Props) {
     }
   }
 
-  function openEditRoles(m: OrgMember) {
+  function openEditMember(m: OrgMember) {
     setEditRolesMember(m);
+    setEditTier(m.orgRole);
     setEditRoleIds(m.roles ? m.roles.map((r) => r.id) : []);
   }
 
-  async function saveMemberRoles() {
+  async function saveMember() {
     if (!membersOrg || !editRolesMember) return;
     setEditRolesSaving(true);
     try {
-      await axios.put(`${appURL}/organizations/${membersOrg.id}/members/${editRolesMember.userId}/roles`, {
-        roleIds: editRoleIds,
-      });
-      // Reflect the new assignment locally without a refetch.
+      const base = `${appURL}/organizations/${membersOrg.id}/members/${editRolesMember.userId}`;
+      // Tier first so a last-owner 409 aborts before any role write.
+      if (editTier !== editRolesMember.orgRole) {
+        await axios.patch(base, { orgRole: editTier });
+      }
+      const curIds = [...(editRolesMember.roles ?? []).map((r) => r.id)].sort();
+      const newIds = [...editRoleIds].sort();
+      const rolesChanged = curIds.length !== newIds.length || curIds.some((id, i) => id !== newIds[i]);
+      if (rolesChanged) {
+        await axios.put(`${base}/roles`, { roleIds: editRoleIds });
+      }
       const chosen = roleCatalog.filter((r) => editRoleIds.includes(r.id));
-      setMembers((prev) => prev.map((m) => (m.userId === editRolesMember.userId ? { ...m, roles: chosen } : m)));
-      enqueueSnackbar(t("organizations.rolesUpdated", { defaultValue: "Roles updated" }), { variant: "success" });
+      setMembers((prev) =>
+        prev.map((m) => (m.userId === editRolesMember.userId ? { ...m, orgRole: editTier, roles: chosen } : m)),
+      );
+      enqueueSnackbar(t("organizations.memberUpdated", { defaultValue: "Member updated" }), { variant: "success" });
       setEditRolesMember(null);
     } catch (e) {
       enqueueSnackbar(errText(e), { variant: "error" });
     } finally {
       setEditRolesSaving(false);
+    }
+  }
+
+  async function confirmRemoveMember() {
+    if (!membersOrg || !removeMember) return;
+    setRemoveSaving(true);
+    try {
+      await axios.delete(`${appURL}/organizations/${membersOrg.id}/members/${removeMember.userId}`);
+      setMembers((prev) => prev.filter((m) => m.userId !== removeMember.userId));
+      enqueueSnackbar(t("organizations.memberRemoved", { defaultValue: "Member removed" }), { variant: "success" });
+      setRemoveMember(null);
+    } catch (e) {
+      enqueueSnackbar(errText(e), { variant: "error" });
+    } finally {
+      setRemoveSaving(false);
+    }
+  }
+
+  async function savePolicy(policy: string) {
+    setSavingPolicy(true);
+    try {
+      const res = await axios.put<App>(`${appURL}/organizations-creation-policy`, { orgCreationPolicy: policy });
+      setApp(res.data);
+      enqueueSnackbar(t("organizations.policyUpdated", { defaultValue: "Creation policy updated" }), {
+        variant: "success",
+      });
+    } catch (e) {
+      enqueueSnackbar(errText(e), { variant: "error" });
+    } finally {
+      setSavingPolicy(false);
     }
   }
 
@@ -337,6 +383,35 @@ export default function AppOrganizations({ project, appId }: Props) {
             onSave={() => void saveEnabled()}
             onDiscard={() => setEnabled(persistedEnabled)}
           />
+
+          {/* Creation policy — only meaningful once orgs are enabled. */}
+          {persistedEnabled && (
+            <Box sx={{ mt: 2, pt: 2, borderTop: "1px solid", borderColor: "divider" }}>
+              <TextField
+                select
+                size="small"
+                label={t("organizations.creationPolicyLabel", { defaultValue: "Who can create organizations" })}
+                value={app?.orgCreationPolicy ?? "invite_only"}
+                onChange={(e) => void savePolicy(e.target.value)}
+                disabled={savingPolicy}
+                sx={{ minWidth: 320 }}
+                helperText={t("organizations.creationPolicyHelp", {
+                  defaultValue:
+                    "Gates the end-user self-serve create endpoint. Backends can always provision organizations via the server API.",
+                })}
+              >
+                <MenuItem value="invite_only">
+                  {t("organizations.policy.inviteOnly", { defaultValue: "Invite only (no self-serve)" })}
+                </MenuItem>
+                <MenuItem value="self_serve">
+                  {t("organizations.policy.selfServe", { defaultValue: "Anyone can self-serve" })}
+                </MenuItem>
+                <MenuItem value="admin_only">
+                  {t("organizations.policy.adminOnly", { defaultValue: "Admins only (backend / API)" })}
+                </MenuItem>
+              </TextField>
+            </Box>
+          )}
         </Box>
 
         {/* Status filter (only meaningful once at least one org exists) */}
@@ -506,6 +581,7 @@ export default function AppOrganizations({ project, appId }: Props) {
                   <TableCell>{t("organizations.col.tier", { defaultValue: "Tier" })}</TableCell>
                   <TableCell>{t("organizations.col.roles", { defaultValue: "Roles" })}</TableCell>
                   <TableCell>{t("organizations.col.status", { defaultValue: "Status" })}</TableCell>
+                  <TableCell align="right">{t("organizations.col.actions", { defaultValue: "Actions" })}</TableCell>
                 </TableRow>
               </TableHead>
               <TableBody>
@@ -514,22 +590,33 @@ export default function AppOrganizations({ project, appId }: Props) {
                     <TableCell>{m.email || m.userId}</TableCell>
                     <TableCell>{m.orgRole}</TableCell>
                     <TableCell>
-                      <Stack direction="row" spacing={0.5} alignItems="center" flexWrap="wrap" useFlexGap>
-                        {m.roles && m.roles.length > 0 ? (
-                          m.roles.map((r) => <Chip key={r.id} size="small" label={r.name || r.slug} />)
-                        ) : (
-                          <Typography variant="body2" color="text.secondary">
-                            —
-                          </Typography>
-                        )}
-                        <Tooltip title={t("organizations.editRoles", { defaultValue: "Edit roles" })}>
-                          <IconButton size="small" onClick={() => openEditRoles(m)}>
+                      {m.roles && m.roles.length > 0 ? (
+                        <Stack direction="row" spacing={0.5} flexWrap="wrap" useFlexGap>
+                          {m.roles.map((r) => (
+                            <Chip key={r.id} size="small" label={r.name || r.slug} />
+                          ))}
+                        </Stack>
+                      ) : (
+                        <Typography variant="body2" color="text.secondary">
+                          —
+                        </Typography>
+                      )}
+                    </TableCell>
+                    <TableCell>{m.status}</TableCell>
+                    <TableCell align="right">
+                      <Stack direction="row" spacing={0.5} justifyContent="flex-end">
+                        <Tooltip title={t("organizations.editMember", { defaultValue: "Edit member" })}>
+                          <IconButton size="small" onClick={() => openEditMember(m)}>
                             <SquarePen size={15} />
+                          </IconButton>
+                        </Tooltip>
+                        <Tooltip title={t("organizations.removeMember", { defaultValue: "Remove member" })}>
+                          <IconButton size="small" color="error" onClick={() => setRemoveMember(m)}>
+                            <Trash2 size={15} />
                           </IconButton>
                         </Tooltip>
                       </Stack>
                     </TableCell>
-                    <TableCell>{m.status}</TableCell>
                   </TableRow>
                 ))}
               </TableBody>
@@ -541,46 +628,89 @@ export default function AppOrganizations({ project, appId }: Props) {
         </DialogActions>
       </Dialog>
 
-      {/* Edit member roles dialog */}
+      {/* Edit member dialog (tier + project roles) */}
       <Dialog open={!!editRolesMember} onClose={() => setEditRolesMember(null)} fullWidth maxWidth="xs">
         <DialogTitle>
-          {t("organizations.editRolesTitle", { defaultValue: "Edit roles" })}
+          {t("organizations.editMemberTitle", { defaultValue: "Edit member" })}
           {editRolesMember ? ` — ${editRolesMember.email || editRolesMember.userId}` : ""}
         </DialogTitle>
         <DialogContent dividers>
-          {roleCatalog.length === 0 ? (
-            <Typography variant="body2" color="text.secondary">
-              {t("organizations.noProjectRoles", {
-                defaultValue: "No roles are defined for this project yet.",
+          <Stack spacing={2}>
+            <TextField
+              select
+              size="small"
+              fullWidth
+              label={t("organizations.tierLabel", { defaultValue: "Tier" })}
+              value={editTier}
+              onChange={(e) => setEditTier(e.target.value)}
+              helperText={t("organizations.tierHelp", {
+                defaultValue: "owner/admin manage the org; the last owner can't be demoted.",
               })}
-            </Typography>
-          ) : (
-            <Stack>
-              {roleCatalog.map((r) => (
-                <FormControlLabel
-                  key={r.id}
-                  control={
-                    <Checkbox
-                      checked={editRoleIds.includes(r.id)}
-                      onChange={(e) =>
-                        setEditRoleIds((prev) =>
-                          e.target.checked ? [...prev, r.id] : prev.filter((id) => id !== r.id),
-                        )
+            >
+              <MenuItem value="owner">owner</MenuItem>
+              <MenuItem value="admin">admin</MenuItem>
+              <MenuItem value="member">member</MenuItem>
+            </TextField>
+
+            <Box>
+              <Typography variant="caption" color="text.secondary">
+                {t("organizations.rolesLabel", { defaultValue: "Project roles" })}
+              </Typography>
+              {roleCatalog.length === 0 ? (
+                <Typography variant="body2" color="text.secondary">
+                  {t("organizations.noProjectRoles", { defaultValue: "No roles are defined for this project yet." })}
+                </Typography>
+              ) : (
+                <Stack>
+                  {roleCatalog.map((r) => (
+                    <FormControlLabel
+                      key={r.id}
+                      control={
+                        <Checkbox
+                          checked={editRoleIds.includes(r.id)}
+                          onChange={(e) =>
+                            setEditRoleIds((prev) =>
+                              e.target.checked ? [...prev, r.id] : prev.filter((id) => id !== r.id),
+                            )
+                          }
+                        />
                       }
+                      label={r.name || r.slug}
                     />
-                  }
-                  label={r.name || r.slug}
-                />
-              ))}
-            </Stack>
-          )}
+                  ))}
+                </Stack>
+              )}
+            </Box>
+          </Stack>
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setEditRolesMember(null)} disabled={editRolesSaving}>
             {t("common.cancel", { defaultValue: "Cancel" })}
           </Button>
-          <Button variant="contained" onClick={() => void saveMemberRoles()} disabled={editRolesSaving}>
+          <Button variant="contained" onClick={() => void saveMember()} disabled={editRolesSaving}>
             {t("common.save", { defaultValue: "Save" })}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Remove member confirm dialog */}
+      <Dialog open={!!removeMember} onClose={() => setRemoveMember(null)} fullWidth maxWidth="xs">
+        <DialogTitle>{t("organizations.removeMemberTitle", { defaultValue: "Remove member" })}</DialogTitle>
+        <DialogContent>
+          <Typography variant="body2">
+            {t("organizations.removeMemberConfirm", {
+              defaultValue: "Remove {{email}} from {{org}}? They lose access to this organization.",
+              email: removeMember?.email || removeMember?.userId,
+              org: membersOrg?.name,
+            })}
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setRemoveMember(null)} disabled={removeSaving}>
+            {t("common.cancel", { defaultValue: "Cancel" })}
+          </Button>
+          <Button color="error" variant="contained" onClick={() => void confirmRemoveMember()} disabled={removeSaving}>
+            {t("organizations.remove", { defaultValue: "Remove" })}
           </Button>
         </DialogActions>
       </Dialog>
