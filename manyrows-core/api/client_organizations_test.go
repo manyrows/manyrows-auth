@@ -401,6 +401,58 @@ func TestClientListAndRevokeInvites(t *testing.T) {
 	}
 }
 
+// TestListOrganizationMembers_IncludesProjectRoles asserts the member listing
+// surfaces each member's assigned project roles (not just the org tier), so the
+// admin UI can show "EDITOR in Org1, none in Org2".
+func TestListOrganizationMembers_IncludesProjectRoles(t *testing.T) {
+	ctx := context.Background()
+	acc := testEnv.CreateTestAccount(t, "lomr-"+GenerateUniqueSlug("u")+"@example.com")
+	ws := testEnv.CreateTestWorkspace(t, acc, "WS", GenerateUniqueSlug("ws"))
+	app := testEnv.CreateTestApp(t, ws, acc)
+	t.Cleanup(func() { testEnv.CleanupTestData(t, &TestFixtures{Account: acc, Workspace: ws}) })
+
+	editor, err := testEnv.Repo.CreateRole(ctx, repo.CreateRoleParams{ProjectID: app.ProjectID, Name: "Editor", Slug: GenerateUniqueSlug("ed"), Now: time.Now().UTC()})
+	if err != nil {
+		t.Fatalf("create role: %v", err)
+	}
+
+	owner, _, _ := testEnv.GetOrCreateUserWithMembership(ctx, "own-"+GenerateUniqueSlug("u")+"@example.com", app, core.UserSourceInvited)
+	org, _ := testEnv.Repo.CreateOrganization(ctx, app.ID, "Acme", GenerateUniqueSlug("acme"), &owner.ID)
+	ownerMember, _ := testEnv.Repo.AddOrganizationMember(ctx, org.ID, owner.ID, core.OrgRoleOwner)
+	if err := testEnv.Repo.SetOrganizationMemberRoles(ctx, ownerMember.ID, []uuid.UUID{editor.ID}); err != nil {
+		t.Fatalf("assign role: %v", err)
+	}
+
+	// A second member with NO project roles, to prove the column is per-member.
+	accB := testEnv.CreateTestAccount(t, "nr-"+GenerateUniqueSlug("u")+"@example.com")
+	plain, _, _ := testEnv.GetOrCreateUserWithMembership(ctx, accB.Email, app, core.UserSourceInvited)
+	_, _ = testEnv.Repo.AddOrganizationMember(ctx, org.ID, plain.ID, core.OrgRoleMember)
+
+	members, err := testEnv.Repo.ListOrganizationMembers(ctx, org.ID)
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	byUser := map[uuid.UUID]repo.OrganizationMemberView{}
+	for _, mv := range members {
+		byUser[mv.UserID] = mv
+	}
+
+	ownerView, ok := byUser[owner.ID]
+	if !ok {
+		t.Fatalf("owner missing from member list")
+	}
+	if len(ownerView.Roles) != 1 || ownerView.Roles[0].ID != editor.ID || ownerView.Roles[0].Name != "Editor" {
+		t.Fatalf("owner should carry the Editor project role, got %+v", ownerView.Roles)
+	}
+	plainView, ok := byUser[plain.ID]
+	if !ok {
+		t.Fatalf("plain member missing from member list")
+	}
+	if len(plainView.Roles) != 0 {
+		t.Fatalf("plain member should have no project roles, got %+v", plainView.Roles)
+	}
+}
+
 func TestCountRolesInProject(t *testing.T) {
 	ctx := context.Background()
 	acc := testEnv.CreateTestAccount(t, "crp-"+GenerateUniqueSlug("u")+"@example.com")

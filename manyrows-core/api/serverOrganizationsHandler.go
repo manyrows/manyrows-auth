@@ -376,7 +376,7 @@ func (handler *RequestHandler) ServerAddOrgMember(w http.ResponseWriter, r *http
 		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 		return
 	}
-	utils.WriteJsonWithStatusCode(w, repo.OrganizationMemberView{UserID: user.ID, Email: user.Email, OrgRole: m.OrgRole, Status: m.Status}, http.StatusCreated)
+	utils.WriteJsonWithStatusCode(w, repo.OrganizationMemberView{UserID: user.ID, Email: user.Email, OrgRole: m.OrgRole, Status: m.Status, Roles: []repo.OrgMemberRoleRef{}}, http.StatusCreated)
 }
 
 // ServerGetOrgMember: GET …/organizations/{orgId}/members/{userId}

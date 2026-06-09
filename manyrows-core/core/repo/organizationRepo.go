@@ -2,6 +2,7 @@ package repo
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -340,18 +341,38 @@ func (r *Repo) DeleteOrganization(ctx context.Context, id uuid.UUID) error {
 	return nil
 }
 
-// OrganizationMemberView is one member with their email + tier, for admin listing.
-type OrganizationMemberView struct {
-	UserID  uuid.UUID `json:"userId"`
-	Email   string    `json:"email"`
-	OrgRole string    `json:"orgRole"`
-	Status  string    `json:"status"`
+// OrgMemberRoleRef is a project (app RBAC) role assigned to an org membership,
+// in the shape the member listings expose for display.
+type OrgMemberRoleRef struct {
+	ID   uuid.UUID `json:"id"`
+	Slug string    `json:"slug"`
+	Name string    `json:"name"`
 }
 
-// ListOrganizationMembers returns all members of an org with their email + tier.
+// OrganizationMemberView is one member with their email, org tier, and the
+// project roles assigned to that membership (Roles is the per-org RBAC the org
+// tier owner/admin/member is distinct from). Roles is always non-nil.
+type OrganizationMemberView struct {
+	UserID  uuid.UUID          `json:"userId"`
+	Email   string             `json:"email"`
+	OrgRole string             `json:"orgRole"`
+	Status  string             `json:"status"`
+	Roles   []OrgMemberRoleRef `json:"roles"`
+}
+
+// ListOrganizationMembers returns all members of an org with their email, org
+// tier, and the project roles assigned to each membership (so callers can show
+// per-org RBAC, not just the owner/admin/member tier). Roles is always non-nil.
 func (r *Repo) ListOrganizationMembers(ctx context.Context, orgID uuid.UUID) ([]OrganizationMemberView, error) {
 	const q = `
-SELECT m.user_id, u.email, m.org_role, m.status
+SELECT m.user_id, u.email, m.org_role, m.status,
+       COALESCE(
+         (SELECT json_agg(json_build_object('id', rl.id, 'slug', rl.slug, 'name', rl.name) ORDER BY rl.name)
+          FROM organization_member_roles mr
+          JOIN roles rl ON rl.id = mr.role_id
+          WHERE mr.member_id = m.id),
+         '[]'
+       ) AS roles
 FROM organization_members m
 JOIN users u ON u.id = m.user_id
 WHERE m.org_id = $1
@@ -364,8 +385,17 @@ ORDER BY u.email ASC;`
 	var out []OrganizationMemberView
 	for rows.Next() {
 		var v OrganizationMemberView
-		if err := rows.Scan(&v.UserID, &v.Email, &v.OrgRole, &v.Status); err != nil {
+		var rolesJSON []byte
+		if err := rows.Scan(&v.UserID, &v.Email, &v.OrgRole, &v.Status, &rolesJSON); err != nil {
 			return nil, err
+		}
+		if len(rolesJSON) > 0 {
+			if err := json.Unmarshal(rolesJSON, &v.Roles); err != nil {
+				return nil, err
+			}
+		}
+		if v.Roles == nil {
+			v.Roles = []OrgMemberRoleRef{}
 		}
 		out = append(out, v)
 	}
