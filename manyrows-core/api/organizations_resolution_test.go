@@ -404,7 +404,7 @@ func TestOrganizationMemberMethods(t *testing.T) {
 		t.Fatalf("add other: %v", err)
 	}
 
-	members, err := testEnv.Repo.ListOrganizationMembers(ctx, org.ID)
+	members, _, err := testEnv.Repo.ListOrganizationMembers(ctx, org.ID, 0, 200, "")
 	if err != nil {
 		t.Fatalf("list: %v", err)
 	}
@@ -428,7 +428,7 @@ func TestOrganizationMemberMethods(t *testing.T) {
 	if err := testEnv.Repo.RemoveOrganizationMember(ctx, org.ID, other.ID); err != nil {
 		t.Fatalf("remove: %v", err)
 	}
-	members, _ = testEnv.Repo.ListOrganizationMembers(ctx, org.ID)
+	members, _, _ = testEnv.Repo.ListOrganizationMembers(ctx, org.ID, 0, 200, "")
 	if len(members) != 1 {
 		t.Fatalf("after remove: got %d members want 1", len(members))
 	}

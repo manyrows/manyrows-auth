@@ -123,7 +123,10 @@ func (handler *RequestHandler) ServerCreateOrgInvite(w http.ResponseWriter, r *h
 }
 
 type orgInvitesListResponse struct {
-	Invites []orgInviteListItem `json:"invites"`
+	Invites  []orgInviteListItem `json:"invites"`
+	Total    int                 `json:"total"`
+	Page     int                 `json:"page"`
+	PageSize int                 `json:"pageSize"`
 }
 type orgInviteListItem struct {
 	ID             string  `json:"id"`
@@ -141,13 +144,14 @@ func (handler *RequestHandler) ServerListOrgInvites(w http.ResponseWriter, r *ht
 	if !ok {
 		return
 	}
-	views, err := handler.repo.ListPendingOrgInvites(r.Context(), org.ID)
+	page, pageSize, search := parseOrgListParams(r)
+	views, total, err := handler.repo.ListPendingOrgInvites(r.Context(), org.ID, page, pageSize, search)
 	if err != nil {
 		log.Err(err).Msg("ServerListOrgInvites failed")
 		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 		return
 	}
-	out := orgInvitesListResponse{Invites: make([]orgInviteListItem, 0, len(views))}
+	out := orgInvitesListResponse{Invites: make([]orgInviteListItem, 0, len(views)), Total: total, Page: page, PageSize: pageSize}
 	for _, v := range views {
 		out.Invites = append(out.Invites, orgInviteListItem{
 			ID: v.ID.String(), Email: v.Email, OrgRole: v.OrgRole, Status: v.Status,

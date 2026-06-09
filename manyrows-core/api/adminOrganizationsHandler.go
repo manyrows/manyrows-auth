@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -15,6 +16,30 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/rs/zerolog/log"
 )
+
+// parseOrgListParams reads page/pageSize/search query params for the paginated
+// org member/invite listings. page defaults to 0; pageSize defaults to 50 and is
+// capped at 200 (matching the app-members listing). The returned values reflect
+// what the repo will actually use, so callers can echo them back in the response.
+func parseOrgListParams(r *http.Request) (page, pageSize int, search string) {
+	q := r.URL.Query()
+	if v := strings.TrimSpace(q.Get("page")); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			page = n
+		}
+	}
+	pageSize = 50
+	if v := strings.TrimSpace(q.Get("pageSize")); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			pageSize = n
+		}
+	}
+	if pageSize > 200 {
+		pageSize = 200
+	}
+	search = strings.TrimSpace(q.Get("search"))
+	return page, pageSize, search
+}
 
 // updateAppOrganizationsEnabledRequest toggles per-app org mode from the admin
 // panel. Pointer so a missing field is rejected, not silently treated as false.
@@ -337,16 +362,16 @@ func (handler *RequestHandler) HandleListAppOrganizationInvites(w http.ResponseW
 	if !ok {
 		return
 	}
-	views, err := handler.repo.ListPendingOrgInvites(r.Context(), org.ID)
+	page, pageSize, search := parseOrgListParams(r)
+	views, total, err := handler.repo.ListPendingOrgInvites(r.Context(), org.ID, page, pageSize, search)
 	if err != nil {
 		log.Err(err).Msg("HandleListAppOrganizationInvites failed")
 		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 		return
 	}
-	if views == nil {
-		views = []repo.OrganizationInviteView{}
-	}
-	utils.WriteJsonWithStatusCode(w, map[string]any{"invites": views}, http.StatusOK)
+	utils.WriteJsonWithStatusCode(w, map[string]any{
+		"invites": views, "total": total, "page": page, "pageSize": pageSize,
+	}, http.StatusOK)
 }
 
 type createAppOrgInviteRequest struct {
@@ -676,11 +701,7 @@ func (handler *RequestHandler) adminActiveOrgFromURL(w http.ResponseWriter, r *h
 	return org, true
 }
 
-type adminOrgMembersResponse struct {
-	Members []repo.OrganizationMemberView `json:"members"`
-}
-
-// HandleListAppOrganizationMembers returns an org's members (read-only).
+// HandleListAppOrganizationMembers returns a page of an org's members.
 func (handler *RequestHandler) HandleListAppOrganizationMembers(w http.ResponseWriter, r *http.Request) {
 	_, appID, ok := handler.adminAppScope(w, r)
 	if !ok {
@@ -690,16 +711,16 @@ func (handler *RequestHandler) HandleListAppOrganizationMembers(w http.ResponseW
 	if !ok {
 		return
 	}
-	members, err := handler.repo.ListOrganizationMembers(r.Context(), org.ID)
+	page, pageSize, search := parseOrgListParams(r)
+	members, total, err := handler.repo.ListOrganizationMembers(r.Context(), org.ID, page, pageSize, search)
 	if err != nil {
 		log.Err(err).Msg("failed to list organization members")
 		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 		return
 	}
-	if members == nil {
-		members = []repo.OrganizationMemberView{}
-	}
-	utils.WriteJsonWithStatusCode(w, adminOrgMembersResponse{Members: members}, http.StatusOK)
+	utils.WriteJsonWithStatusCode(w, map[string]any{
+		"members": members, "total": total, "page": page, "pageSize": pageSize,
+	}, http.StatusOK)
 }
 
 type renameAppOrganizationRequest struct {

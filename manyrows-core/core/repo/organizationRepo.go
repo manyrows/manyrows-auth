@@ -360,10 +360,39 @@ type OrganizationMemberView struct {
 	Roles   []OrgMemberRoleRef `json:"roles"`
 }
 
-// ListOrganizationMembers returns all members of an org with their email, org
-// tier, and the project roles assigned to each membership (so callers can show
-// per-org RBAC, not just the owner/admin/member tier). Roles is always non-nil.
-func (r *Repo) ListOrganizationMembers(ctx context.Context, orgID uuid.UUID) ([]OrganizationMemberView, error) {
+// ListOrganizationMembers returns a page of an org's members with their email,
+// org tier, and the project roles assigned to each membership, plus the total
+// match count. page is 0-based; pageSize defaults to 50 (capped at 200); search
+// is an optional case-insensitive email substring filter. Paginated so a large
+// org doesn't load every member (and the per-member roles subquery only runs for
+// the page). Roles is always non-nil.
+func (r *Repo) ListOrganizationMembers(ctx context.Context, orgID uuid.UUID, page, pageSize int, search string) ([]OrganizationMemberView, int, error) {
+	if page < 0 {
+		page = 0
+	}
+	if pageSize <= 0 {
+		pageSize = 50
+	}
+	if pageSize > 200 {
+		pageSize = 200
+	}
+	offset := page * pageSize
+
+	search = strings.TrimSpace(search)
+	pattern := search
+	if search != "" {
+		pattern = "%" + strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`).Replace(search) + "%"
+	}
+
+	const qCount = `
+SELECT count(*) FROM organization_members m
+JOIN users u ON u.id = m.user_id
+WHERE m.org_id = $1 AND ($2 = '' OR lower(u.email) LIKE lower($2) ESCAPE '\');`
+	var total int
+	if err := r.db.Pool().QueryRow(ctx, qCount, orgID, pattern).Scan(&total); err != nil {
+		return nil, 0, err
+	}
+
 	const q = `
 SELECT m.user_id, u.email, m.org_role, m.status,
        COALESCE(
@@ -375,23 +404,24 @@ SELECT m.user_id, u.email, m.org_role, m.status,
        ) AS roles
 FROM organization_members m
 JOIN users u ON u.id = m.user_id
-WHERE m.org_id = $1
-ORDER BY u.email ASC;`
-	rows, err := r.db.Pool().Query(ctx, q, orgID)
+WHERE m.org_id = $1 AND ($2 = '' OR lower(u.email) LIKE lower($2) ESCAPE '\')
+ORDER BY u.email ASC
+LIMIT $3 OFFSET $4;`
+	rows, err := r.db.Pool().Query(ctx, q, orgID, pattern, pageSize, offset)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	defer rows.Close()
-	var out []OrganizationMemberView
+	out := []OrganizationMemberView{}
 	for rows.Next() {
 		var v OrganizationMemberView
 		var rolesJSON []byte
 		if err := rows.Scan(&v.UserID, &v.Email, &v.OrgRole, &v.Status, &rolesJSON); err != nil {
-			return nil, err
+			return nil, 0, err
 		}
 		if len(rolesJSON) > 0 {
 			if err := json.Unmarshal(rolesJSON, &v.Roles); err != nil {
-				return nil, err
+				return nil, 0, err
 			}
 		}
 		if v.Roles == nil {
@@ -399,7 +429,7 @@ ORDER BY u.email ASC;`
 		}
 		out = append(out, v)
 	}
-	return out, rows.Err()
+	return out, total, rows.Err()
 }
 
 // SetOrganizationMemberRole updates a member's tier. ErrNotFound if no such member.
@@ -609,28 +639,57 @@ FROM organization_invites WHERE token_hash = $1 LIMIT 1;`
 	return &inv, nil
 }
 
-// ListPendingOrgInvites lists pending invites for an org, newest first, with inviter email.
-func (r *Repo) ListPendingOrgInvites(ctx context.Context, orgID uuid.UUID) ([]OrganizationInviteView, error) {
+// ListPendingOrgInvites returns a page of an org's pending invites (newest
+// first) with inviter email, plus the total match count. page is 0-based;
+// pageSize defaults to 50 (capped at 200); search is an optional
+// case-insensitive invitee-email substring filter.
+func (r *Repo) ListPendingOrgInvites(ctx context.Context, orgID uuid.UUID, page, pageSize int, search string) ([]OrganizationInviteView, int, error) {
+	if page < 0 {
+		page = 0
+	}
+	if pageSize <= 0 {
+		pageSize = 50
+	}
+	if pageSize > 200 {
+		pageSize = 200
+	}
+	offset := page * pageSize
+
+	search = strings.TrimSpace(search)
+	pattern := search
+	if search != "" {
+		pattern = "%" + strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`).Replace(search) + "%"
+	}
+
+	const qCount = `
+SELECT count(*) FROM organization_invites i
+WHERE i.org_id = $1 AND i.status = 'pending' AND ($2 = '' OR lower(i.email) LIKE lower($2) ESCAPE '\');`
+	var total int
+	if err := r.db.Pool().QueryRow(ctx, qCount, orgID, pattern).Scan(&total); err != nil {
+		return nil, 0, err
+	}
+
 	const q = `
 SELECT i.id, i.email, i.org_role, i.status, u.email AS invited_by_email, i.created_at, i.expires_at
 FROM organization_invites i
 LEFT JOIN users u ON u.id = i.invited_by
-WHERE i.org_id = $1 AND i.status = 'pending'
-ORDER BY i.created_at DESC;`
-	rows, err := r.db.Pool().Query(ctx, q, orgID)
+WHERE i.org_id = $1 AND i.status = 'pending' AND ($2 = '' OR lower(i.email) LIKE lower($2) ESCAPE '\')
+ORDER BY i.created_at DESC
+LIMIT $3 OFFSET $4;`
+	rows, err := r.db.Pool().Query(ctx, q, orgID, pattern, pageSize, offset)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	defer rows.Close()
-	var out []OrganizationInviteView
+	out := []OrganizationInviteView{}
 	for rows.Next() {
 		var v OrganizationInviteView
 		if err := rows.Scan(&v.ID, &v.Email, &v.OrgRole, &v.Status, &v.InvitedByEmail, &v.CreatedAt, &v.ExpiresAt); err != nil {
-			return nil, err
+			return nil, 0, err
 		}
 		out = append(out, v)
 	}
-	return out, rows.Err()
+	return out, total, rows.Err()
 }
 
 // RevokeOrganizationInvite marks a pending invite revoked. ErrNotFound if no
