@@ -7,6 +7,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -357,6 +358,109 @@ func TestAdminOrgs_Invites(t *testing.T) {
 	}
 	if list, _ := testEnv.Repo.ListPendingOrgInvites(ctx, org.ID); len(list) != 0 {
 		t.Fatalf("expected 0 pending after revoke, got %d", len(list))
+	}
+}
+
+func TestAdminOrgs_MutationsRejectArchivedOrg(t *testing.T) {
+	ctx := context.Background()
+	router, _ := setupAdminOrgRouter(t)
+	acc := testEnv.CreateTestAccount(t, "amra-"+GenerateUniqueSlug("u")+"@example.com")
+	ws := testEnv.CreateTestWorkspace(t, acc, "WS", GenerateUniqueSlug("ws"))
+	app := testEnv.CreateTestApp(t, ws, acc)
+	sess, claims := testEnv.CreateTestSession(t, acc)
+	defer testEnv.CleanupTestData(t, &TestFixtures{Account: acc, Workspace: ws, Session: sess})
+	if err := testEnv.Repo.SetAppOrganizationsEnabled(ctx, app.ID, true); err != nil {
+		t.Fatalf("enable orgs: %v", err)
+	}
+	if _, err := testEnv.DB.Pool().Exec(ctx, "UPDATE apps SET app_url=$1 WHERE id=$2", "https://app.example.com", app.ID); err != nil {
+		t.Fatalf("set app url: %v", err)
+	}
+	target, _, _ := testEnv.GetOrCreateUserWithMembership(ctx, "t-"+GenerateUniqueSlug("u")+"@example.com", app, core.UserSourceInvited)
+	existing, _, _ := testEnv.GetOrCreateUserWithMembership(ctx, "e-"+GenerateUniqueSlug("u")+"@example.com", app, core.UserSourceInvited)
+	role, _ := testEnv.Repo.CreateRole(ctx, repo.CreateRoleParams{ProjectID: app.ProjectID, Name: "Ed", Slug: GenerateUniqueSlug("ed"), Now: time.Now().UTC()})
+	org, _ := testEnv.Repo.CreateOrganization(ctx, app.ID, "Acme", GenerateUniqueSlug("acme"), nil)
+	_, _ = testEnv.Repo.AddOrganizationMember(ctx, org.ID, existing.ID, core.OrgRoleMember)
+	inv, _ := testEnv.Repo.CreateOrganizationInvite(ctx, org.ID, "p-"+GenerateUniqueSlug("e")+"@example.com", core.OrgRoleMember, nil, nil, "h-"+GenerateUniqueSlug("h"), time.Now().UTC().Add(72*time.Hour))
+	if err := testEnv.Repo.ArchiveOrganization(ctx, org.ID); err != nil {
+		t.Fatalf("archive: %v", err)
+	}
+
+	base := adminAppOrgBase(ws, app) + "/organizations/" + org.ID.String()
+	do := func(method, path string, payload map[string]any) int {
+		var rdr *bytes.Reader
+		if payload != nil {
+			b, _ := json.Marshal(payload)
+			rdr = bytes.NewReader(b)
+		} else {
+			rdr = bytes.NewReader(nil)
+		}
+		req := httptest.NewRequest(method, path, rdr)
+		testEnv.SetSessionCookie(t, req, claims)
+		rr := httptest.NewRecorder()
+		router.ServeHTTP(rr, req)
+		return rr.Code
+	}
+
+	// Every membership/invite mutation on an archived org must be refused (409).
+	if c := do(http.MethodPost, base+"/members", map[string]any{"email": target.Email}); c != http.StatusConflict {
+		t.Fatalf("add-member archived: want 409, got %d", c)
+	}
+	if c := do(http.MethodPost, base+"/invites", map[string]any{"email": "x-" + GenerateUniqueSlug("e") + "@example.com"}); c != http.StatusConflict {
+		t.Fatalf("create-invite archived: want 409, got %d", c)
+	}
+	if c := do(http.MethodPatch, base+"/members/"+existing.ID.String(), map[string]any{"orgRole": "admin"}); c != http.StatusConflict {
+		t.Fatalf("set-tier archived: want 409, got %d", c)
+	}
+	if c := do(http.MethodPut, base+"/members/"+existing.ID.String()+"/roles", map[string]any{"roleIds": []string{role.ID.String()}}); c != http.StatusConflict {
+		t.Fatalf("set-roles archived: want 409, got %d", c)
+	}
+	if c := do(http.MethodDelete, base+"/members/"+existing.ID.String(), nil); c != http.StatusConflict {
+		t.Fatalf("remove-member archived: want 409, got %d", c)
+	}
+	if c := do(http.MethodDelete, base+"/invites/"+inv.ID.String(), nil); c != http.StatusConflict {
+		t.Fatalf("revoke-invite archived: want 409, got %d", c)
+	}
+}
+
+func TestAdminOrgs_AddMemberRequiresOrgsEnabled(t *testing.T) {
+	ctx := context.Background()
+	router, _ := setupAdminOrgRouter(t)
+	acc := testEnv.CreateTestAccount(t, "amroe-"+GenerateUniqueSlug("u")+"@example.com")
+	ws := testEnv.CreateTestWorkspace(t, acc, "WS", GenerateUniqueSlug("ws"))
+	app := testEnv.CreateTestApp(t, ws, acc) // orgs disabled by default
+	sess, claims := testEnv.CreateTestSession(t, acc)
+	defer testEnv.CleanupTestData(t, &TestFixtures{Account: acc, Workspace: ws, Session: sess})
+
+	user, _, _ := testEnv.GetOrCreateUserWithMembership(ctx, "u-"+GenerateUniqueSlug("u")+"@example.com", app, core.UserSourceInvited)
+	org, _ := testEnv.Repo.CreateOrganization(ctx, app.ID, "Acme", GenerateUniqueSlug("acme"), nil) // active, but orgs feature off
+
+	body, _ := json.Marshal(map[string]any{"email": user.Email})
+	req := httptest.NewRequest(http.MethodPost, adminAppOrgBase(ws, app)+"/organizations/"+org.ID.String()+"/members", bytes.NewReader(body))
+	testEnv.SetSessionCookie(t, req, claims)
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+	if rr.Code != http.StatusConflict {
+		t.Fatalf("add-member with orgs disabled: want 409, got %d (%s)", rr.Code, rr.Body.String())
+	}
+}
+
+func TestAdminOrgs_RenameTooLong(t *testing.T) {
+	ctx := context.Background()
+	router, _ := setupAdminOrgRouter(t)
+	acc := testEnv.CreateTestAccount(t, "artl-"+GenerateUniqueSlug("u")+"@example.com")
+	ws := testEnv.CreateTestWorkspace(t, acc, "WS", GenerateUniqueSlug("ws"))
+	app := testEnv.CreateTestApp(t, ws, acc)
+	sess, claims := testEnv.CreateTestSession(t, acc)
+	defer testEnv.CleanupTestData(t, &TestFixtures{Account: acc, Workspace: ws, Session: sess})
+	org, _ := testEnv.Repo.CreateOrganization(ctx, app.ID, "Acme", GenerateUniqueSlug("acme"), nil)
+
+	body, _ := json.Marshal(map[string]any{"name": strings.Repeat("a", 201)}) // > maxOrgNameLen (200)
+	req := httptest.NewRequest(http.MethodPatch, adminAppOrgBase(ws, app)+"/organizations/"+org.ID.String(), bytes.NewReader(body))
+	testEnv.SetSessionCookie(t, req, claims)
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("rename too long: want 400, got %d (%s)", rr.Code, rr.Body.String())
 	}
 }
 
