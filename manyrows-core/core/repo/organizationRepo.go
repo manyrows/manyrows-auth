@@ -673,10 +673,26 @@ ON CONFLICT (org_id, user_id) DO NOTHING;`, memberID, orgID, userID, orgRole); e
 	if _, err := tx.Exec(ctx, `UPDATE organization_invites SET status='accepted', accepted_at=now() WHERE id=$1;`, inviteID); err != nil {
 		return err
 	}
-	// role_ids: Pier passes none; if present, assign project roles to the
-	// membership. (No-op when empty.) Left for a follow-up if role_ids ever
-	// used — Pier sends []. Keep the variable referenced to avoid unused.
-	_ = roleIDs
+	// Apply the invite's project roles to the membership. The create path
+	// already validated these role_ids belong to the app's project, so we just
+	// attach them. Resolve the real member id first (the INSERT above may have
+	// hit ON CONFLICT and left memberID unused for a pre-existing member).
+	// Additive (ON CONFLICT DO NOTHING) so re-processing the same invite is
+	// idempotent and an existing member never loses roles. No-op when empty.
+	if len(roleIDs) > 0 {
+		var memberRowID uuid.UUID
+		if err := tx.QueryRow(ctx, `SELECT id FROM organization_members WHERE org_id=$1 AND user_id=$2`, orgID, userID).Scan(&memberRowID); err != nil {
+			return err
+		}
+		for _, rid := range roleIDs {
+			if _, err := tx.Exec(ctx, `
+INSERT INTO organization_member_roles (id, member_id, role_id, created_at)
+VALUES ($1, $2, $3, now())
+ON CONFLICT (member_id, role_id) DO NOTHING;`, utils.NewUUID(), memberRowID, rid); err != nil {
+				return err
+			}
+		}
+	}
 	return tx.Commit(ctx)
 }
 

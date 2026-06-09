@@ -113,6 +113,48 @@ func TestAcceptOrganizationInviteTx_StoredExpiredStatus(t *testing.T) {
 	}
 }
 
+// TestAcceptOrganizationInviteTx_AppliesRoleIDs asserts that the project roles
+// carried on an invite (validated + stored at create time) are actually applied
+// to the membership on accept — they were previously dropped, so an admin who
+// scoped an invite to specific roles silently granted none.
+func TestAcceptOrganizationInviteTx_AppliesRoleIDs(t *testing.T) {
+	ctx, app, _, _, org, owner := seedOrgForInvite(t)
+	role, err := testEnv.Repo.CreateRole(ctx, repo.CreateRoleParams{ProjectID: app.ProjectID, Name: "Editor", Slug: GenerateUniqueSlug("ed"), Now: time.Now().UTC()})
+	if err != nil {
+		t.Fatalf("create role: %v", err)
+	}
+	email := "rl-" + GenerateUniqueSlug("u") + "@example.com"
+	exp := time.Now().UTC().Add(7 * 24 * time.Hour)
+	inv, err := testEnv.Repo.CreateOrganizationInvite(ctx, org.ID, email, core.OrgRoleMember, []uuid.UUID{role.ID}, &owner.ID, "h-"+GenerateUniqueSlug("h"), exp)
+	if err != nil {
+		t.Fatalf("create invite: %v", err)
+	}
+
+	invitee, _, _ := testEnv.GetOrCreateUserWithMembership(ctx, email, app, core.UserSourceInvited)
+	if err := testEnv.Repo.AcceptOrganizationInviteTx(ctx, inv.ID, invitee.ID); err != nil {
+		t.Fatalf("accept: %v", err)
+	}
+
+	m, err := testEnv.Repo.GetOrganizationMember(ctx, org.ID, invitee.ID)
+	if err != nil {
+		t.Fatalf("member: %v", err)
+	}
+	roleIDs, err := testEnv.Repo.GetOrgMemberRoleIDs(ctx, m.ID)
+	if err != nil {
+		t.Fatalf("member roles: %v", err)
+	}
+	found := false
+	for _, rid := range roleIDs {
+		if rid == role.ID {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("invite role_ids must be applied on accept; got %v want to include %s", roleIDs, role.ID)
+	}
+}
+
 func TestOrgInvite_Revoke(t *testing.T) {
 	ctx, _, _, _, org, owner := seedOrgForInvite(t)
 	email := "rv-" + GenerateUniqueSlug("u") + "@example.com"
