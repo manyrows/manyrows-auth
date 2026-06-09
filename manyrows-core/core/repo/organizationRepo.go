@@ -384,6 +384,13 @@ func (r *Repo) RemoveOrganizationMember(ctx context.Context, orgID, userID uuid.
 	return r.execAffectingOne(ctx, ErrNotFound, q, orgID, userID)
 }
 
+// CountActiveOrgsCreatedByUserInApp counts the active orgs a user created in an
+// app. Drives the self-serve per-user creation cap (abuse guard).
+func (r *Repo) CountActiveOrgsCreatedByUserInApp(ctx context.Context, appID, createdBy uuid.UUID) (int, error) {
+	const q = `SELECT count(*) FROM organizations WHERE app_id = $1 AND created_by = $2 AND status = 'active';`
+	return r.scalarCount(ctx, q, appID, createdBy)
+}
+
 // CountActiveOrgOwners counts active owner-tier members — drives the last-owner guard.
 func (r *Repo) CountActiveOrgOwners(ctx context.Context, orgID uuid.UUID) (int, error) {
 	const q = `SELECT count(*) FROM organization_members WHERE org_id = $1 AND org_role = 'owner' AND status = 'active';`
