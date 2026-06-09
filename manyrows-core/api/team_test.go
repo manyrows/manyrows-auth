@@ -94,6 +94,7 @@ func setupTeamRouter(t *testing.T) *chi.Mux {
 	adminWorkspaceRouter.Get("/team", requestHandler.HandleListTeamMembers)
 	adminWorkspaceRouter.Post("/team", requestHandler.HandleAddTeamMember)
 	adminWorkspaceRouter.Delete("/team/{accountId}", requestHandler.HandleRemoveTeamMember)
+	adminWorkspaceRouter.Delete("/team/{accountId}/totp", requestHandler.HandleResetTeamMemberTOTP)
 	adminWorkspaceRouter.Get("/team/invites", requestHandler.HandleListTeamInvites)
 	adminWorkspaceRouter.Delete("/team/invites/{inviteId}", requestHandler.HandleCancelTeamInvite)
 

@@ -238,3 +238,43 @@ func (handler *RequestHandler) HandleRemoveTeamMember(w http.ResponseWriter, r *
 
 	utils.WriteJson(w, map[string]any{"ok": true})
 }
+
+// HandleResetTeamMemberTOTP disables a team member's admin-account 2FA
+// (TOTP), the recovery path for an admin who lost both their
+// authenticator and their backup codes. Owner only; the target must be
+// an admin of this workspace. They re-enroll via the normal flow after.
+// DELETE /admin/workspace/{workspaceId}/team/{accountId}/totp
+func (handler *RequestHandler) HandleResetTeamMemberTOTP(w http.ResponseWriter, r *http.Request) {
+	_, ws, ok := handler.adminAndWorkspace(w, r)
+	if !ok {
+		return
+	}
+	if !handler.requireOwner(w, r) {
+		return
+	}
+
+	targetID, err := utils.GetPathUUID("accountId", r)
+	if err != nil || targetID == uuid.Nil {
+		WriteError(w, r, "error.badRequest", http.StatusBadRequest)
+		return
+	}
+
+	// Scope the reset to members of this workspace — an owner must not be
+	// able to clear the 2FA of an account outside their own team.
+	if _, found, err := handler.repo.GetWorkspaceAdminRole(r.Context(), ws.ID, targetID); err != nil {
+		log.Err(err).Msg("GetWorkspaceAdminRole (team member 2FA reset) failed")
+		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
+		return
+	} else if !found {
+		WriteError(w, r, "error.team.notFound", http.StatusNotFound)
+		return
+	}
+
+	if err := handler.repo.DisableTOTP(r.Context(), targetID); err != nil {
+		log.Err(err).Msg("DisableTOTP (team member 2FA reset) failed")
+		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
