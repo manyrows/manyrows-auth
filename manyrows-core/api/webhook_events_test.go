@@ -17,6 +17,9 @@ func TestValidateWebhookEvents_OrgAndSecurityEvents(t *testing.T) {
 		"organization.invite_created",
 		"organization.invite_accepted",
 		"organization.invite_revoked",
+		"session.revoked",
+		"user.mfa_enabled",
+		"user.mfa_disabled",
 	}
 	for _, e := range events {
 		if !validateWebhookEvents([]string{e}) {

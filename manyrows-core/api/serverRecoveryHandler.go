@@ -39,7 +39,7 @@ func (handler *RequestHandler) resolveAppMember(w http.ResponseWriter, r *http.R
 // normal flow afterward.
 // DELETE /x/{workspaceSlug}/api/v1/apps/{appId}/users/{userId}/totp
 func (handler *RequestHandler) ServerResetUserTOTP(w http.ResponseWriter, r *http.Request) {
-	_, userID, ok := handler.resolveAppMember(w, r)
+	app, userID, ok := handler.resolveAppMember(w, r)
 	if !ok {
 		return
 	}
@@ -48,6 +48,7 @@ func (handler *RequestHandler) ServerResetUserTOTP(w http.ResponseWriter, r *htt
 		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 		return
 	}
+	handler.dispatchMFAEvent(whMFADisabled, app.ID, userID)
 	w.WriteHeader(http.StatusNoContent)
 }
 

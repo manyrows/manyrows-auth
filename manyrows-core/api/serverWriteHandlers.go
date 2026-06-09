@@ -136,6 +136,10 @@ func (handler *RequestHandler) ServerRevokeUserSessions(w http.ResponseWriter, r
 		return
 	}
 
+	if revoked > 0 {
+		// Bulk force-logout: one event per user (no single session to name).
+		handler.dispatchSessionRevoked(app.ID, userID, nil)
+	}
 	utils.WriteJson(w, ServerRevokeSessionsResponse{Revoked: revoked})
 }
 

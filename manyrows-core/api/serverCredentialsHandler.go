@@ -215,5 +215,6 @@ func (handler *RequestHandler) ServerRevokeUserSession(w http.ResponseWriter, r 
 		return
 	}
 
+	handler.dispatchSessionRevoked(app.ID, userID, &sessionID)
 	w.WriteHeader(http.StatusNoContent)
 }

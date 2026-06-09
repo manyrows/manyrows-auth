@@ -226,6 +226,7 @@ func (handler *RequestHandler) runTOTPSetupCompletion(
 		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 		return nil, false
 	}
+	handler.dispatchMFAEvent(whMFAEnabled, ctxApp.ID, user.ID)
 	handler.writeAuthLogFromRequest(r, AuthLogInput{
 		WorkspaceID:   ctxApp.WorkspaceID,
 		AppID:         &ctxApp.ID,

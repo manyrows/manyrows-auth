@@ -247,6 +247,7 @@ func (handler *RequestHandler) HandleWorkspaceTOTPDisable(w http.ResponseWriter,
 		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 		return
 	}
+	handler.dispatchMFAEvent(whMFADisabled, ctxApp.ID, userWithTOTP.ID)
 
 	if ws, ok := core.WorkspaceFromContext(r.Context()); ok && ws != nil {
 		userID := userWithTOTP.ID

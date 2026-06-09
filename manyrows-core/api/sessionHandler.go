@@ -187,6 +187,10 @@ func (handler *RequestHandler) HandleDeleteWorkspaceSession(w http.ResponseWrite
 		return
 	}
 
+	if ses.AppID != nil {
+		handler.dispatchSessionRevoked(*ses.AppID, ses.UserID, &sessionID)
+	}
+
 	subjectUserID := ses.UserID
 	in := AuthLogInput{
 		WorkspaceID:   ws.ID,

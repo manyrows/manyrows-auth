@@ -44,6 +44,11 @@ var validWebhookEvents = map[string]struct{}{
 	"user.email_change":     {},
 	"user.passkey_register": {},
 	"user.passkey_delete":   {},
+	// MFA (two-factor) lifecycle.
+	"user.mfa_enabled":  {},
+	"user.mfa_disabled": {},
+	// Session lifecycle: admin/server force-logout (distinct from user.logout).
+	"session.revoked": {},
 	// Organization (multi-tenant) lifecycle.
 	"organization.created":    {},
 	"organization.updated":    {},

@@ -24,6 +24,7 @@ func (handler *RequestHandler) HandleAdminResetUserTOTP(w http.ResponseWriter, r
 		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 		return
 	}
+	handler.dispatchMFAEvent(whMFADisabled, appID, user.ID)
 	w.WriteHeader(http.StatusNoContent)
 }
 
