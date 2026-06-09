@@ -8,9 +8,11 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"manyrows-core/core"
 	"manyrows-core/core/repo"
+	"manyrows-core/utils"
 
 	"github.com/go-chi/chi/v5"
 )
@@ -22,6 +24,7 @@ func setupAdminOrgRouter(t *testing.T) (*chi.Mux, *TestServices) {
 	wsRouter.Put("/projects/{projectId}/apps/{appId}/organizations-enabled", svc.Handler.HandleUpdateAppOrganizationsEnabled)
 	wsRouter.Get("/projects/{projectId}/apps/{appId}/organizations", svc.Handler.HandleListAppOrganizations)
 	wsRouter.Get("/projects/{projectId}/apps/{appId}/organizations/{orgId}/members", svc.Handler.HandleListAppOrganizationMembers)
+	wsRouter.Put("/projects/{projectId}/apps/{appId}/organizations/{orgId}/members/{userId}/roles", svc.Handler.HandleSetAppOrganizationMemberRoles)
 	wsRouter.Patch("/projects/{projectId}/apps/{appId}/organizations/{orgId}", svc.Handler.HandleRenameAppOrganization)
 	wsRouter.Delete("/projects/{projectId}/apps/{appId}/organizations/{orgId}", svc.Handler.HandleArchiveAppOrganization)
 	wsRouter.Post("/projects/{projectId}/apps/{appId}/organizations/{orgId}/restore", svc.Handler.HandleRestoreAppOrganization)
@@ -31,6 +34,54 @@ func setupAdminOrgRouter(t *testing.T) (*chi.Mux, *TestServices) {
 
 func adminAppOrgBase(ws *core.Workspace, app *core.App) string {
 	return "/admin/workspace/" + ws.ID.String() + "/projects/" + app.ProjectID.String() + "/apps/" + app.ID.String()
+}
+
+func TestAdminOrgs_SetMemberRoles(t *testing.T) {
+	ctx := context.Background()
+	router, _ := setupAdminOrgRouter(t)
+	acc := testEnv.CreateTestAccount(t, "asmr-"+GenerateUniqueSlug("u")+"@example.com")
+	ws := testEnv.CreateTestWorkspace(t, acc, "WS", GenerateUniqueSlug("ws"))
+	app := testEnv.CreateTestApp(t, ws, acc)
+	sess, claims := testEnv.CreateTestSession(t, acc)
+	defer testEnv.CleanupTestData(t, &TestFixtures{Account: acc, Workspace: ws, Session: sess})
+
+	editor, err := testEnv.Repo.CreateRole(ctx, repo.CreateRoleParams{ProjectID: app.ProjectID, Name: "Editor", Slug: GenerateUniqueSlug("ed"), Now: time.Now().UTC()})
+	if err != nil {
+		t.Fatalf("create role: %v", err)
+	}
+	member, _, _ := testEnv.GetOrCreateUserWithMembership(ctx, "m-"+GenerateUniqueSlug("u")+"@example.com", app, core.UserSourceInvited)
+	org, _ := testEnv.Repo.CreateOrganization(ctx, app.ID, "Acme", GenerateUniqueSlug("acme"), &member.ID)
+	om, _ := testEnv.Repo.AddOrganizationMember(ctx, org.ID, member.ID, core.OrgRoleMember)
+
+	put := func(roleIDs []string) *httptest.ResponseRecorder {
+		body, _ := json.Marshal(map[string]any{"roleIds": roleIDs})
+		req := httptest.NewRequest(http.MethodPut, adminAppOrgBase(ws, app)+"/organizations/"+org.ID.String()+"/members/"+member.ID.String()+"/roles", bytes.NewReader(body))
+		testEnv.SetSessionCookie(t, req, claims)
+		rr := httptest.NewRecorder()
+		router.ServeHTTP(rr, req)
+		return rr
+	}
+
+	// Assign EDITOR -> 204, role persisted.
+	if rr := put([]string{editor.ID.String()}); rr.Code != http.StatusNoContent {
+		t.Fatalf("assign role: expected 204, got %d (%s)", rr.Code, rr.Body.String())
+	}
+	if got, _ := testEnv.Repo.GetOrgMemberRoleIDs(ctx, om.ID); len(got) != 1 || got[0] != editor.ID {
+		t.Fatalf("expected EDITOR assigned, got %v", got)
+	}
+
+	// Stray role id (not in the app's project) -> 400.
+	if rr := put([]string{utils.NewUUID().String()}); rr.Code != http.StatusBadRequest {
+		t.Fatalf("stray role id: expected 400, got %d (%s)", rr.Code, rr.Body.String())
+	}
+
+	// Empty set clears the assignment -> 204, no roles.
+	if rr := put([]string{}); rr.Code != http.StatusNoContent {
+		t.Fatalf("clear roles: expected 204, got %d (%s)", rr.Code, rr.Body.String())
+	}
+	if got, _ := testEnv.Repo.GetOrgMemberRoleIDs(ctx, om.ID); len(got) != 0 {
+		t.Fatalf("expected roles cleared, got %v", got)
+	}
 }
 
 func TestAdminOrgs_EnableToggle(t *testing.T) {

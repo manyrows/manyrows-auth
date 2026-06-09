@@ -6,6 +6,7 @@ import {
   Alert,
   Box,
   Button,
+  Checkbox,
   Chip,
   CircularProgress,
   Dialog,
@@ -75,7 +76,8 @@ export default function AppOrganizations({ project, appId }: Props) {
   const { enqueueSnackbar } = useSnackbar();
   const { t } = useTranslation();
 
-  const appsBaseURL = `/admin/workspace/${project.workspaceId}/projects/${project.id}/apps`;
+  const projectURL = `/admin/workspace/${project.workspaceId}/projects/${project.id}`;
+  const appsBaseURL = `${projectURL}/apps`;
   const appURL = `${appsBaseURL}/${appId}`;
 
   const [loading, setLoading] = React.useState(true);
@@ -96,6 +98,12 @@ export default function AppOrganizations({ project, appId }: Props) {
   const [membersOrg, setMembersOrg] = React.useState<OrgRow | null>(null);
   const [members, setMembers] = React.useState<OrgMember[]>([]);
   const [membersLoading, setMembersLoading] = React.useState(false);
+
+  // Per-member project-role editing (admin assignment).
+  const [roleCatalog, setRoleCatalog] = React.useState<OrgMemberRole[]>([]);
+  const [editRolesMember, setEditRolesMember] = React.useState<OrgMember | null>(null);
+  const [editRoleIds, setEditRoleIds] = React.useState<string[]>([]);
+  const [editRolesSaving, setEditRolesSaving] = React.useState(false);
 
   // Rename dialog
   const [renameOpen, setRenameOpen] = React.useState(false);
@@ -174,12 +182,44 @@ export default function AppOrganizations({ project, appId }: Props) {
     setMembersOpen(true);
     setMembersLoading(true);
     try {
-      const res = await axios.get<{ members: OrgMember[] }>(`${appURL}/organizations/${org.id}/members`);
-      setMembers(res.data.members || []);
+      // Load members and (once) the project's role catalog for the editor.
+      const [mRes] = await Promise.all([
+        axios.get<{ members: OrgMember[] }>(`${appURL}/organizations/${org.id}/members`),
+        roleCatalog.length > 0
+          ? Promise.resolve(null)
+          : axios
+              .get<{ roles: OrgMemberRole[] }>(`${projectURL}/roles`)
+              .then((r) => setRoleCatalog(r.data.roles || [])),
+      ]);
+      setMembers(mRes.data.members || []);
     } catch (e) {
       enqueueSnackbar(errText(e), { variant: "error" });
     } finally {
       setMembersLoading(false);
+    }
+  }
+
+  function openEditRoles(m: OrgMember) {
+    setEditRolesMember(m);
+    setEditRoleIds(m.roles ? m.roles.map((r) => r.id) : []);
+  }
+
+  async function saveMemberRoles() {
+    if (!membersOrg || !editRolesMember) return;
+    setEditRolesSaving(true);
+    try {
+      await axios.put(`${appURL}/organizations/${membersOrg.id}/members/${editRolesMember.userId}/roles`, {
+        roleIds: editRoleIds,
+      });
+      // Reflect the new assignment locally without a refetch.
+      const chosen = roleCatalog.filter((r) => editRoleIds.includes(r.id));
+      setMembers((prev) => prev.map((m) => (m.userId === editRolesMember.userId ? { ...m, roles: chosen } : m)));
+      enqueueSnackbar(t("organizations.rolesUpdated", { defaultValue: "Roles updated" }), { variant: "success" });
+      setEditRolesMember(null);
+    } catch (e) {
+      enqueueSnackbar(errText(e), { variant: "error" });
+    } finally {
+      setEditRolesSaving(false);
     }
   }
 
@@ -474,17 +514,20 @@ export default function AppOrganizations({ project, appId }: Props) {
                     <TableCell>{m.email || m.userId}</TableCell>
                     <TableCell>{m.orgRole}</TableCell>
                     <TableCell>
-                      {m.roles && m.roles.length > 0 ? (
-                        <Stack direction="row" spacing={0.5} flexWrap="wrap" useFlexGap>
-                          {m.roles.map((r) => (
-                            <Chip key={r.id} size="small" label={r.name || r.slug} />
-                          ))}
-                        </Stack>
-                      ) : (
-                        <Typography variant="body2" color="text.secondary">
-                          —
-                        </Typography>
-                      )}
+                      <Stack direction="row" spacing={0.5} alignItems="center" flexWrap="wrap" useFlexGap>
+                        {m.roles && m.roles.length > 0 ? (
+                          m.roles.map((r) => <Chip key={r.id} size="small" label={r.name || r.slug} />)
+                        ) : (
+                          <Typography variant="body2" color="text.secondary">
+                            —
+                          </Typography>
+                        )}
+                        <Tooltip title={t("organizations.editRoles", { defaultValue: "Edit roles" })}>
+                          <IconButton size="small" onClick={() => openEditRoles(m)}>
+                            <SquarePen size={15} />
+                          </IconButton>
+                        </Tooltip>
+                      </Stack>
                     </TableCell>
                     <TableCell>{m.status}</TableCell>
                   </TableRow>
@@ -495,6 +538,50 @@ export default function AppOrganizations({ project, appId }: Props) {
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setMembersOpen(false)}>{t("common.close", { defaultValue: "Close" })}</Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Edit member roles dialog */}
+      <Dialog open={!!editRolesMember} onClose={() => setEditRolesMember(null)} fullWidth maxWidth="xs">
+        <DialogTitle>
+          {t("organizations.editRolesTitle", { defaultValue: "Edit roles" })}
+          {editRolesMember ? ` — ${editRolesMember.email || editRolesMember.userId}` : ""}
+        </DialogTitle>
+        <DialogContent dividers>
+          {roleCatalog.length === 0 ? (
+            <Typography variant="body2" color="text.secondary">
+              {t("organizations.noProjectRoles", {
+                defaultValue: "No roles are defined for this project yet.",
+              })}
+            </Typography>
+          ) : (
+            <Stack>
+              {roleCatalog.map((r) => (
+                <FormControlLabel
+                  key={r.id}
+                  control={
+                    <Checkbox
+                      checked={editRoleIds.includes(r.id)}
+                      onChange={(e) =>
+                        setEditRoleIds((prev) =>
+                          e.target.checked ? [...prev, r.id] : prev.filter((id) => id !== r.id),
+                        )
+                      }
+                    />
+                  }
+                  label={r.name || r.slug}
+                />
+              ))}
+            </Stack>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setEditRolesMember(null)} disabled={editRolesSaving}>
+            {t("common.cancel", { defaultValue: "Cancel" })}
+          </Button>
+          <Button variant="contained" onClick={() => void saveMemberRoles()} disabled={editRolesSaving}>
+            {t("common.save", { defaultValue: "Save" })}
+          </Button>
         </DialogActions>
       </Dialog>
 
