@@ -55,7 +55,7 @@ func TestOrgInvite_RepoLifecycle(t *testing.T) {
 	}
 
 	// List pending.
-	list, err := testEnv.Repo.ListPendingOrgInvites(ctx, org.ID)
+	list, _, err := testEnv.Repo.ListPendingOrgInvites(ctx, org.ID, 0, 200, "")
 	if err != nil || len(list) != 1 || list[0].Email != email {
 		t.Fatalf("list pending: %v %+v", err, list)
 	}
@@ -155,6 +155,32 @@ func TestAcceptOrganizationInviteTx_AppliesRoleIDs(t *testing.T) {
 	}
 }
 
+func TestListPendingOrgInvites_Pagination(t *testing.T) {
+	ctx, _, _, _, org, owner := seedOrgForInvite(t)
+	exp := time.Now().UTC().Add(72 * time.Hour)
+	needle := "needle" + GenerateUniqueSlug("x")
+	for i := 0; i < 5; i++ {
+		email := GenerateUniqueSlug("inv") + "@example.com"
+		if i == 0 {
+			email = needle + "@example.com"
+		}
+		if _, err := testEnv.Repo.CreateOrganizationInvite(ctx, org.ID, email, core.OrgRoleMember, nil, &owner.ID, "h-"+GenerateUniqueSlug("h"), exp); err != nil {
+			t.Fatalf("invite %d: %v", i, err)
+		}
+	}
+
+	// Page 0, size 2 -> 2 rows, total 5.
+	list, total, err := testEnv.Repo.ListPendingOrgInvites(ctx, org.ID, 0, 2, "")
+	if err != nil || len(list) != 2 || total != 5 {
+		t.Fatalf("page0 size2: len=%d total=%d err=%v", len(list), total, err)
+	}
+	// Search narrows to the single needle invite.
+	list, total, _ = testEnv.Repo.ListPendingOrgInvites(ctx, org.ID, 0, 50, needle)
+	if len(list) != 1 || total != 1 || list[0].Email != needle+"@example.com" {
+		t.Fatalf("search: len=%d total=%d list=%+v", len(list), total, list)
+	}
+}
+
 func TestOrgInvite_Revoke(t *testing.T) {
 	ctx, _, _, _, org, owner := seedOrgForInvite(t)
 	email := "rv-" + GenerateUniqueSlug("u") + "@example.com"
@@ -163,7 +189,7 @@ func TestOrgInvite_Revoke(t *testing.T) {
 	if err := testEnv.Repo.RevokeOrganizationInvite(ctx, org.ID, inv.ID); err != nil {
 		t.Fatalf("revoke: %v", err)
 	}
-	list, _ := testEnv.Repo.ListPendingOrgInvites(ctx, org.ID)
+	list, _, _ := testEnv.Repo.ListPendingOrgInvites(ctx, org.ID, 0, 200, "")
 	if len(list) != 0 {
 		t.Fatalf("expected 0 pending after revoke, got %d", len(list))
 	}

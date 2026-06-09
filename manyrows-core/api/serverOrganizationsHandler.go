@@ -287,16 +287,14 @@ func (handler *RequestHandler) ServerListOrgMembers(w http.ResponseWriter, r *ht
 	if !ok {
 		return
 	}
-	members, err := handler.repo.ListOrganizationMembers(r.Context(), org.ID)
+	page, pageSize, search := parseOrgListParams(r)
+	members, total, err := handler.repo.ListOrganizationMembers(r.Context(), org.ID, page, pageSize, search)
 	if err != nil {
 		log.Err(err).Msg("ServerListOrgMembers failed")
 		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 		return
 	}
-	if members == nil {
-		members = []repo.OrganizationMemberView{}
-	}
-	utils.WriteJson(w, map[string]any{"members": members})
+	utils.WriteJson(w, map[string]any{"members": members, "total": total, "page": page, "pageSize": pageSize})
 }
 
 // ServerAddOrgMember: POST …/organizations/{orgId}/members

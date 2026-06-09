@@ -6,9 +6,11 @@ import type {
   AppKitFeatureFlag,
   AppKitConfigValue,
   AppKitOrganization,
-  AppKitOrganizationMember,
   AppKitOrganizationInvite,
   AppKitCreatedOrganization,
+  AppKitOrgListParams,
+  AppKitOrganizationMemberPage,
+  AppKitOrganizationInvitePage,
 } from "./types";
 
 /**
@@ -365,6 +367,17 @@ async function orgFetch(
   return res.json().catch(() => ({}));
 }
 
+/** Internal: build the ?page&pageSize&search query string for list endpoints. */
+function orgListQuery(opts?: AppKitOrgListParams): string {
+  if (!opts) return "";
+  const p = new URLSearchParams();
+  if (opts.page != null) p.set("page", String(opts.page));
+  if (opts.pageSize != null) p.set("pageSize", String(opts.pageSize));
+  if (opts.search) p.set("search", opts.search);
+  const s = p.toString();
+  return s ? `?${s}` : "";
+}
+
 /**
  * Returns a function to create an organization (self-serve). The app must have
  * `org_creation_policy = self_serve`; otherwise the server rejects with
@@ -431,23 +444,32 @@ export function useArchiveOrganization(): (orgId: string) => Promise<void> {
 }
 
 /**
- * Returns a function that fetches an organization's members (any active member
- * may read). Not part of the snapshot — call it on demand.
+ * Returns a function that fetches a page of an organization's members (any
+ * active member may read), plus the total match count. Not part of the snapshot
+ * — call it on demand. pageSize defaults to 50 (capped at 200 server-side).
  *
  * ```tsx
  * const listMembers = useOrganizationMembers();
- * const members = await listMembers(org.id);
+ * const { members, total } = await listMembers(org.id, { page: 0, search: "jane" });
  * ```
  */
-export function useOrganizationMembers(): (orgId: string) => Promise<AppKitOrganizationMember[]> {
+export function useOrganizationMembers(): (
+  orgId: string,
+  opts?: AppKitOrgListParams,
+) => Promise<AppKitOrganizationMemberPage> {
   const { snapshot } = useAppKit();
   const token = snapshot?.jwtToken;
   const baseURL = snapshot?.appBaseURL;
   return useCallback(
-    async (orgId: string) => {
-      const body = (await orgFetch(token, baseURL, `/a/organizations/${orgId}/members`, { method: "GET" },
-        "Failed to load members")) as { members?: AppKitOrganizationMember[] };
-      return body?.members ?? [];
+    async (orgId: string, opts?: AppKitOrgListParams) => {
+      const body = (await orgFetch(token, baseURL, `/a/organizations/${orgId}/members${orgListQuery(opts)}`,
+        { method: "GET" }, "Failed to load members")) as Partial<AppKitOrganizationMemberPage>;
+      return {
+        members: body?.members ?? [],
+        total: body?.total ?? 0,
+        page: body?.page ?? 0,
+        pageSize: body?.pageSize ?? 0,
+      };
     },
     [token, baseURL],
   );
@@ -495,16 +517,27 @@ export function useRemoveOrganizationMember(): (orgId: string, userId: string) =
   );
 }
 
-/** Returns a function that fetches an organization's pending invites (owner/admin). */
-export function useOrganizationInvites(): (orgId: string) => Promise<AppKitOrganizationInvite[]> {
+/**
+ * Returns a function that fetches a page of an organization's pending invites
+ * (owner/admin), plus the total match count. pageSize defaults to 50 (cap 200).
+ */
+export function useOrganizationInvites(): (
+  orgId: string,
+  opts?: AppKitOrgListParams,
+) => Promise<AppKitOrganizationInvitePage> {
   const { snapshot } = useAppKit();
   const token = snapshot?.jwtToken;
   const baseURL = snapshot?.appBaseURL;
   return useCallback(
-    async (orgId: string) => {
-      const body = (await orgFetch(token, baseURL, `/a/organizations/${orgId}/invites`, { method: "GET" },
-        "Failed to load invites")) as { invites?: AppKitOrganizationInvite[] };
-      return body?.invites ?? [];
+    async (orgId: string, opts?: AppKitOrgListParams) => {
+      const body = (await orgFetch(token, baseURL, `/a/organizations/${orgId}/invites${orgListQuery(opts)}`,
+        { method: "GET" }, "Failed to load invites")) as Partial<AppKitOrganizationInvitePage>;
+      return {
+        invites: body?.invites ?? [],
+        total: body?.total ?? 0,
+        page: body?.page ?? 0,
+        pageSize: body?.pageSize ?? 0,
+      };
     },
     [token, baseURL],
   );

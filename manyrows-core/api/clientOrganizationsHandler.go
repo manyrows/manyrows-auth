@@ -82,16 +82,14 @@ func (handler *RequestHandler) ClientListOrgMembers(w http.ResponseWriter, r *ht
 	if !ok {
 		return
 	}
-	members, err := handler.repo.ListOrganizationMembers(r.Context(), org.ID)
+	page, pageSize, search := parseOrgListParams(r)
+	members, total, err := handler.repo.ListOrganizationMembers(r.Context(), org.ID, page, pageSize, search)
 	if err != nil {
 		log.Err(err).Msg("ClientListOrgMembers failed")
 		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 		return
 	}
-	if members == nil {
-		members = []repo.OrganizationMemberView{}
-	}
-	utils.WriteJson(w, map[string]any{"members": members})
+	utils.WriteJson(w, map[string]any{"members": members, "total": total, "page": page, "pageSize": pageSize})
 }
 
 // ClientListOrganizations: GET /a/organizations -- the caller's orgs in this app.
@@ -394,16 +392,14 @@ func (handler *RequestHandler) ClientListOrgInvites(w http.ResponseWriter, r *ht
 	if !ok {
 		return
 	}
-	invites, err := handler.repo.ListPendingOrgInvites(r.Context(), org.ID)
+	page, pageSize, search := parseOrgListParams(r)
+	invites, total, err := handler.repo.ListPendingOrgInvites(r.Context(), org.ID, page, pageSize, search)
 	if err != nil {
 		log.Err(err).Msg("ClientListOrgInvites failed")
 		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 		return
 	}
-	if invites == nil {
-		invites = []repo.OrganizationInviteView{}
-	}
-	utils.WriteJson(w, map[string]any{"invites": invites})
+	utils.WriteJson(w, map[string]any{"invites": invites, "total": total, "page": page, "pageSize": pageSize})
 }
 
 // ClientRevokeOrgInvite: DELETE /a/organizations/{orgId}/invites/{inviteId} -- owner/admin.

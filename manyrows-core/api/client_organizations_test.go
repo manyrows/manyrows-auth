@@ -428,7 +428,7 @@ func TestListOrganizationMembers_IncludesProjectRoles(t *testing.T) {
 	plain, _, _ := testEnv.GetOrCreateUserWithMembership(ctx, accB.Email, app, core.UserSourceInvited)
 	_, _ = testEnv.Repo.AddOrganizationMember(ctx, org.ID, plain.ID, core.OrgRoleMember)
 
-	members, err := testEnv.Repo.ListOrganizationMembers(ctx, org.ID)
+	members, _, err := testEnv.Repo.ListOrganizationMembers(ctx, org.ID, 0, 200, "")
 	if err != nil {
 		t.Fatalf("list: %v", err)
 	}
@@ -450,6 +450,44 @@ func TestListOrganizationMembers_IncludesProjectRoles(t *testing.T) {
 	}
 	if len(plainView.Roles) != 0 {
 		t.Fatalf("plain member should have no project roles, got %+v", plainView.Roles)
+	}
+}
+
+func TestListOrganizationMembers_Pagination(t *testing.T) {
+	ctx := context.Background()
+	acc := testEnv.CreateTestAccount(t, "lomp-"+GenerateUniqueSlug("u")+"@example.com")
+	ws := testEnv.CreateTestWorkspace(t, acc, "WS", GenerateUniqueSlug("ws"))
+	app := testEnv.CreateTestApp(t, ws, acc)
+	t.Cleanup(func() { testEnv.CleanupTestData(t, &TestFixtures{Account: acc, Workspace: ws}) })
+	org, _ := testEnv.Repo.CreateOrganization(ctx, app.ID, "Acme", GenerateUniqueSlug("acme"), nil)
+
+	// 7 members; one carries a unique token for the search assertion.
+	needle := "needle" + GenerateUniqueSlug("x")
+	for i := 0; i < 7; i++ {
+		email := GenerateUniqueSlug("m") + "@example.com"
+		if i == 0 {
+			email = needle + "@example.com"
+		}
+		u, _, _ := testEnv.GetOrCreateUserWithMembership(ctx, email, app, core.UserSourceInvited)
+		if _, err := testEnv.Repo.AddOrganizationMember(ctx, org.ID, u.ID, core.OrgRoleMember); err != nil {
+			t.Fatalf("add member %d: %v", i, err)
+		}
+	}
+
+	// Page 0, size 3 -> 3 rows, total 7.
+	m, total, err := testEnv.Repo.ListOrganizationMembers(ctx, org.ID, 0, 3, "")
+	if err != nil || len(m) != 3 || total != 7 {
+		t.Fatalf("page0 size3: len=%d total=%d err=%v", len(m), total, err)
+	}
+	// Last page (offset 6) -> 1 row, total still 7.
+	m, total, _ = testEnv.Repo.ListOrganizationMembers(ctx, org.ID, 2, 3, "")
+	if len(m) != 1 || total != 7 {
+		t.Fatalf("page2 size3: len=%d total=%d", len(m), total)
+	}
+	// Search narrows to the single needle member.
+	m, total, _ = testEnv.Repo.ListOrganizationMembers(ctx, org.ID, 0, 50, needle)
+	if len(m) != 1 || total != 1 || m[0].Email != needle+"@example.com" {
+		t.Fatalf("search: len=%d total=%d members=%+v", len(m), total, m)
 	}
 }
 

@@ -6,7 +6,6 @@ import {
   Alert,
   Box,
   Button,
-  Checkbox,
   Chip,
   CircularProgress,
   Dialog,
@@ -36,6 +35,7 @@ import { errText } from "./AppAuthMethods.tsx";
 import Loader from "../Loader.tsx";
 import PageHeader from "../components/PageHeader.tsx";
 import SaveBar from "../components/SaveBar.tsx";
+import AppOrganizationMembers from "./AppOrganizationMembers.tsx";
 
 interface Props {
   project: Project;
@@ -50,30 +50,6 @@ interface OrgRow {
   status: string;
   memberCount: number;
   createdAt: string;
-}
-
-interface OrgMemberRole {
-  id: string;
-  slug: string;
-  name: string;
-}
-
-interface OrgMember {
-  userId: string;
-  email: string;
-  orgRole: string; // org tier: owner | admin | member
-  status: string;
-  roles: OrgMemberRole[]; // project (app RBAC) roles assigned in THIS org
-}
-
-interface OrgInvite {
-  id: string;
-  email: string;
-  orgRole: string;
-  status: string;
-  invitedByEmail?: string;
-  createdAt: string;
-  expiresAt: string;
 }
 
 function fmtDate(d?: string): string {
@@ -94,6 +70,9 @@ export default function AppOrganizations({ project, appId }: Props) {
   const [app, setApp] = React.useState<App | null>(null);
   const [orgs, setOrgs] = React.useState<OrgRow[]>([]);
 
+  // When set, we drill into a dedicated members page for that org.
+  const [selectedOrg, setSelectedOrg] = React.useState<OrgRow | null>(null);
+
   // Status filter — archived orgs are hidden by default.
   const [statusFilter, setStatusFilter] = React.useState<"active" | "archived" | "all">("active");
 
@@ -103,38 +82,8 @@ export default function AppOrganizations({ project, appId }: Props) {
   const persistedEnabled = !!app?.organizationsEnabled;
   const enabledDirty = enabled !== persistedEnabled;
 
-  // Members dialog
-  const [membersOpen, setMembersOpen] = React.useState(false);
-  const [membersOrg, setMembersOrg] = React.useState<OrgRow | null>(null);
-  const [members, setMembers] = React.useState<OrgMember[]>([]);
-  const [membersLoading, setMembersLoading] = React.useState(false);
-  // Bumped each time the members dialog opens; results from a superseded open
-  // (rapidly switching orgs) are discarded so the wrong org's data can't land.
-  const membersGenRef = React.useRef(0);
-
   // Creation-policy selector
   const [savingPolicy, setSavingPolicy] = React.useState(false);
-
-  // Per-member editing (tier + project roles) and removal (admin).
-  const [roleCatalog, setRoleCatalog] = React.useState<OrgMemberRole[]>([]);
-  const [editRolesMember, setEditRolesMember] = React.useState<OrgMember | null>(null);
-  const [editTier, setEditTier] = React.useState<string>("member");
-  const [editRoleIds, setEditRoleIds] = React.useState<string[]>([]);
-  const [editRolesSaving, setEditRolesSaving] = React.useState(false);
-  const [removeMember, setRemoveMember] = React.useState<OrgMember | null>(null);
-  const [removeSaving, setRemoveSaving] = React.useState(false);
-
-  // Add existing app user to the org
-  const [addEmail, setAddEmail] = React.useState("");
-  const [addTier, setAddTier] = React.useState("member");
-  const [addSaving, setAddSaving] = React.useState(false);
-
-  // Pending invites (within the members dialog)
-  const [invites, setInvites] = React.useState<OrgInvite[]>([]);
-  const [inviteEmail, setInviteEmail] = React.useState("");
-  const [inviteTier, setInviteTier] = React.useState("member");
-  const [inviteSaving, setInviteSaving] = React.useState(false);
-  const [revokingInviteId, setRevokingInviteId] = React.useState<string | null>(null);
 
   // Create organization dialog
   const [createOpen, setCreateOpen] = React.useState(false);
@@ -212,89 +161,18 @@ export default function AppOrganizations({ project, appId }: Props) {
     }
   }
 
-  async function openMembers(org: OrgRow) {
-    const gen = ++membersGenRef.current;
-    setMembersOrg(org);
-    setMembers([]);
-    setInvites([]);
-    setAddEmail("");
-    setAddTier("member");
-    setInviteEmail("");
-    setInviteTier("member");
-    setMembersOpen(true);
-    setMembersLoading(true);
-    // The role catalog is only needed by the per-member edit dialog — load it
-    // best-effort so a /roles failure never blocks the members/invites view.
-    if (roleCatalog.length === 0) {
-      axios
-        .get<{ roles: OrgMemberRole[] }>(`${projectURL}/roles`)
-        .then((r) => setRoleCatalog(r.data.roles || []))
-        .catch(() => {});
-    }
+  async function savePolicy(policy: string) {
+    setSavingPolicy(true);
     try {
-      const [mRes, iRes] = await Promise.all([
-        axios.get<{ members: OrgMember[] }>(`${appURL}/organizations/${org.id}/members`),
-        axios.get<{ invites: OrgInvite[] }>(`${appURL}/organizations/${org.id}/invites`),
-      ]);
-      if (gen !== membersGenRef.current) return; // a newer openMembers superseded this one
-      setMembers(mRes.data.members || []);
-      setInvites(iRes.data.invites || []);
-    } catch (e) {
-      if (gen !== membersGenRef.current) return;
-      enqueueSnackbar(errText(e), { variant: "error" });
-    } finally {
-      if (gen === membersGenRef.current) setMembersLoading(false);
-    }
-  }
-
-  async function addMemberSubmit() {
-    if (!membersOrg || !addEmail.trim()) return;
-    setAddSaving(true);
-    try {
-      const res = await axios.post<OrgMember>(`${appURL}/organizations/${membersOrg.id}/members`, {
-        email: addEmail.trim(),
-        orgRole: addTier,
+      const res = await axios.put<App>(`${appURL}/organizations-creation-policy`, { orgCreationPolicy: policy });
+      setApp(res.data);
+      enqueueSnackbar(t("organizations.policyUpdated", { defaultValue: "Creation policy updated" }), {
+        variant: "success",
       });
-      setMembers((prev) => [...prev, res.data].sort((a, b) => (a.email || "").localeCompare(b.email || "")));
-      setAddEmail("");
-      setAddTier("member");
-      enqueueSnackbar(t("organizations.memberAdded", { defaultValue: "Member added" }), { variant: "success" });
     } catch (e) {
       enqueueSnackbar(errText(e), { variant: "error" });
     } finally {
-      setAddSaving(false);
-    }
-  }
-
-  async function inviteSubmit() {
-    if (!membersOrg || !inviteEmail.trim()) return;
-    setInviteSaving(true);
-    try {
-      const res = await axios.post<OrgInvite>(`${appURL}/organizations/${membersOrg.id}/invites`, {
-        email: inviteEmail.trim(),
-        orgRole: inviteTier,
-      });
-      setInvites((prev) => [res.data, ...prev]);
-      setInviteEmail("");
-      setInviteTier("member");
-      enqueueSnackbar(t("organizations.inviteSent", { defaultValue: "Invitation sent" }), { variant: "success" });
-    } catch (e) {
-      enqueueSnackbar(errText(e), { variant: "error" });
-    } finally {
-      setInviteSaving(false);
-    }
-  }
-
-  async function revokeInvite(inviteId: string) {
-    if (!membersOrg) return;
-    setRevokingInviteId(inviteId);
-    try {
-      await axios.delete(`${appURL}/organizations/${membersOrg.id}/invites/${inviteId}`);
-      setInvites((prev) => prev.filter((i) => i.id !== inviteId));
-    } catch (e) {
-      enqueueSnackbar(errText(e), { variant: "error" });
-    } finally {
-      setRevokingInviteId(null);
+      setSavingPolicy(false);
     }
   }
 
@@ -311,73 +189,6 @@ export default function AppOrganizations({ project, appId }: Props) {
       enqueueSnackbar(errText(e), { variant: "error" });
     } finally {
       setCreateSaving(false);
-    }
-  }
-
-  function openEditMember(m: OrgMember) {
-    setEditRolesMember(m);
-    setEditTier(m.orgRole);
-    setEditRoleIds(m.roles ? m.roles.map((r) => r.id) : []);
-  }
-
-  async function saveMember() {
-    if (!membersOrg || !editRolesMember) return;
-    setEditRolesSaving(true);
-    try {
-      const base = `${appURL}/organizations/${membersOrg.id}/members/${editRolesMember.userId}`;
-      // Tier first so a last-owner 409 aborts before any role write. Reflect it
-      // in local state immediately so a subsequent roles failure can't leave the
-      // UI showing the old tier while the server has the new one.
-      if (editTier !== editRolesMember.orgRole) {
-        await axios.patch(base, { orgRole: editTier });
-        setMembers((prev) => prev.map((m) => (m.userId === editRolesMember.userId ? { ...m, orgRole: editTier } : m)));
-      }
-      const curIds = [...(editRolesMember.roles ?? []).map((r) => r.id)].sort();
-      const newIds = [...editRoleIds].sort();
-      const rolesChanged = curIds.length !== newIds.length || curIds.some((id, i) => id !== newIds[i]);
-      if (rolesChanged) {
-        await axios.put(`${base}/roles`, { roleIds: editRoleIds });
-      }
-      const chosen = roleCatalog.filter((r) => editRoleIds.includes(r.id));
-      setMembers((prev) =>
-        prev.map((m) => (m.userId === editRolesMember.userId ? { ...m, orgRole: editTier, roles: chosen } : m)),
-      );
-      enqueueSnackbar(t("organizations.memberUpdated", { defaultValue: "Member updated" }), { variant: "success" });
-      setEditRolesMember(null);
-    } catch (e) {
-      enqueueSnackbar(errText(e), { variant: "error" });
-    } finally {
-      setEditRolesSaving(false);
-    }
-  }
-
-  async function confirmRemoveMember() {
-    if (!membersOrg || !removeMember) return;
-    setRemoveSaving(true);
-    try {
-      await axios.delete(`${appURL}/organizations/${membersOrg.id}/members/${removeMember.userId}`);
-      setMembers((prev) => prev.filter((m) => m.userId !== removeMember.userId));
-      enqueueSnackbar(t("organizations.memberRemoved", { defaultValue: "Member removed" }), { variant: "success" });
-      setRemoveMember(null);
-    } catch (e) {
-      enqueueSnackbar(errText(e), { variant: "error" });
-    } finally {
-      setRemoveSaving(false);
-    }
-  }
-
-  async function savePolicy(policy: string) {
-    setSavingPolicy(true);
-    try {
-      const res = await axios.put<App>(`${appURL}/organizations-creation-policy`, { orgCreationPolicy: policy });
-      setApp(res.data);
-      enqueueSnackbar(t("organizations.policyUpdated", { defaultValue: "Creation policy updated" }), {
-        variant: "success",
-      });
-    } catch (e) {
-      enqueueSnackbar(errText(e), { variant: "error" });
-    } finally {
-      setSavingPolicy(false);
     }
   }
 
@@ -464,6 +275,22 @@ export default function AppOrganizations({ project, appId }: Props) {
   const visibleOrgs = statusFilter === "all" ? orgs : orgs.filter((o) => o.status === statusFilter);
 
   if (loading) return <Loader />;
+
+  // Drill-in: dedicated members page for the selected org. Refresh the list on
+  // return so member counts reflect any changes made there.
+  if (selectedOrg) {
+    return (
+      <AppOrganizationMembers
+        project={project}
+        appId={appId}
+        org={selectedOrg}
+        onBack={() => {
+          setSelectedOrg(null);
+          void loadOrgs();
+        }}
+      />
+    );
+  }
 
   return (
     <Box>
@@ -636,7 +463,7 @@ export default function AppOrganizations({ project, appId }: Props) {
                       <TableCell align="right">
                         <Stack direction="row" spacing={0.5} justifyContent="flex-end">
                           <Tooltip title={t("organizations.viewMembers", { defaultValue: "View members" })}>
-                            <IconButton size="small" onClick={() => void openMembers(org)}>
+                            <IconButton size="small" onClick={() => setSelectedOrg(org)}>
                               <Users size={14} strokeWidth={1.75} />
                             </IconButton>
                           </Tooltip>
@@ -686,182 +513,6 @@ export default function AppOrganizations({ project, appId }: Props) {
         )}
       </Stack>
 
-      {/* Members dialog */}
-      <Dialog open={membersOpen} onClose={() => setMembersOpen(false)} fullWidth maxWidth="md">
-        <DialogTitle>
-          {t("organizations.membersTitle", { defaultValue: "Members" })}
-          {membersOrg ? ` — ${membersOrg.name}` : ""}
-        </DialogTitle>
-        <DialogContent dividers>
-          {membersLoading ? (
-            <Stack alignItems="center" sx={{ py: 3 }}>
-              <CircularProgress size={20} />
-            </Stack>
-          ) : members.length === 0 ? (
-            <Typography variant="body2" color="text.secondary">
-              {t("organizations.noMembers", { defaultValue: "No members." })}
-            </Typography>
-          ) : (
-            <Table size="small">
-              <TableHead>
-                <TableRow>
-                  <TableCell>{t("organizations.col.email", { defaultValue: "Email" })}</TableCell>
-                  <TableCell>{t("organizations.col.tier", { defaultValue: "Tier" })}</TableCell>
-                  <TableCell>{t("organizations.col.roles", { defaultValue: "Roles" })}</TableCell>
-                  <TableCell>{t("organizations.col.status", { defaultValue: "Status" })}</TableCell>
-                  <TableCell align="right">{t("organizations.col.actions", { defaultValue: "Actions" })}</TableCell>
-                </TableRow>
-              </TableHead>
-              <TableBody>
-                {members.map((m) => (
-                  <TableRow key={m.userId}>
-                    <TableCell>{m.email || m.userId}</TableCell>
-                    <TableCell>{m.orgRole}</TableCell>
-                    <TableCell>
-                      {m.roles && m.roles.length > 0 ? (
-                        <Stack direction="row" spacing={0.5} flexWrap="wrap" useFlexGap>
-                          {m.roles.map((r) => (
-                            <Chip key={r.id} size="small" label={r.name || r.slug} />
-                          ))}
-                        </Stack>
-                      ) : (
-                        <Typography variant="body2" color="text.secondary">
-                          —
-                        </Typography>
-                      )}
-                    </TableCell>
-                    <TableCell>{m.status}</TableCell>
-                    <TableCell align="right">
-                      {membersOrg?.status === "active" && (
-                        <Stack direction="row" spacing={0.5} justifyContent="flex-end">
-                          <Tooltip title={t("organizations.editMember", { defaultValue: "Edit member" })}>
-                            <IconButton size="small" onClick={() => openEditMember(m)}>
-                              <SquarePen size={15} />
-                            </IconButton>
-                          </Tooltip>
-                          <Tooltip title={t("organizations.removeMember", { defaultValue: "Remove member" })}>
-                            <IconButton size="small" color="error" onClick={() => setRemoveMember(m)}>
-                              <Trash2 size={15} />
-                            </IconButton>
-                          </Tooltip>
-                        </Stack>
-                      )}
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          )}
-
-          {!membersLoading && membersOrg?.status === "active" && (
-            <Stack spacing={2.5} sx={{ mt: 3 }}>
-              {/* Add an existing app user */}
-              <Box>
-                <Typography variant="subtitle2" gutterBottom>
-                  {t("organizations.addMemberTitle", { defaultValue: "Add existing user" })}
-                </Typography>
-                <Stack direction="row" spacing={1} alignItems="center">
-                  <TextField
-                    size="small"
-                    fullWidth
-                    placeholder={t("organizations.addMemberEmail", { defaultValue: "user@example.com" })}
-                    value={addEmail}
-                    onChange={(e) => setAddEmail(e.target.value)}
-                  />
-                  <TextField
-                    select
-                    size="small"
-                    value={addTier}
-                    onChange={(e) => setAddTier(e.target.value)}
-                    sx={{ minWidth: 120 }}
-                  >
-                    <MenuItem value="owner">owner</MenuItem>
-                    <MenuItem value="admin">admin</MenuItem>
-                    <MenuItem value="member">member</MenuItem>
-                  </TextField>
-                  <Button
-                    variant="outlined"
-                    onClick={() => void addMemberSubmit()}
-                    disabled={addSaving || !addEmail.trim()}
-                  >
-                    {t("organizations.add", { defaultValue: "Add" })}
-                  </Button>
-                </Stack>
-                <Typography variant="caption" color="text.secondary">
-                  {t("organizations.addMemberHelp", {
-                    defaultValue:
-                      "The user must already belong to this app. To bring in a new email, send an invitation below.",
-                  })}
-                </Typography>
-              </Box>
-
-              {/* Pending invitations */}
-              <Box>
-                <Typography variant="subtitle2" gutterBottom>
-                  {t("organizations.invitesTitle", { defaultValue: "Pending invitations" })}
-                </Typography>
-                {invites.length === 0 ? (
-                  <Typography variant="body2" color="text.secondary">
-                    {t("organizations.noInvites", { defaultValue: "No pending invitations." })}
-                  </Typography>
-                ) : (
-                  <Table size="small">
-                    <TableBody>
-                      {invites.map((inv) => (
-                        <TableRow key={inv.id}>
-                          <TableCell>{inv.email}</TableCell>
-                          <TableCell>{inv.orgRole}</TableCell>
-                          <TableCell align="right">
-                            <Button
-                              size="small"
-                              color="error"
-                              onClick={() => void revokeInvite(inv.id)}
-                              disabled={revokingInviteId === inv.id}
-                            >
-                              {t("organizations.revoke", { defaultValue: "Revoke" })}
-                            </Button>
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                )}
-                <Stack direction="row" spacing={1} alignItems="center" sx={{ mt: 1 }}>
-                  <TextField
-                    size="small"
-                    fullWidth
-                    placeholder={t("organizations.inviteEmail", { defaultValue: "invite@example.com" })}
-                    value={inviteEmail}
-                    onChange={(e) => setInviteEmail(e.target.value)}
-                  />
-                  <TextField
-                    select
-                    size="small"
-                    value={inviteTier}
-                    onChange={(e) => setInviteTier(e.target.value)}
-                    sx={{ minWidth: 120 }}
-                  >
-                    <MenuItem value="owner">owner</MenuItem>
-                    <MenuItem value="admin">admin</MenuItem>
-                    <MenuItem value="member">member</MenuItem>
-                  </TextField>
-                  <Button
-                    variant="outlined"
-                    onClick={() => void inviteSubmit()}
-                    disabled={inviteSaving || !inviteEmail.trim()}
-                  >
-                    {t("organizations.invite", { defaultValue: "Invite" })}
-                  </Button>
-                </Stack>
-              </Box>
-            </Stack>
-          )}
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setMembersOpen(false)}>{t("common.close", { defaultValue: "Close" })}</Button>
-        </DialogActions>
-      </Dialog>
-
       {/* Create organization dialog */}
       <Dialog open={createOpen} onClose={() => setCreateOpen(false)} fullWidth maxWidth="xs">
         <DialogTitle>{t("organizations.createTitle", { defaultValue: "New organization" })}</DialogTitle>
@@ -876,7 +527,7 @@ export default function AppOrganizations({ project, appId }: Props) {
           />
           <Typography variant="caption" color="text.secondary">
             {t("organizations.createHelp", {
-              defaultValue: "Creates an empty organization. Add members or send invitations from its members dialog.",
+              defaultValue: "Creates an empty organization. Add members or send invitations from its members page.",
             })}
           </Typography>
         </DialogContent>
@@ -890,93 +541,6 @@ export default function AppOrganizations({ project, appId }: Props) {
             disabled={createSaving || !createName.trim()}
           >
             {t("common.create", { defaultValue: "Create" })}
-          </Button>
-        </DialogActions>
-      </Dialog>
-
-      {/* Edit member dialog (tier + project roles) */}
-      <Dialog open={!!editRolesMember} onClose={() => setEditRolesMember(null)} fullWidth maxWidth="xs">
-        <DialogTitle>
-          {t("organizations.editMemberTitle", { defaultValue: "Edit member" })}
-          {editRolesMember ? ` — ${editRolesMember.email || editRolesMember.userId}` : ""}
-        </DialogTitle>
-        <DialogContent dividers>
-          <Stack spacing={2}>
-            <TextField
-              select
-              size="small"
-              fullWidth
-              label={t("organizations.tierLabel", { defaultValue: "Tier" })}
-              value={editTier}
-              onChange={(e) => setEditTier(e.target.value)}
-              helperText={t("organizations.tierHelp", {
-                defaultValue: "owner/admin manage the org; the last owner can't be demoted.",
-              })}
-            >
-              <MenuItem value="owner">owner</MenuItem>
-              <MenuItem value="admin">admin</MenuItem>
-              <MenuItem value="member">member</MenuItem>
-            </TextField>
-
-            <Box>
-              <Typography variant="caption" color="text.secondary">
-                {t("organizations.rolesLabel", { defaultValue: "Project roles" })}
-              </Typography>
-              {roleCatalog.length === 0 ? (
-                <Typography variant="body2" color="text.secondary">
-                  {t("organizations.noProjectRoles", { defaultValue: "No roles are defined for this project yet." })}
-                </Typography>
-              ) : (
-                <Stack>
-                  {roleCatalog.map((r) => (
-                    <FormControlLabel
-                      key={r.id}
-                      control={
-                        <Checkbox
-                          checked={editRoleIds.includes(r.id)}
-                          onChange={(e) =>
-                            setEditRoleIds((prev) =>
-                              e.target.checked ? [...prev, r.id] : prev.filter((id) => id !== r.id),
-                            )
-                          }
-                        />
-                      }
-                      label={r.name || r.slug}
-                    />
-                  ))}
-                </Stack>
-              )}
-            </Box>
-          </Stack>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setEditRolesMember(null)} disabled={editRolesSaving}>
-            {t("common.cancel", { defaultValue: "Cancel" })}
-          </Button>
-          <Button variant="contained" onClick={() => void saveMember()} disabled={editRolesSaving}>
-            {t("common.save", { defaultValue: "Save" })}
-          </Button>
-        </DialogActions>
-      </Dialog>
-
-      {/* Remove member confirm dialog */}
-      <Dialog open={!!removeMember} onClose={() => setRemoveMember(null)} fullWidth maxWidth="xs">
-        <DialogTitle>{t("organizations.removeMemberTitle", { defaultValue: "Remove member" })}</DialogTitle>
-        <DialogContent>
-          <Typography variant="body2">
-            {t("organizations.removeMemberConfirm", {
-              defaultValue: "Remove {{email}} from {{org}}? They lose access to this organization.",
-              email: removeMember?.email || removeMember?.userId,
-              org: membersOrg?.name,
-            })}
-          </Typography>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setRemoveMember(null)} disabled={removeSaving}>
-            {t("common.cancel", { defaultValue: "Cancel" })}
-          </Button>
-          <Button color="error" variant="contained" onClick={() => void confirmRemoveMember()} disabled={removeSaving}>
-            {t("organizations.remove", { defaultValue: "Remove" })}
           </Button>
         </DialogActions>
       </Dialog>
