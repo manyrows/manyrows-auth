@@ -646,9 +646,16 @@ func (r *Repo) AcceptOrganizationInviteTx(ctx context.Context, inviteID, userID 
 		// ok, continue
 	case core.OrgInviteStatusRevoked:
 		return ErrInviteRevoked
+	case core.OrgInviteStatusExpired:
+		// Distinct from ErrInviteNotPending on purpose: the handler treats
+		// ErrInviteNotPending as "already accepted → the invitee is a member,
+		// sign them in", which is only safe for an 'accepted' invite. A stored
+		// 'expired' status (e.g. from a future sweeper) never added a
+		// membership, so it must fail the accept, not mint a session.
+		return ErrInviteExpired
 	case core.OrgInviteStatusAccepted:
 		return ErrInviteNotPending
-	default: // expired or anything else non-pending
+	default: // any other non-pending status — never sign in off it
 		return ErrInviteNotPending
 	}
 	if time.Now().After(expiresAt) {

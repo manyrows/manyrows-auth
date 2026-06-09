@@ -85,6 +85,34 @@ func TestOrgInvite_RepoLifecycle(t *testing.T) {
 	}
 }
 
+// TestAcceptOrganizationInviteTx_StoredExpiredStatus guards the handler's
+// "ErrInviteNotPending => already a member, sign them in" fall-through. The tx
+// must surface ErrInviteExpired (not the generic ErrInviteNotPending) for an
+// invite whose stored status is 'expired', so a future expiry sweeper can never
+// turn an unaccepted invite into a session without an actual membership.
+func TestAcceptOrganizationInviteTx_StoredExpiredStatus(t *testing.T) {
+	ctx, _, _, _, org, owner := seedOrgForInvite(t)
+	email := "stexp-" + GenerateUniqueSlug("u") + "@example.com"
+	// Not time-expired (expires_at in the future) — only the stored status is
+	// 'expired', isolating the status branch from the time check.
+	exp := time.Now().UTC().Add(7 * 24 * time.Hour)
+	inv, err := testEnv.Repo.CreateOrganizationInvite(ctx, org.ID, email, core.OrgRoleAdmin, nil, &owner.ID, "h-"+GenerateUniqueSlug("h"), exp)
+	if err != nil {
+		t.Fatalf("create invite: %v", err)
+	}
+	if _, err := testEnv.DB.Pool().Exec(ctx, "UPDATE organization_invites SET status='expired' WHERE id=$1", inv.ID); err != nil {
+		t.Fatalf("force expired status: %v", err)
+	}
+
+	invitee, _, _ := testEnv.GetOrCreateUserWithMembership(ctx, email, mustReloadApp(t, ctx, org.AppID), core.UserSourceInvited)
+	if err := testEnv.Repo.AcceptOrganizationInviteTx(ctx, inv.ID, invitee.ID); !errors.Is(err, repo.ErrInviteExpired) {
+		t.Fatalf("accept of stored-expired invite: want ErrInviteExpired, got %v", err)
+	}
+	if _, err := testEnv.Repo.GetOrganizationMember(ctx, org.ID, invitee.ID); !errors.Is(err, repo.ErrNotFound) {
+		t.Fatalf("stored-expired accept must not create a membership, got err=%v", err)
+	}
+}
+
 func TestOrgInvite_Revoke(t *testing.T) {
 	ctx, _, _, _, org, owner := seedOrgForInvite(t)
 	email := "rv-" + GenerateUniqueSlug("u") + "@example.com"
