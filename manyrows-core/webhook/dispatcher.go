@@ -8,6 +8,7 @@ import (
 	"io"
 	"manyrows-core/core"
 	"manyrows-core/core/repo"
+	"manyrows-core/crypto"
 	"math/rand"
 	"net"
 	"net/http"
@@ -24,6 +25,9 @@ type Dispatcher struct {
 	ctx    context.Context
 	cancel context.CancelFunc
 	sem    chan struct{}
+	// enc decrypts the at-rest webhook signing secret (secret_encrypted) at
+	// delivery time. Nil only in tests that never deliver.
+	enc crypto.SecretEncryptor
 }
 
 const maxConcurrentDeliveries = 10
@@ -33,12 +37,36 @@ const maxConcurrentDeliveries = 10
 // the lower, hard ceiling and also bounds the connect (dial) phase.
 const webhookTimeout = 10 * time.Second
 
-func NewDispatcher(r *repo.Repo, devMode bool) *Dispatcher {
+func NewDispatcher(r *repo.Repo, devMode bool, enc crypto.SecretEncryptor) *Dispatcher {
 	return &Dispatcher{
 		repo:   r,
 		client: newWebhookClient(devMode),
 		sem:    make(chan struct{}, maxConcurrentDeliveries),
+		enc:    enc,
 	}
+}
+
+// resolveSecret returns the plaintext HMAC signing secret for wh. New and
+// rotated webhooks store it as AAD-bound ciphertext in SecretEncrypted; rows
+// created before encryption-at-rest still carry it in the plaintext Secret
+// column, so fall back to that. A decrypt failure (e.g. a key-rotation gap
+// where the kid isn't configured) returns an error so deliver() fails closed
+// rather than signing with an empty or wrong secret.
+func (d *Dispatcher) resolveSecret(wh core.Webhook) (string, error) {
+	if len(wh.SecretEncrypted) > 0 {
+		if d.enc == nil {
+			return "", fmt.Errorf("no encryptor configured to decrypt secret for webhook %s", wh.ID)
+		}
+		pt, err := d.enc.DecryptFromBytesWithAAD(wh.SecretEncrypted, crypto.AAD("webhooks", "secret_encrypted", wh.ID))
+		if err != nil {
+			return "", fmt.Errorf("decrypt signing secret for webhook %s: %w", wh.ID, err)
+		}
+		return string(pt), nil
+	}
+	if wh.Secret != "" {
+		return wh.Secret, nil // legacy plaintext row, pre-encryption-at-rest
+	}
+	return "", fmt.Errorf("no signing secret on record for webhook %s", wh.ID)
 }
 
 // newWebhookClient builds the delivery HTTP client with two SSRF guards that
@@ -183,10 +211,19 @@ func (d *Dispatcher) deliver(parent context.Context, wh core.Webhook, delivery c
 		d.markFailed(ctx, delivery, 0, "request failed")
 		return
 	}
+	secret, err := d.resolveSecret(wh)
+	if err != nil {
+		// Fail closed: a payload signed with the wrong/empty secret is worse
+		// than a non-delivery the operator can see and retry after fixing keys.
+		log.Err(err).Str("delivery_id", delivery.ID.String()).Str("webhook_id", wh.ID.String()).Msg("webhook: cannot resolve signing secret")
+		d.markFailed(ctx, delivery, 0, "signing secret unavailable")
+		return
+	}
+
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-Webhook-Event", delivery.Event)
 	req.Header.Set("X-Webhook-Delivery", delivery.ID.String())
-	signRequest(req, wh.Secret, delivery.Payload, time.Now().UTC())
+	signRequest(req, secret, delivery.Payload, time.Now().UTC())
 
 	resp, err := d.client.Do(req)
 	if err != nil {

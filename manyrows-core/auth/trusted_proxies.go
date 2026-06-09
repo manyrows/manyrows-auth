@@ -2,6 +2,7 @@ package auth
 
 import (
 	"fmt"
+	"net/http"
 	"net/netip"
 	"strings"
 	"sync/atomic"
@@ -174,6 +175,19 @@ func SetTrustedProxiesFromEnv(env string) error {
 	}
 	SetTrustedProxies(t)
 	return nil
+}
+
+// PeerIsTrustedProxy reports whether the request's immediate peer
+// (r.RemoteAddr) is in the configured trusted-proxy allow-list. Use it to
+// gate trust of proxy-set request headers — X-Forwarded-Host, X-Original-Host,
+// X-Forwarded-Proto — the same way ClientIP gates X-Forwarded-For: an
+// untrusted direct peer can set these to anything, so they must be ignored
+// unless the peer is a known proxy.
+func PeerIsTrustedProxy(r *http.Request) bool {
+	if r == nil {
+		return false
+	}
+	return loadTrustedProxies().IsTrusted(r.RemoteAddr)
 }
 
 // loadTrustedProxies returns the active allow-list, or a default

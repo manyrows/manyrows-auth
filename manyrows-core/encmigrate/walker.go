@@ -59,6 +59,7 @@ var columns = []column{
 	{"apps", "id", "microsoft_client_secret_encrypted"},
 	{"apps", "id", "github_client_secret_encrypted"},
 	{"workspace_smtp_config", "workspace_id", "password_encrypted"},
+	{"webhooks", "id", "secret_encrypted"},
 }
 
 // Stats reports how the walker did. Migrated + Skipped + Errors should

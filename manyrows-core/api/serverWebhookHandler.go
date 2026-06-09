@@ -96,13 +96,19 @@ func (handler *RequestHandler) ServerCreateWebhook(w http.ResponseWriter, r *htt
 		ProjectID:   project.ID,
 		AppID:       app.ID,
 		URL:         req.URL,
-		Secret:      secret,
 		Events:      req.Events,
 		Status:      "active",
 		Description: strings.TrimSpace(req.Description),
 		CreatedAt:   now,
 		UpdatedAt:   now,
 		CreatedBy:   serverActorID(r.Context()),
+	}
+	// Store the secret only as AAD-bound ciphertext; surface the plaintext once below.
+	wh.SecretEncrypted, err = handler.encryptWebhookSecret(secret, wh.ID)
+	if err != nil {
+		log.Err(err).Msg("ServerCreateWebhook: secret encryption failed")
+		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
+		return
 	}
 	inserted, err := handler.repo.InsertWebhookWithLimit(r.Context(), wh, maxWebhooksPerApp)
 	if err != nil {
@@ -115,6 +121,7 @@ func (handler *RequestHandler) ServerCreateWebhook(w http.ResponseWriter, r *htt
 		return
 	}
 
+	wh.Secret = secret // returned once; SecretEncrypted is json:"-"
 	utils.WriteJsonWithStatusCode(w, wh, http.StatusCreated)
 }
 
@@ -239,12 +246,18 @@ func (handler *RequestHandler) ServerRotateWebhookSecret(w http.ResponseWriter, 
 		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 		return
 	}
-	if err := handler.repo.RotateWebhookSecret(r.Context(), id, app.ID, secret); err != nil {
+	secretEnc, err := handler.encryptWebhookSecret(secret, id)
+	if err != nil {
+		log.Err(err).Msg("ServerRotateWebhookSecret: secret encryption failed")
+		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
+		return
+	}
+	if err := handler.repo.RotateWebhookSecret(r.Context(), id, app.ID, secretEnc); err != nil {
 		log.Err(err).Msg("ServerRotateWebhookSecret: rotate failed")
 		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 		return
 	}
-	wh.Secret = secret
+	wh.Secret = secret // returned once; SecretEncrypted is json:"-"
 	wh.UpdatedAt = time.Now().UTC()
 	utils.WriteJson(w, wh)
 }

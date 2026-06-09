@@ -117,7 +117,7 @@ func NewAppService() (*AppService, error) {
 		secureSecrets)
 
 	// Webhook dispatcher
-	app.webhookDispatcher = webhook.NewDispatcher(repoInstance, app.config.IsDevMode())
+	app.webhookDispatcher = webhook.NewDispatcher(repoInstance, app.config.IsDevMode(), encryptor)
 	app.webhookDispatcher.Start(context.Background())
 	app.requestHandler.SetWebhookDispatcher(app.webhookDispatcher)
 

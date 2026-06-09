@@ -101,8 +101,26 @@ func (handler *RequestHandler) ServerCreateOrgInvite(w http.ResponseWriter, r *h
 		WriteError(w, r, "error.badRequest", http.StatusBadRequest)
 		return
 	}
+	// Every role must belong to this app's project — reject stray ids before
+	// they're stored on the invite. Without this, a read-write key for App A
+	// could attach App B's role UUIDs, which AcceptOrganizationInviteTx would
+	// then persist onto the accepting member (the accept path trusts that the
+	// create path already validated them). Mirrors ServerSetOrgMemberRoles.
+	roleIDs := dedupeUUIDs(req.RoleIDs)
+	if len(roleIDs) > 0 {
+		n, cerr := handler.repo.CountRolesInProject(r.Context(), app.ProjectID, roleIDs)
+		if cerr != nil {
+			log.Err(cerr).Msg("ServerCreateOrgInvite: role validation failed")
+			WriteError(w, r, "error.internalError", http.StatusInternalServerError)
+			return
+		}
+		if n != len(roleIDs) {
+			WriteError(w, r, "error.badRequest", http.StatusBadRequest)
+			return
+		}
+	}
 	ws, _ := core.WorkspaceFromContext(r.Context())
-	inv, err := handler.createAndEmailOrgInvite(r.Context(), app, ws, org, emailAddr, orgRole, req.RoleIDs, req.InvitedByUserID)
+	inv, err := handler.createAndEmailOrgInvite(r.Context(), app, ws, org, emailAddr, orgRole, roleIDs, req.InvitedByUserID)
 	if err != nil {
 		switch {
 		case errors.Is(err, errOrgInviteAppURLMissing):

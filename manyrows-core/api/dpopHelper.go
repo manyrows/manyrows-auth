@@ -6,6 +6,7 @@ import (
 	"net/url"
 	"strings"
 
+	"manyrows-core/auth"
 	"manyrows-core/auth/dpop"
 
 	"github.com/rs/zerolog/log"
@@ -61,7 +62,8 @@ func (handler *RequestHandler) extractDPoPJKT(w http.ResponseWriter, r *http.Req
 //     auth.<customer>.com → app.<install>.com). The Worker rewrites Host
 //     before forwarding to origin and stashes the original here so DPoP /
 //     redirect URLs / cookie scoping can still see what the user-agent
-//     actually called.
+//     actually called. Honored ONLY from a trusted-proxy peer
+//     (MANYROWS_TRUSTED_PROXIES — the rewrite Worker's egress IPs).
 //
 //  2. BASE_URL — the configured install URL. Pins the htu to a known
 //     hostname rather than trusting inbound Host / X-Forwarded-Proto.
@@ -69,15 +71,20 @@ func (handler *RequestHandler) extractDPoPJKT(w http.ResponseWriter, r *http.Req
 //  3. Inbound Host header (fallback for local dev / single-host deploys
 //     without BASE_URL pinned).
 //
-// DPoP's URL binding only protects against an attacker REPLAYING a captured
-// proof at a different URL. Forging a proof for an arbitrary host requires
-// the private key — which an X-Original-Host spoofer doesn't have — so
-// preferring that header doesn't weaken the binding; it just lets the
-// reconstruction match whatever URL the user-agent legitimately called
-// when the install is fronted by a host-rewriting proxy.
+// Why the trusted-proxy gate matters: when BASE_URL is unset (e.g. a fresh
+// install before first-boot pinning), an attacker hitting the listener
+// directly could set X-Original-Host to anything, and the server would then
+// reconstruct htu to match — neutralizing DPoP's URL binding, since the
+// comparison target becomes attacker-controlled rather than fixed. Gating the
+// header on a trusted peer (where the value comes from our own Worker, not the
+// client) closes that. X-Forwarded-Proto is gated the same way.
 func (handler *RequestHandler) requestURIForDPoP(r *http.Request) string {
-	if oh := strings.TrimSpace(r.Header.Get("X-Original-Host")); oh != "" {
-		return "https://" + oh + r.URL.Path
+	peerTrusted := auth.PeerIsTrustedProxy(r)
+
+	if peerTrusted {
+		if oh := strings.TrimSpace(r.Header.Get("X-Original-Host")); oh != "" {
+			return "https://" + oh + r.URL.Path
+		}
 	}
 
 	if base := strings.TrimRight(handler.config.GetBaseURL(), "/"); base != "" {
@@ -89,7 +96,10 @@ func (handler *RequestHandler) requestURIForDPoP(r *http.Request) string {
 		log.Warn().Str("baseURL", base).Msg("could not parse BASE_URL for DPoP htu — falling back to request headers")
 	}
 
-	scheme := strings.TrimSpace(r.Header.Get("X-Forwarded-Proto"))
+	scheme := ""
+	if peerTrusted {
+		scheme = strings.TrimSpace(r.Header.Get("X-Forwarded-Proto"))
+	}
 	if scheme == "" {
 		if r.TLS != nil {
 			scheme = "https"

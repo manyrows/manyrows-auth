@@ -2,6 +2,7 @@ package oidc
 
 import (
 	"context"
+	"crypto/ecdh"
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rsa"
@@ -159,14 +160,18 @@ func rsaKeyFromJWK(nB64, eB64 string) (*rsa.PublicKey, error) {
 // ecKeyFromJWK rebuilds an *ecdsa.PublicKey from the curve + base64url
 // affine coordinates (RFC 7518 §6.2).
 func ecKeyFromJWK(crv, xB64, yB64 string) (*ecdsa.PublicKey, error) {
-	var curve elliptic.Curve
+	var (
+		curve     elliptic.Curve
+		ecdhCurve ecdh.Curve
+		coordLen  int // SEC1 coordinate length: ceil(bits/8)
+	)
 	switch crv {
 	case "P-256":
-		curve = elliptic.P256()
+		curve, ecdhCurve, coordLen = elliptic.P256(), ecdh.P256(), 32
 	case "P-384":
-		curve = elliptic.P384()
+		curve, ecdhCurve, coordLen = elliptic.P384(), ecdh.P384(), 48
 	case "P-521":
-		curve = elliptic.P521()
+		curve, ecdhCurve, coordLen = elliptic.P521(), ecdh.P521(), 66
 	default:
 		return nil, fmt.Errorf("unsupported EC curve %q", crv)
 	}
@@ -178,6 +183,26 @@ func ecKeyFromJWK(crv, xB64, yB64 string) (*ecdsa.PublicKey, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	// Reject a public key whose point is not on the declared curve. Go's ecdsa
+	// package does NOT validate on-curve at construction (only at verify time),
+	// so a malicious or MITM'd jwks_uri — or a poisoned cache entry — could
+	// otherwise hand us an off-curve point and open an invalid-curve attack on
+	// id_token verification. Route through crypto/ecdh.NewPublicKey, which does
+	// the on-curve check (ecdsa's IsOnCurve is deprecated). It wants a SEC1
+	// uncompressed point 0x04 || X || Y; coordinates may decode short if leading
+	// zero bytes were stripped during encoding, so left-pad to coordLen first.
+	if len(xBytes) > coordLen || len(yBytes) > coordLen {
+		return nil, fmt.Errorf("EC coordinate longer than curve %s allows", crv)
+	}
+	uncompressed := make([]byte, 1+2*coordLen)
+	uncompressed[0] = 0x04
+	copy(uncompressed[1+coordLen-len(xBytes):1+coordLen], xBytes)
+	copy(uncompressed[1+2*coordLen-len(yBytes):], yBytes)
+	if _, err := ecdhCurve.NewPublicKey(uncompressed); err != nil {
+		return nil, fmt.Errorf("EC point not on curve %s: %w", crv, err)
+	}
+
 	return &ecdsa.PublicKey{
 		Curve: curve,
 		X:     new(big.Int).SetBytes(xBytes),

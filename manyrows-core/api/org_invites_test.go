@@ -376,6 +376,70 @@ func seedOrgWithAppURL(t *testing.T, ctx context.Context) (acc *core.Account, ws
 	return
 }
 
+// TestServerCreateOrgInvite_RejectsCrossProjectRoles guards the fix for the
+// server-API invite path accepting role IDs from another app's project. A
+// read-write key for App A must not be able to attach App B's roles to an
+// invite (the accept path trusts that create-time validation already ran).
+func TestServerCreateOrgInvite_RejectsCrossProjectRoles(t *testing.T) {
+	ctx := context.Background()
+	acc, ws, app, org, _ := seedOrgWithAppURL(t, ctx)
+	defer testEnv.CleanupTestData(t, &TestFixtures{Account: acc, Workspace: ws})
+
+	// A role that belongs to THIS app's project (valid) and a role that lives
+	// in a different project in the same workspace (must be rejected).
+	sameRole, err := testEnv.Repo.CreateRole(ctx, repo.CreateRoleParams{
+		ProjectID: app.ProjectID, Name: "Editor", Slug: GenerateUniqueSlug("ed"), Now: time.Now().UTC(),
+	})
+	if err != nil {
+		t.Fatalf("create same-project role: %v", err)
+	}
+	otherProject := testEnv.CreateTestProject(t, ws, acc, "Other", GenerateUniqueSlug("proj"))
+	foreignRole, err := testEnv.Repo.CreateRole(ctx, repo.CreateRoleParams{
+		ProjectID: otherProject.ID, Name: "Sneaky", Slug: GenerateUniqueSlug("sn"), Now: time.Now().UTC(),
+	})
+	if err != nil {
+		t.Fatalf("create foreign-project role: %v", err)
+	}
+
+	svc := NewTestServices(t)
+	r := chi.NewRouter()
+	r.Use(func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+			c := core.WithWorkspace(req.Context(), ws)
+			c = core.WithApp(c, app)
+			next.ServeHTTP(w, req.WithContext(c))
+		})
+	})
+	r.Post("/v1/apps/{appId}/organizations/{orgId}/invites", svc.Handler.ServerCreateOrgInvite)
+
+	post := func(roleIDs []string) *httptest.ResponseRecorder {
+		body, _ := json.Marshal(map[string]any{
+			"email":   "invitee-" + GenerateUniqueSlug("u") + "@example.com",
+			"orgRole": core.OrgRoleMember,
+			"roleIds": roleIDs,
+		})
+		req := httptest.NewRequest(http.MethodPost, orgBase(app)+"/"+org.ID.String()+"/invites", bytes.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		rr := httptest.NewRecorder()
+		r.ServeHTTP(rr, req)
+		return rr
+	}
+
+	// Cross-project role → 400, and no invite is created.
+	if rr := post([]string{foreignRole.ID.String()}); rr.Code != http.StatusBadRequest {
+		t.Fatalf("cross-project role: expected 400, got %d (%s)", rr.Code, rr.Body.String())
+	}
+	// A random non-existent role id is also rejected.
+	if rr := post([]string{uuid.Must(uuid.NewV4()).String()}); rr.Code != http.StatusBadRequest {
+		t.Fatalf("stray role id: expected 400, got %d (%s)", rr.Code, rr.Body.String())
+	}
+	// A role from this app's project passes validation (must NOT be the 400 the
+	// role check produces — it proceeds to invite creation/email).
+	if rr := post([]string{sameRole.ID.String()}); rr.Code == http.StatusBadRequest {
+		t.Fatalf("same-project role should pass role validation, got 400 (%s)", rr.Body.String())
+	}
+}
+
 func TestAcceptOrgInvite_HappyPath(t *testing.T) {
 	ctx := context.Background()
 	acc, ws, app, org, owner := seedOrgWithAppURL(t, ctx)

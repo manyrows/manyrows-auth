@@ -3,6 +3,8 @@ package api
 import (
 	"net/http"
 	"strings"
+
+	"manyrows-core/auth"
 )
 
 // requestBaseURL derives "scheme://host" from an inbound request.
@@ -11,19 +13,26 @@ import (
 // downstream email links / OAuth callbacks point at the right host
 // without the operator having to set MANYROWS_BASE_URL by hand.
 //
-// Trust model: only call this from privileged paths (e.g. AdminRegister
-// at first-boot) where the requester is the operator. Calling it on
-// public paths would let an attacker pin BASE_URL to their host via a
-// spoofed Host / X-Forwarded-Host header.
+// Trust model: the forwarding headers (X-Forwarded-Host / X-Forwarded-Proto)
+// are believed ONLY when the immediate peer is a configured trusted proxy
+// (MANYROWS_TRUSTED_PROXIES), mirroring auth.ClientIP. Otherwise an attacker
+// who can reach the listener directly — e.g. before the operator registers on
+// a fresh install — could pin BASE_URL (and thus every email link, OAuth
+// callback, and OIDC issuer URL) to their host with a spoofed header. From an
+// untrusted peer we fall back to the kernel-visible Host; operators on a
+// public edge should still set MANYROWS_BASE_URL explicitly.
 func requestBaseURL(r *http.Request) string {
-	host := strings.TrimSpace(r.Header.Get("X-Forwarded-Host"))
-	if host == "" {
-		host = strings.TrimSpace(r.Host)
+	host := strings.TrimSpace(r.Host)
+	scheme := ""
+	if auth.PeerIsTrustedProxy(r) {
+		if h := strings.TrimSpace(r.Header.Get("X-Forwarded-Host")); h != "" {
+			host = h
+		}
+		scheme = strings.TrimSpace(r.Header.Get("X-Forwarded-Proto"))
 	}
 	if host == "" {
 		return ""
 	}
-	scheme := strings.TrimSpace(r.Header.Get("X-Forwarded-Proto"))
 	if scheme == "" {
 		if r.TLS != nil {
 			scheme = "https"

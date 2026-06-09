@@ -12,9 +12,18 @@ type Webhook struct {
 	ProjectID   uuid.UUID `json:"-" db:"project_id"` // legacy, use AppID
 	AppID       uuid.UUID `json:"appId" db:"app_id"`
 	URL         string    `json:"url" db:"url"`
-	Secret      string    `json:"secret,omitempty" db:"secret"`
-	Events      []string  `json:"events" db:"events"`
-	Status      string    `json:"status" db:"status"`
+	// Secret is the plaintext signing secret. It is only ever populated
+	// transiently: returned ONCE in the create/rotate API response, and
+	// read from the legacy plaintext column for webhooks created before
+	// secret_encrypted existed. New rows store '' here.
+	Secret string `json:"secret,omitempty" db:"secret"`
+	// SecretEncrypted is the at-rest AAD-bound GCM ciphertext of the signing
+	// secret (AAD = webhooks:secret_encrypted:<id>). NULL/empty on legacy rows
+	// that still carry their secret in the plaintext column. json:"-" keeps the
+	// ciphertext out of every API response.
+	SecretEncrypted []byte    `json:"-" db:"secret_encrypted"`
+	Events          []string  `json:"events" db:"events"`
+	Status          string    `json:"status" db:"status"`
 	Description string    `json:"description" db:"description"`
 	CreatedAt   time.Time `json:"createdAt" db:"created_at"`
 	UpdatedAt   time.Time `json:"updatedAt" db:"updated_at"`

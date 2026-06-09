@@ -9,6 +9,7 @@ import (
 	"manyrows-core/auth"
 	"manyrows-core/auth/client"
 	"manyrows-core/core"
+	"manyrows-core/crypto"
 	"manyrows-core/email"
 	"net/http"
 	"net/http/httptest"
@@ -213,6 +214,90 @@ func TestCreateWebhook_Success(t *testing.T) {
 	}
 	if resp["status"] != "active" {
 		t.Errorf("expected status 'active', got %v", resp["status"])
+	}
+}
+
+// TestCreateWebhook_SecretEncryptedAtRest proves the signing secret is never
+// persisted in plaintext: after a create, the secret column is empty and the
+// at-rest secret_encrypted ciphertext decrypts (under the right AAD) back to
+// exactly the plaintext returned once in the create response.
+func TestCreateWebhook_SecretEncryptedAtRest(t *testing.T) {
+	router := setupWebhooksRouter(t)
+
+	em := "wh-enc-" + GenerateUniqueSlug("test") + "@example.com"
+	acc := testEnv.CreateTestAccount(t, em)
+	ws := testEnv.CreateTestWorkspace(t, acc, "Test WS", GenerateUniqueSlug("ws"))
+	project := testEnv.CreateTestProject(t, ws, acc, "Test Project", GenerateUniqueSlug("proj"))
+	sess, claims := testEnv.CreateTestSession(t, acc)
+	appID := webhooksCreateApp(t, ws.ID, project.ID)
+
+	fixtures := &TestFixtures{Account: acc, Workspace: ws, Projects: []core.Project{*project}, Session: sess}
+	defer testEnv.CleanupTestData(t, fixtures)
+	defer func() {
+		pool := testEnv.DB.Pool()
+		_, _ = pool.Exec(context.Background(), "DELETE FROM apps WHERE id = $1", appID)
+	}()
+	defer webhooksCleanup(t, appID)
+
+	body := map[string]any{
+		"url":    "https://example.com/webhook",
+		"events": []string{"user.login"},
+	}
+	bodyBytes, _ := json.Marshal(body)
+	req := httptest.NewRequest(http.MethodPost, webhooksBasePath(ws.ID, project.ID, appID), bytes.NewReader(bodyBytes))
+	req.Header.Set("Content-Type", "application/json")
+	testEnv.SetSessionCookie(t, req, claims)
+
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+	if rr.Code != http.StatusCreated {
+		t.Fatalf("expected status %d, got %d: %s", http.StatusCreated, rr.Code, rr.Body.String())
+	}
+
+	var resp map[string]any
+	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to parse response: %v", err)
+	}
+	plaintext, _ := resp["secret"].(string)
+	if plaintext == "" {
+		t.Fatal("expected plaintext secret in create response")
+	}
+	webhookID, err := uuid.FromString(resp["id"].(string))
+	if err != nil {
+		t.Fatalf("bad webhook id in response: %v", err)
+	}
+
+	// Read the raw row. secret must be empty; secret_encrypted must be set.
+	var secretCol string
+	var secretEnc []byte
+	if err := testEnv.DB.Pool().QueryRow(context.Background(),
+		"SELECT secret, secret_encrypted FROM webhooks WHERE id = $1", webhookID,
+	).Scan(&secretCol, &secretEnc); err != nil {
+		t.Fatalf("failed to read webhook row: %v", err)
+	}
+	if secretCol != "" {
+		t.Errorf("plaintext secret column should be empty at rest, got %q", secretCol)
+	}
+	if len(secretEnc) == 0 {
+		t.Fatal("secret_encrypted should be populated at rest")
+	}
+	if string(secretEnc) == plaintext {
+		t.Fatal("secret_encrypted is storing the plaintext, not ciphertext")
+	}
+
+	// Ciphertext decrypts back to the plaintext under the row-bound AAD.
+	enc := crypto.NewMySecretEncryptor(GetTestConfig())
+	got, err := enc.DecryptFromBytesWithAAD(secretEnc, crypto.AAD("webhooks", "secret_encrypted", webhookID))
+	if err != nil {
+		t.Fatalf("failed to decrypt secret_encrypted: %v", err)
+	}
+	if string(got) != plaintext {
+		t.Errorf("decrypted secret %q != create-response secret %q", string(got), plaintext)
+	}
+
+	// AAD binding: decrypting with a different row id must fail (no shuffling).
+	if _, err := enc.DecryptFromBytesWithAAD(secretEnc, crypto.AAD("webhooks", "secret_encrypted", uuid.Must(uuid.NewV4()))); err == nil {
+		t.Error("expected decrypt to fail under a mismatched AAD (row id)")
 	}
 }
 

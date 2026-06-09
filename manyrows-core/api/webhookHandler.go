@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"manyrows-core/core"
+	"manyrows-core/crypto"
 	"manyrows-core/utils"
 
 	"github.com/go-chi/chi/v5"
@@ -29,6 +30,18 @@ func generateWebhookSecret() (string, error) {
 		return "", err
 	}
 	return hex.EncodeToString(b), nil
+}
+
+// encryptWebhookSecret seals a freshly generated plaintext signing secret for
+// at-rest storage, bound to the webhook's id via AAD (webhooks:secret_encrypted:
+// <id>) so a ciphertext can't be shuffled onto another row. The plaintext is
+// returned to the caller exactly once in the create/rotate response and is
+// never persisted. Shared by the admin and S2S create/rotate paths.
+func (handler *RequestHandler) encryptWebhookSecret(plaintext string, webhookID uuid.UUID) ([]byte, error) {
+	return handler.encryptor.EncryptToBytesWithAAD(
+		[]byte(plaintext),
+		crypto.AAD("webhooks", "secret_encrypted", webhookID),
+	)
 }
 
 // validWebhookEvents is the allowlist of event names that can be subscribed to.
@@ -230,13 +243,20 @@ func (handler *RequestHandler) HandleCreateWebhook(w http.ResponseWriter, r *htt
 		ProjectID:   project.ID,
 		AppID:       app.ID,
 		URL:         req.URL,
-		Secret:      secret,
 		Events:      req.Events,
 		Status:      "active",
 		Description: strings.TrimSpace(req.Description),
 		CreatedAt:   now,
 		UpdatedAt:   now,
 		CreatedBy:   acc.ID,
+	}
+	// Store the secret only as AAD-bound ciphertext; the plaintext column stays
+	// empty and the raw value is surfaced once below.
+	wh.SecretEncrypted, err = handler.encryptWebhookSecret(secret, wh.ID)
+	if err != nil {
+		log.Err(err).Msg("failed to encrypt webhook secret")
+		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
+		return
 	}
 
 	// Atomic insert with limit check to avoid TOCTOU race
@@ -251,7 +271,8 @@ func (handler *RequestHandler) HandleCreateWebhook(w http.ResponseWriter, r *htt
 		return
 	}
 
-	// Return with secret visible (only on create)
+	// Return with secret visible (only on create). SecretEncrypted is json:"-".
+	wh.Secret = secret
 	utils.WriteJsonWithStatusCode(w, wh, http.StatusCreated)
 }
 

@@ -262,10 +262,16 @@ export interface CorsOrigin {
   createdAt: string;
 }
 
+// isSafeRedirectURL guards a client-side navigation (e.g. following a backend
+// logout redirect). It must be SAME-ORIGIN, not merely "any http(s) URL": the
+// admin console session is cookie-borne, so navigating to an attacker origin
+// while logged in is an open-redirect on an auth surface. Relative URLs resolve
+// against the current origin; an absolute cross-origin URL keeps its own origin
+// and is rejected.
 export function isSafeRedirectURL(url: string): boolean {
   try {
-    const u = new URL(url);
-    return u.protocol === "https:" || u.protocol === "http:";
+    const u = new URL(url, window.location.origin);
+    return u.origin === window.location.origin;
   } catch {
     return false;
   }

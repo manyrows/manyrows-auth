@@ -25,6 +25,7 @@ func scanWebhook(s webhookScanner, w *core.Webhook) error {
 		&w.AppID,
 		&w.URL,
 		&w.Secret,
+		&w.SecretEncrypted,
 		&w.Events,
 		&w.Status,
 		&w.Description,
@@ -58,7 +59,7 @@ func scanWebhookDelivery(s webhookDeliveryScanner, d *core.WebhookDelivery) erro
 
 func (r *Repo) GetWebhooksByAppID(ctx context.Context, appID uuid.UUID) ([]core.Webhook, error) {
 	const q = `
-		SELECT id, project_id, app_id, url, secret, events, status, description, created_at, updated_at, created_by
+		SELECT id, project_id, app_id, url, secret, secret_encrypted, events, status, description, created_at, updated_at, created_by
 		FROM webhooks
 		WHERE app_id = $1
 		ORDER BY created_at DESC
@@ -83,7 +84,7 @@ func (r *Repo) GetWebhooksByAppID(ctx context.Context, appID uuid.UUID) ([]core.
 
 func (r *Repo) GetWebhookByID(ctx context.Context, webhookID, appID uuid.UUID) (core.Webhook, bool, error) {
 	const q = `
-		SELECT id, project_id, app_id, url, secret, events, status, description, created_at, updated_at, created_by
+		SELECT id, project_id, app_id, url, secret, secret_encrypted, events, status, description, created_at, updated_at, created_by
 		FROM webhooks
 		WHERE id = $1 AND app_id = $2
 	`
@@ -101,7 +102,7 @@ func (r *Repo) GetWebhookByID(ctx context.Context, webhookID, appID uuid.UUID) (
 
 func (r *Repo) GetWebhookByIDOnly(ctx context.Context, webhookID uuid.UUID) (core.Webhook, bool, error) {
 	const q = `
-		SELECT id, project_id, app_id, url, secret, events, status, description, created_at, updated_at, created_by
+		SELECT id, project_id, app_id, url, secret, secret_encrypted, events, status, description, created_at, updated_at, created_by
 		FROM webhooks
 		WHERE id = $1
 	`
@@ -134,9 +135,9 @@ func (r *Repo) CountWebhooksByAppID(ctx context.Context, appID uuid.UUID) (int, 
 func (r *Repo) InsertWebhook(ctx context.Context, w core.Webhook) error {
 	const q = `
 		INSERT INTO webhooks (
-			id, project_id, app_id, url, secret, events, status, description, created_at, updated_at, created_by
+			id, project_id, app_id, url, secret, secret_encrypted, events, status, description, created_at, updated_at, created_by
 		) VALUES (
-			$1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11
+			$1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12
 		)
 	`
 
@@ -146,6 +147,7 @@ func (r *Repo) InsertWebhook(ctx context.Context, w core.Webhook) error {
 		w.AppID,
 		w.URL,
 		w.Secret,
+		w.SecretEncrypted,
 		w.Events,
 		w.Status,
 		w.Description,
@@ -160,10 +162,10 @@ func (r *Repo) InsertWebhook(ctx context.Context, w core.Webhook) error {
 func (r *Repo) InsertWebhookWithLimit(ctx context.Context, w core.Webhook, maxLimit int) (bool, error) {
 	const q = `
 		INSERT INTO webhooks (
-			id, project_id, app_id, url, secret, events, status, description, created_at, updated_at, created_by
+			id, project_id, app_id, url, secret, secret_encrypted, events, status, description, created_at, updated_at, created_by
 		)
-		SELECT $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11
-		WHERE (SELECT count(*) FROM webhooks WHERE app_id = $3) < $12
+		SELECT $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12
+		WHERE (SELECT count(*) FROM webhooks WHERE app_id = $3) < $13
 	`
 
 	tag, err := r.db.Pool().Exec(ctx, q,
@@ -172,6 +174,7 @@ func (r *Repo) InsertWebhookWithLimit(ctx context.Context, w core.Webhook, maxLi
 		w.AppID,
 		w.URL,
 		w.Secret,
+		w.SecretEncrypted,
 		w.Events,
 		w.Status,
 		w.Description,
@@ -205,10 +208,13 @@ func (r *Repo) UpdateWebhook(ctx context.Context, w core.Webhook) error {
 	return err
 }
 
-// RotateWebhookSecret replaces a webhook's signing secret (app-scoped).
-func (r *Repo) RotateWebhookSecret(ctx context.Context, webhookID, appID uuid.UUID, secret string) error {
-	const q = `UPDATE webhooks SET secret = $1, updated_at = now() WHERE id = $2 AND app_id = $3`
-	return r.execAffectingOne(ctx, ErrNotFound, q, secret, webhookID, appID)
+// RotateWebhookSecret replaces a webhook's signing secret (app-scoped). The
+// secret is stored as AAD-bound ciphertext in secret_encrypted; the legacy
+// plaintext column is cleared so a rotated webhook never leaves its old (or
+// any) secret in plaintext at rest.
+func (r *Repo) RotateWebhookSecret(ctx context.Context, webhookID, appID uuid.UUID, secretEncrypted []byte) error {
+	const q = `UPDATE webhooks SET secret = '', secret_encrypted = $1, updated_at = now() WHERE id = $2 AND app_id = $3`
+	return r.execAffectingOne(ctx, ErrNotFound, q, secretEncrypted, webhookID, appID)
 }
 
 func (r *Repo) DeleteWebhook(ctx context.Context, webhookID, appID uuid.UUID) error {
@@ -223,7 +229,7 @@ func (r *Repo) DeleteWebhook(ctx context.Context, webhookID, appID uuid.UUID) er
 
 func (r *Repo) GetActiveWebhooksForEvent(ctx context.Context, appID uuid.UUID, eventKey string) ([]core.Webhook, error) {
 	const q = `
-		SELECT id, project_id, app_id, url, secret, events, status, description, created_at, updated_at, created_by
+		SELECT id, project_id, app_id, url, secret, secret_encrypted, events, status, description, created_at, updated_at, created_by
 		FROM webhooks
 		WHERE app_id = $1
 		  AND status = 'active'
