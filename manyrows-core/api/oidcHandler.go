@@ -64,6 +64,8 @@ type oidcDiscoveryDocument struct {
 	UserinfoEndpoint                  string   `json:"userinfo_endpoint"`
 	JwksURI                           string   `json:"jwks_uri"`
 	EndSessionEndpoint                string   `json:"end_session_endpoint"`
+	RevocationEndpoint                string   `json:"revocation_endpoint"`
+	IntrospectionEndpoint             string   `json:"introspection_endpoint"`
 	ResponseTypesSupported            []string `json:"response_types_supported"`
 	SubjectTypesSupported             []string `json:"subject_types_supported"`
 	IDTokenSigningAlgValuesSupported  []string `json:"id_token_signing_alg_values_supported"`
@@ -121,6 +123,8 @@ func (handler *RequestHandler) OIDCDiscovery(w http.ResponseWriter, r *http.Requ
 		UserinfoEndpoint:      issuer + "/oidc/userinfo",
 		JwksURI:               jwksHost + "/.well-known/jwks.json",
 		EndSessionEndpoint:    issuer + "/oidc/end-session",
+		RevocationEndpoint:    issuer + "/oidc/revoke",
+		IntrospectionEndpoint: issuer + "/oidc/introspect",
 		ResponseTypesSupported: []string{
 			core.OIDCResponseTypeCode,
 		},

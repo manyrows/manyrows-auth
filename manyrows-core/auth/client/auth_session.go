@@ -327,3 +327,25 @@ func (a *AuthService) parseJWT(raw string) (*mrClientJWTClaims, bool) {
 	}
 	return c, true
 }
+
+// ParseAccessToken verifies an access-token JWT's ES256 signature and
+// expiry (via parseJWT) and returns its session id, subject (user id),
+// expiry, and audience (app id). ok is false for any invalid/expired
+// token. Used by the OIDC revocation/introspection endpoints, which hold
+// a raw token string rather than a request.
+func (a *AuthService) ParseAccessToken(raw string) (sessionID, userID uuid.UUID, expiresAt time.Time, audience string, ok bool) {
+	c, valid := a.parseJWT(raw)
+	if !valid || c == nil {
+		return uuid.Nil, uuid.Nil, time.Time{}, "", false
+	}
+	sid, err := uuid.FromString(strings.TrimSpace(c.SessionID))
+	if err != nil || sid == uuid.Nil {
+		return uuid.Nil, uuid.Nil, time.Time{}, "", false
+	}
+	uid, _ := uuid.FromString(strings.TrimSpace(c.Subject))
+	var exp time.Time
+	if c.ExpiresAt != nil {
+		exp = c.ExpiresAt.Time
+	}
+	return sid, uid, exp, strings.TrimSpace(c.AppID), true
+}
