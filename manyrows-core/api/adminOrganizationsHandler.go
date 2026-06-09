@@ -161,6 +161,139 @@ func (handler *RequestHandler) HandleSetAppOrganizationMemberRoles(w http.Respon
 	w.WriteHeader(http.StatusNoContent)
 }
 
+type updateAppOrgCreationPolicyRequest struct {
+	OrgCreationPolicy *string `json:"orgCreationPolicy"`
+}
+
+func validOrgCreationPolicy(s string) bool {
+	return s == core.OrgCreationSelfServe || s == core.OrgCreationInviteOnly || s == core.OrgCreationAdminOnly
+}
+
+// HandleUpdateAppOrgCreationPolicy sets org_creation_policy for the whole
+// project the addressed app belongs to (mirrors organizations_enabled:
+// project-level, stored per-app). Gates who may create an org:
+// self_serve | invite_only | admin_only. Without this there was no way to set
+// the policy, so it was stuck at the 'invite_only' default and the self-serve
+// create path was unreachable.
+func (handler *RequestHandler) HandleUpdateAppOrgCreationPolicy(w http.ResponseWriter, r *http.Request) {
+	_, ws, ok := handler.adminAndWorkspace(w, r)
+	if !ok {
+		return
+	}
+	projectID, appID, ok := handler.resolvePathIDs(w, r)
+	if !ok {
+		return
+	}
+	var req updateAppOrgCreationPolicyRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		WriteError(w, r, "error.invalidJson", http.StatusBadRequest)
+		return
+	}
+	if req.OrgCreationPolicy == nil || !validOrgCreationPolicy(strings.TrimSpace(*req.OrgCreationPolicy)) {
+		WriteError(w, r, "error.badRequest", http.StatusBadRequest)
+		return
+	}
+	policy := strings.TrimSpace(*req.OrgCreationPolicy)
+
+	// Validate the addressed app belongs to this workspace+project before the
+	// project-wide write (404 otherwise).
+	out, err := handler.repo.GetAppByIDForProject(r.Context(), ws.ID, projectID, appID)
+	if err != nil {
+		if errors.Is(err, repo.ErrNotFound) {
+			WriteError(w, r, "error.appNotFound", http.StatusNotFound)
+			return
+		}
+		log.Err(err).Msg("failed to load app for org creation policy update")
+		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
+		return
+	}
+	if err := handler.repo.SetProjectOrgCreationPolicy(r.Context(), ws.ID, projectID, policy); err != nil {
+		log.Err(err).Msg("failed to update project org creation policy")
+		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
+		return
+	}
+	out.OrgCreationPolicy = policy
+	utils.WriteJsonWithStatusCode(w, handler.toAdminAppResponse(out, ws), http.StatusOK)
+}
+
+type setAppOrgMemberTierRequest struct {
+	OrgRole string `json:"orgRole"`
+}
+
+// HandleSetAppOrganizationMemberTier changes an org member's tier
+// (owner/admin/member) from the admin panel. The operator acts above the org,
+// so no §7 admin-vs-owner matrix applies — only the last-owner guard (409),
+// which lets an operator promote a replacement owner then demote the old one.
+func (handler *RequestHandler) HandleSetAppOrganizationMemberTier(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	_, appID, ok := handler.adminAppScope(w, r)
+	if !ok {
+		return
+	}
+	org, ok := handler.adminOrgFromURL(w, r, appID)
+	if !ok {
+		return
+	}
+	userID, ok := handler.userIDFromURL(w, r)
+	if !ok {
+		return
+	}
+	var body setAppOrgMemberTierRequest
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		WriteError(w, r, "error.invalidJson", http.StatusBadRequest)
+		return
+	}
+	newRole := strings.TrimSpace(body.OrgRole)
+	if !validOrgRole(newRole) {
+		WriteError(w, r, "error.badRequest", http.StatusBadRequest)
+		return
+	}
+	if err := handler.repo.SetOrganizationMemberRoleGuarded(ctx, org.ID, userID, newRole); err != nil {
+		switch {
+		case errors.Is(err, repo.ErrNotFound):
+			WriteError(w, r, "error.notFound", http.StatusNotFound)
+		case errors.Is(err, repo.ErrLastOwner):
+			WriteError(w, r, "error.conflict", http.StatusConflict)
+		default:
+			log.Err(err).Msg("HandleSetAppOrganizationMemberTier: update failed")
+			WriteError(w, r, "error.internalError", http.StatusInternalServerError)
+		}
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// HandleRemoveAppOrganizationMember removes a member from an org from the admin
+// panel. Last-owner protected (409) so an org can't be left ownerless.
+func (handler *RequestHandler) HandleRemoveAppOrganizationMember(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	_, appID, ok := handler.adminAppScope(w, r)
+	if !ok {
+		return
+	}
+	org, ok := handler.adminOrgFromURL(w, r, appID)
+	if !ok {
+		return
+	}
+	userID, ok := handler.userIDFromURL(w, r)
+	if !ok {
+		return
+	}
+	if err := handler.repo.RemoveOrganizationMemberGuarded(ctx, org.ID, userID); err != nil {
+		switch {
+		case errors.Is(err, repo.ErrNotFound):
+			WriteError(w, r, "error.notFound", http.StatusNotFound)
+		case errors.Is(err, repo.ErrLastOwner):
+			WriteError(w, r, "error.conflict", http.StatusConflict)
+		default:
+			log.Err(err).Msg("HandleRemoveAppOrganizationMember: delete failed")
+			WriteError(w, r, "error.internalError", http.StatusInternalServerError)
+		}
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 // adminOrgListItem is one row of the admin org list.
 type adminOrgListItem struct {
 	ID          string `json:"id"`

@@ -25,6 +25,9 @@ func setupAdminOrgRouter(t *testing.T) (*chi.Mux, *TestServices) {
 	wsRouter.Get("/projects/{projectId}/apps/{appId}/organizations", svc.Handler.HandleListAppOrganizations)
 	wsRouter.Get("/projects/{projectId}/apps/{appId}/organizations/{orgId}/members", svc.Handler.HandleListAppOrganizationMembers)
 	wsRouter.Put("/projects/{projectId}/apps/{appId}/organizations/{orgId}/members/{userId}/roles", svc.Handler.HandleSetAppOrganizationMemberRoles)
+	wsRouter.Put("/projects/{projectId}/apps/{appId}/organizations-creation-policy", svc.Handler.HandleUpdateAppOrgCreationPolicy)
+	wsRouter.Patch("/projects/{projectId}/apps/{appId}/organizations/{orgId}/members/{userId}", svc.Handler.HandleSetAppOrganizationMemberTier)
+	wsRouter.Delete("/projects/{projectId}/apps/{appId}/organizations/{orgId}/members/{userId}", svc.Handler.HandleRemoveAppOrganizationMember)
 	wsRouter.Patch("/projects/{projectId}/apps/{appId}/organizations/{orgId}", svc.Handler.HandleRenameAppOrganization)
 	wsRouter.Delete("/projects/{projectId}/apps/{appId}/organizations/{orgId}", svc.Handler.HandleArchiveAppOrganization)
 	wsRouter.Post("/projects/{projectId}/apps/{appId}/organizations/{orgId}/restore", svc.Handler.HandleRestoreAppOrganization)
@@ -81,6 +84,124 @@ func TestAdminOrgs_SetMemberRoles(t *testing.T) {
 	}
 	if got, _ := testEnv.Repo.GetOrgMemberRoleIDs(ctx, om.ID); len(got) != 0 {
 		t.Fatalf("expected roles cleared, got %v", got)
+	}
+}
+
+func TestAdminOrgs_SetCreationPolicy(t *testing.T) {
+	ctx := context.Background()
+	router, _ := setupAdminOrgRouter(t)
+	acc := testEnv.CreateTestAccount(t, "acp-"+GenerateUniqueSlug("u")+"@example.com")
+	ws := testEnv.CreateTestWorkspace(t, acc, "WS", GenerateUniqueSlug("ws"))
+	app := testEnv.CreateTestApp(t, ws, acc)
+	sess, claims := testEnv.CreateTestSession(t, acc)
+	defer testEnv.CleanupTestData(t, &TestFixtures{Account: acc, Workspace: ws, Session: sess})
+
+	put := func(policy string) *httptest.ResponseRecorder {
+		body, _ := json.Marshal(map[string]any{"orgCreationPolicy": policy})
+		req := httptest.NewRequest(http.MethodPut, adminAppOrgBase(ws, app)+"/organizations-creation-policy", bytes.NewReader(body))
+		testEnv.SetSessionCookie(t, req, claims)
+		rr := httptest.NewRecorder()
+		router.ServeHTTP(rr, req)
+		return rr
+	}
+
+	// Valid policy -> 200 + persisted (proves self_serve is now reachable).
+	rr := put(core.OrgCreationSelfServe)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("set policy: expected 200, got %d (%s)", rr.Code, rr.Body.String())
+	}
+	var resp struct {
+		OrgCreationPolicy string `json:"orgCreationPolicy"`
+	}
+	_ = json.Unmarshal(rr.Body.Bytes(), &resp)
+	if resp.OrgCreationPolicy != core.OrgCreationSelfServe {
+		t.Fatalf("expected self_serve in response, got %q", resp.OrgCreationPolicy)
+	}
+	if reloaded, _ := testEnv.Repo.GetAppByID(ctx, app.ID); reloaded.OrgCreationPolicy != core.OrgCreationSelfServe {
+		t.Fatalf("expected DB policy self_serve, got %q", reloaded.OrgCreationPolicy)
+	}
+
+	// Invalid policy -> 400.
+	if rr := put("whatever"); rr.Code != http.StatusBadRequest {
+		t.Fatalf("invalid policy: expected 400, got %d (%s)", rr.Code, rr.Body.String())
+	}
+}
+
+func TestAdminOrgs_SetMemberTier(t *testing.T) {
+	ctx := context.Background()
+	router, _ := setupAdminOrgRouter(t)
+	acc := testEnv.CreateTestAccount(t, "asmt-"+GenerateUniqueSlug("u")+"@example.com")
+	ws := testEnv.CreateTestWorkspace(t, acc, "WS", GenerateUniqueSlug("ws"))
+	app := testEnv.CreateTestApp(t, ws, acc)
+	sess, claims := testEnv.CreateTestSession(t, acc)
+	defer testEnv.CleanupTestData(t, &TestFixtures{Account: acc, Workspace: ws, Session: sess})
+
+	owner, _, _ := testEnv.GetOrCreateUserWithMembership(ctx, "own-"+GenerateUniqueSlug("u")+"@example.com", app, core.UserSourceInvited)
+	org, _ := testEnv.Repo.CreateOrganization(ctx, app.ID, "Acme", GenerateUniqueSlug("acme"), &owner.ID)
+	_, _ = testEnv.Repo.AddOrganizationMember(ctx, org.ID, owner.ID, core.OrgRoleOwner)
+	member, _, _ := testEnv.GetOrCreateUserWithMembership(ctx, "m-"+GenerateUniqueSlug("u")+"@example.com", app, core.UserSourceInvited)
+	_, _ = testEnv.Repo.AddOrganizationMember(ctx, org.ID, member.ID, core.OrgRoleMember)
+
+	patch := func(userID, role string) *httptest.ResponseRecorder {
+		body, _ := json.Marshal(map[string]any{"orgRole": role})
+		req := httptest.NewRequest(http.MethodPatch, adminAppOrgBase(ws, app)+"/organizations/"+org.ID.String()+"/members/"+userID, bytes.NewReader(body))
+		testEnv.SetSessionCookie(t, req, claims)
+		rr := httptest.NewRecorder()
+		router.ServeHTTP(rr, req)
+		return rr
+	}
+
+	// Promote member -> owner: 204 (admin operates above the org, no tier guard
+	// beyond last-owner).
+	if rr := patch(member.ID.String(), core.OrgRoleOwner); rr.Code != http.StatusNoContent {
+		t.Fatalf("promote member->owner: expected 204, got %d (%s)", rr.Code, rr.Body.String())
+	}
+	if m, _ := testEnv.Repo.GetOrganizationMember(ctx, org.ID, member.ID); m == nil || m.OrgRole != core.OrgRoleOwner {
+		t.Fatalf("expected member promoted to owner, got %+v", m)
+	}
+	// Two owners now — demoting the original owner is fine: 204.
+	if rr := patch(owner.ID.String(), core.OrgRoleMember); rr.Code != http.StatusNoContent {
+		t.Fatalf("demote owner (2 owners): expected 204, got %d (%s)", rr.Code, rr.Body.String())
+	}
+	// `member` is now the last owner — demoting them must 409.
+	if rr := patch(member.ID.String(), core.OrgRoleMember); rr.Code != http.StatusConflict {
+		t.Fatalf("demote last owner: expected 409, got %d (%s)", rr.Code, rr.Body.String())
+	}
+}
+
+func TestAdminOrgs_RemoveMember(t *testing.T) {
+	ctx := context.Background()
+	router, _ := setupAdminOrgRouter(t)
+	acc := testEnv.CreateTestAccount(t, "arm-"+GenerateUniqueSlug("u")+"@example.com")
+	ws := testEnv.CreateTestWorkspace(t, acc, "WS", GenerateUniqueSlug("ws"))
+	app := testEnv.CreateTestApp(t, ws, acc)
+	sess, claims := testEnv.CreateTestSession(t, acc)
+	defer testEnv.CleanupTestData(t, &TestFixtures{Account: acc, Workspace: ws, Session: sess})
+
+	owner, _, _ := testEnv.GetOrCreateUserWithMembership(ctx, "own-"+GenerateUniqueSlug("u")+"@example.com", app, core.UserSourceInvited)
+	org, _ := testEnv.Repo.CreateOrganization(ctx, app.ID, "Acme", GenerateUniqueSlug("acme"), &owner.ID)
+	_, _ = testEnv.Repo.AddOrganizationMember(ctx, org.ID, owner.ID, core.OrgRoleOwner)
+	member, _, _ := testEnv.GetOrCreateUserWithMembership(ctx, "m-"+GenerateUniqueSlug("u")+"@example.com", app, core.UserSourceInvited)
+	_, _ = testEnv.Repo.AddOrganizationMember(ctx, org.ID, member.ID, core.OrgRoleMember)
+
+	del := func(userID string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(http.MethodDelete, adminAppOrgBase(ws, app)+"/organizations/"+org.ID.String()+"/members/"+userID, nil)
+		testEnv.SetSessionCookie(t, req, claims)
+		rr := httptest.NewRecorder()
+		router.ServeHTTP(rr, req)
+		return rr
+	}
+
+	// Remove the plain member: 204, gone.
+	if rr := del(member.ID.String()); rr.Code != http.StatusNoContent {
+		t.Fatalf("remove member: expected 204, got %d (%s)", rr.Code, rr.Body.String())
+	}
+	if _, err := testEnv.Repo.GetOrganizationMember(ctx, org.ID, member.ID); !errors.Is(err, repo.ErrNotFound) {
+		t.Fatalf("member should be gone, got err=%v", err)
+	}
+	// Removing the last owner must 409.
+	if rr := del(owner.ID.String()); rr.Code != http.StatusConflict {
+		t.Fatalf("remove last owner: expected 409, got %d (%s)", rr.Code, rr.Body.String())
 	}
 }
 

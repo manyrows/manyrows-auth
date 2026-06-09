@@ -703,3 +703,16 @@ func (r *Repo) SetProjectOrganizationsEnabled(ctx context.Context, workspaceID, 
 	_, err := r.db.Pool().Exec(ctx, q, workspaceID, projectID, enabled)
 	return err
 }
+
+// SetProjectOrgCreationPolicy sets org_creation_policy across every app in a
+// project (mirrors SetProjectOrganizationsEnabled: conceptually project-level,
+// stored per-app). The caller validates the policy value.
+func (r *Repo) SetProjectOrgCreationPolicy(ctx context.Context, workspaceID, projectID uuid.UUID, policy string) error {
+	const q = `
+		update apps
+		set org_creation_policy = $3,
+		    updated_at = now()
+		where workspace_id = $1 and project_id = $2;`
+	_, err := r.db.Pool().Exec(ctx, q, workspaceID, projectID, policy)
+	return err
+}
