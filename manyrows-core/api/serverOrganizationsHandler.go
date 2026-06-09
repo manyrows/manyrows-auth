@@ -147,6 +147,7 @@ func (handler *RequestHandler) ServerCreateOrganization(w http.ResponseWriter, r
 	}
 	handler.dispatchOrgLifecycleEvent(whOrgCreated, org)
 	handler.dispatchOrgMemberEvent(whOrgMemberAdded, org.AppID, org.ID, ownerID)
+	handler.auditOrg(r, core.AuthEventOrgCreated, org, nil)
 	utils.WriteJsonWithStatusCode(w, toServerOrg(org), http.StatusCreated)
 }
 
@@ -231,6 +232,7 @@ func (handler *RequestHandler) ServerUpdateOrganization(w http.ResponseWriter, r
 		return
 	}
 	handler.dispatchOrgLifecycleEvent(whOrgUpdated, updated)
+	handler.auditOrg(r, core.AuthEventOrgUpdated, updated, nil)
 	utils.WriteJson(w, toServerOrg(updated))
 }
 
@@ -272,6 +274,7 @@ func (handler *RequestHandler) ServerDeleteOrganization(w http.ResponseWriter, r
 		return
 	}
 	handler.dispatchOrgLifecycleEvent(whOrgDeleted, org)
+	handler.auditOrg(r, core.AuthEventOrgDeleted, org, nil)
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -379,6 +382,7 @@ func (handler *RequestHandler) ServerAddOrgMember(w http.ResponseWriter, r *http
 		return
 	}
 	handler.dispatchOrgMemberEvent(whOrgMemberAdded, org.AppID, org.ID, user.ID)
+	handler.auditOrg(r, core.AuthEventOrgMemberAdded, org, &user.ID)
 	utils.WriteJsonWithStatusCode(w, repo.OrganizationMemberView{UserID: user.ID, Email: user.Email, OrgRole: m.OrgRole, Status: m.Status, Roles: []repo.OrgMemberRoleRef{}}, http.StatusCreated)
 }
 
@@ -416,6 +420,65 @@ type setMemberRoleRequest struct {
 	OrgRole string `json:"orgRole"`
 }
 
+type serverSetOrgMemberRolesRequest struct {
+	RoleIDs []uuid.UUID `json:"roleIds"`
+}
+
+// ServerSetOrgMemberRoles: PUT …/organizations/{orgId}/members/{userId}/roles
+// Replaces the member's in-app project-role assignment (distinct from the
+// org tier, which is set via PATCH on the member). The previous server API
+// could only set the tier — project roles were admin/end-user only.
+func (handler *RequestHandler) ServerSetOrgMemberRoles(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	app, org, ok := handler.serverOrgFromURL(w, r)
+	if !ok {
+		return
+	}
+	userID, ok := handler.userIDFromURL(w, r)
+	if !ok {
+		return
+	}
+	member, err := handler.repo.GetOrganizationMember(ctx, org.ID, userID)
+	if err != nil {
+		if errors.Is(err, repo.ErrNotFound) {
+			WriteError(w, r, "error.notFound", http.StatusNotFound)
+			return
+		}
+		log.Err(err).Msg("ServerSetOrgMemberRoles: load member failed")
+		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
+		return
+	}
+
+	var body serverSetOrgMemberRolesRequest
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		WriteError(w, r, "error.badRequest", http.StatusBadRequest)
+		return
+	}
+	roleIDs := dedupeUUIDs(body.RoleIDs)
+	if len(roleIDs) > 0 {
+		// Every role must belong to this app's project — reject stray ids.
+		n, err := handler.repo.CountRolesInProject(ctx, app.ProjectID, roleIDs)
+		if err != nil {
+			log.Err(err).Msg("ServerSetOrgMemberRoles: role validation failed")
+			WriteError(w, r, "error.internalError", http.StatusInternalServerError)
+			return
+		}
+		if n != len(roleIDs) {
+			WriteError(w, r, "error.badRequest", http.StatusBadRequest)
+			return
+		}
+	}
+
+	if err := handler.repo.SetOrganizationMemberRoles(ctx, member.ID, roleIDs); err != nil {
+		log.Err(err).Msg("ServerSetOrgMemberRoles: set roles failed")
+		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
+		return
+	}
+	handler.dispatchOrgMemberEvent(whOrgMemberUpdated, app.ID, org.ID, userID)
+	handler.auditOrg(r, core.AuthEventOrgMemberRoleChanged, org, &userID)
+	w.WriteHeader(http.StatusNoContent)
+}
+
 // ServerSetOrgMemberRole: PATCH …/organizations/{orgId}/members/{userId}
 func (handler *RequestHandler) ServerSetOrgMemberRole(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
@@ -450,6 +513,7 @@ func (handler *RequestHandler) ServerSetOrgMemberRole(w http.ResponseWriter, r *
 		return
 	}
 	handler.dispatchOrgMemberEvent(whOrgMemberUpdated, org.AppID, org.ID, userID)
+	handler.auditOrg(r, core.AuthEventOrgMemberRoleChanged, org, &userID)
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -480,5 +544,6 @@ func (handler *RequestHandler) ServerRemoveOrgMember(w http.ResponseWriter, r *h
 		return
 	}
 	handler.dispatchOrgMemberEvent(whOrgMemberRemoved, org.AppID, org.ID, userID)
+	handler.auditOrg(r, core.AuthEventOrgMemberRemoved, org, &userID)
 	w.WriteHeader(http.StatusNoContent)
 }

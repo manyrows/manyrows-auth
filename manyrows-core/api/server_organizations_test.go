@@ -42,6 +42,7 @@ func setupServerOrgRouter(t *testing.T, ws *core.Workspace, app *core.App) *chi.
 		or.Post("/{orgId}/members", svc.Handler.ServerAddOrgMember)
 		or.Get("/{orgId}/members/{userId}", svc.Handler.ServerGetOrgMember)
 		or.Patch("/{orgId}/members/{userId}", svc.Handler.ServerSetOrgMemberRole)
+		or.Put("/{orgId}/members/{userId}/roles", svc.Handler.ServerSetOrgMemberRoles)
 		or.Delete("/{orgId}/members/{userId}", svc.Handler.ServerRemoveOrgMember)
 	})
 	return r

@@ -81,6 +81,16 @@ const (
 	AuthEventAccountLocked        AuthLogEvent = "account.locked"
 	AuthEventAccountStatusChanged AuthLogEvent = "account.status_changed"
 	AuthEventAccountDeleted       AuthLogEvent = "account.deleted"
+
+	// Organization (multi-tenant) management actions.
+	AuthEventOrgCreated           AuthLogEvent = "organization.created"
+	AuthEventOrgUpdated           AuthLogEvent = "organization.updated"
+	AuthEventOrgArchived          AuthLogEvent = "organization.archived"
+	AuthEventOrgUnarchived        AuthLogEvent = "organization.unarchived"
+	AuthEventOrgDeleted           AuthLogEvent = "organization.deleted"
+	AuthEventOrgMemberAdded       AuthLogEvent = "organization.member_added"
+	AuthEventOrgMemberRemoved     AuthLogEvent = "organization.member_removed"
+	AuthEventOrgMemberRoleChanged AuthLogEvent = "organization.member_role_changed"
 )
 
 // AuthLogMethod is the authentication mechanism in play for the event.
@@ -246,3 +256,13 @@ type AccountStatusChangedMetadata struct {
 }
 
 func (AccountStatusChangedMetadata) isAuthLogMetadata() {}
+
+// OrganizationMetadata accompanies organization.* audit events with the
+// affected org's id (plus name/slug for readability in the log view).
+type OrganizationMetadata struct {
+	OrgID   uuid.UUID `json:"orgId"`
+	OrgName string    `json:"orgName,omitempty"`
+	OrgSlug string    `json:"orgSlug,omitempty"`
+}
+
+func (OrganizationMetadata) isAuthLogMetadata() {}

@@ -185,6 +185,7 @@ func (handler *RequestHandler) HandleSetAppOrganizationMemberRoles(w http.Respon
 		return
 	}
 	handler.dispatchOrgMemberEvent(whOrgMemberUpdated, appID, org.ID, userID)
+	handler.auditOrg(r, core.AuthEventOrgMemberRoleChanged, org, &userID)
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -241,6 +242,7 @@ func (handler *RequestHandler) HandleCreateAppOrganization(w http.ResponseWriter
 		return
 	}
 	handler.dispatchOrgLifecycleEvent(whOrgCreated, org)
+	handler.auditOrg(r, core.AuthEventOrgCreated, org, nil)
 	utils.WriteJsonWithStatusCode(w, adminOrgResponse{
 		ID: org.ID.String(), Name: org.Name, Slug: org.Slug, Status: org.Status,
 	}, http.StatusCreated)
@@ -349,6 +351,7 @@ func (handler *RequestHandler) HandleAddAppOrganizationMember(w http.ResponseWri
 		return
 	}
 	handler.dispatchOrgMemberEvent(whOrgMemberAdded, appID, org.ID, user.ID)
+	handler.auditOrg(r, core.AuthEventOrgMemberAdded, org, &user.ID)
 	utils.WriteJsonWithStatusCode(w, repo.OrganizationMemberView{
 		UserID: user.ID, Email: user.Email, OrgRole: m.OrgRole, Status: m.Status, Roles: []repo.OrgMemberRoleRef{},
 	}, http.StatusCreated)
@@ -595,6 +598,7 @@ func (handler *RequestHandler) HandleSetAppOrganizationMemberTier(w http.Respons
 		return
 	}
 	handler.dispatchOrgMemberEvent(whOrgMemberUpdated, appID, org.ID, userID)
+	handler.auditOrg(r, core.AuthEventOrgMemberRoleChanged, org, &userID)
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -627,6 +631,7 @@ func (handler *RequestHandler) HandleRemoveAppOrganizationMember(w http.Response
 		return
 	}
 	handler.dispatchOrgMemberEvent(whOrgMemberRemoved, appID, org.ID, userID)
+	handler.auditOrg(r, core.AuthEventOrgMemberRemoved, org, &userID)
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -772,6 +777,7 @@ func (handler *RequestHandler) HandleRenameAppOrganization(w http.ResponseWriter
 		return
 	}
 	handler.dispatchOrgLifecycleEvent(whOrgUpdated, updated)
+	handler.auditOrg(r, core.AuthEventOrgUpdated, updated, nil)
 	utils.WriteJsonWithStatusCode(w, adminOrgResponse{
 		ID:     updated.ID.String(),
 		Name:   updated.Name,
@@ -803,6 +809,7 @@ func (handler *RequestHandler) HandleArchiveAppOrganization(w http.ResponseWrite
 		return
 	}
 	handler.dispatchOrgLifecycleEvent(whOrgArchived, org)
+	handler.auditOrg(r, core.AuthEventOrgArchived, org, nil)
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -830,6 +837,7 @@ func (handler *RequestHandler) HandleRestoreAppOrganization(w http.ResponseWrite
 		return
 	}
 	handler.dispatchOrgLifecycleEvent(whOrgUnarchived, org)
+	handler.auditOrg(r, core.AuthEventOrgUnarchived, org, nil)
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -861,5 +869,6 @@ func (handler *RequestHandler) HandleDeleteAppOrganization(w http.ResponseWriter
 		return
 	}
 	handler.dispatchOrgLifecycleEvent(whOrgDeleted, org)
+	handler.auditOrg(r, core.AuthEventOrgDeleted, org, nil)
 	w.WriteHeader(http.StatusNoContent)
 }

@@ -1453,6 +1453,33 @@ paths:
         "404": { $ref: "#/components/responses/NotFound" }
         "409": { description: Would remove the last owner. }
 
+  /apps/{appId}/organizations/{orgId}/members/{userId}/roles:
+    parameters:
+      - $ref: "#/components/parameters/AppId"
+      - $ref: "#/components/parameters/OrgId"
+      - $ref: "#/components/parameters/UserId"
+    put:
+      tags: [Organizations]
+      summary: Set a member's project roles
+      description: >
+        Replaces the member's in-app project-role assignment. Every role id
+        must belong to this app's project. (The org tier is set separately via
+        PATCH on the member.)
+      operationId: setOrganizationMemberRoles
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [roleIds]
+              properties:
+                roleIds: { type: array, items: { type: string, format: uuid } }
+      responses:
+        "204": { description: Updated. }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
   /apps/{appId}/organizations/{orgId}/invites:
     parameters:
       - $ref: "#/components/parameters/AppId"
