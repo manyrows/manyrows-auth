@@ -341,7 +341,7 @@ func (handler *RequestHandler) ClientCreateOrgInvite(w http.ResponseWriter, r *h
 	}
 	orgRole := strings.TrimSpace(body.OrgRole)
 	if orgRole == "" {
-		orgRole = core.OrgRoleAdmin
+		orgRole = core.OrgRoleMember // least privilege: an omitted tier must not grant admin
 	}
 	if !validOrgRole(orgRole) {
 		WriteError(w, r, "error.badRequest", http.StatusBadRequest)

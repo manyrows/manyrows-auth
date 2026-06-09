@@ -200,6 +200,48 @@ func TestServerCreateOrgInvite_PersistsAndLists(t *testing.T) {
 	}
 }
 
+// TestServerCreateOrgInvite_DefaultsToMember asserts that an invite created
+// without an explicit orgRole lands on the least-privileged tier (member), not
+// admin — a backend integration that forgets the field must not silently grant
+// admin to every invitee.
+func TestServerCreateOrgInvite_DefaultsToMember(t *testing.T) {
+	ctx := context.Background()
+	acc := testEnv.CreateTestAccount(t, "scidm-"+GenerateUniqueSlug("u")+"@example.com")
+	ws := testEnv.CreateTestWorkspace(t, acc, "WS", GenerateUniqueSlug("ws"))
+	app := testEnv.CreateTestApp(t, ws, acc)
+	defer testEnv.CleanupTestData(t, &TestFixtures{Account: acc, Workspace: ws})
+
+	appURL := "https://app.example.com"
+	if _, err := testEnv.Repo.UpdateAppEnabled(ctx, ws.ID, app.ProjectID, app.ID, true, repo.AppCoreUpdate{AppURL: &appURL}); err != nil {
+		t.Fatalf("set app url: %v", err)
+	}
+	app = mustReloadApp(t, ctx, app.ID)
+
+	owner, _, _ := testEnv.GetOrCreateUserWithMembership(ctx, "own-"+GenerateUniqueSlug("u")+"@example.com", app, core.UserSourceInvited)
+	org, _ := testEnv.Repo.CreateOrganization(ctx, app.ID, "Acme", GenerateUniqueSlug("acme"), &owner.ID)
+	_, _ = testEnv.Repo.AddOrganizationMember(ctx, org.ID, owner.ID, core.OrgRoleOwner)
+
+	router := setupServerInviteRouter(t, ws, app)
+	base := "/v1/apps/" + app.ID.String() + "/organizations/" + org.ID.String() + "/invites"
+
+	// orgRole omitted entirely → must default to the least-privileged tier.
+	email := "newbie-" + GenerateUniqueSlug("u") + "@example.com"
+	body, _ := json.Marshal(map[string]any{"email": email})
+	req := httptest.NewRequest(http.MethodPost, base, bytes.NewReader(body))
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+	if rr.Code != http.StatusCreated {
+		t.Fatalf("create invite: expected 201, got %d (%s)", rr.Code, rr.Body.String())
+	}
+	var resp struct {
+		OrgRole string `json:"orgRole"`
+	}
+	_ = json.Unmarshal(rr.Body.Bytes(), &resp)
+	if resp.OrgRole != core.OrgRoleMember {
+		t.Fatalf("omitted orgRole should default to member, got %q", resp.OrgRole)
+	}
+}
+
 // setupAcceptInviteRouter mounts the PUBLIC org-invite accept handler behind
 // test middleware that injects workspace + app into context (mirrors the
 // /auth group's workspace/app-context middleware in the real external router).
