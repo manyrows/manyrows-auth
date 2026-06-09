@@ -381,11 +381,13 @@ func apiKeyMiddleware(rpo *repo.Repo, touch *lastUsedThrottle) func(next http.Ha
 }
 
 func parseAPIKeyPrefix(fullKey string) (string, bool) {
-	// Expected: "mr_<prefix>_<secret>"
+	// Expected: "mr_<prefix>_<secret>". The secret is base64url (RawURLEncoding),
+	// whose alphabet includes "_", so cap the split at 3 — otherwise an underscore
+	// in the secret yields >3 parts and a valid key is rejected (401).
 	if !strings.HasPrefix(fullKey, "mr_") {
 		return "", false
 	}
-	parts := strings.Split(fullKey, "_")
+	parts := strings.SplitN(fullKey, "_", 3)
 	if len(parts) != 3 {
 		return "", false
 	}
