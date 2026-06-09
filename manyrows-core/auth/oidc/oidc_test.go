@@ -7,6 +7,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"math/big"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -32,10 +33,18 @@ type mockIDP struct {
 	idClaims    jwt.MapClaims  // baked into the id_token; nil → omit id_token
 	accessToken string         // returned from /token
 	userinfo    map[string]any // returned from /userinfo
+
+	closeOnce sync.Once // server.Close is not idempotent; guard double close
 }
 
-func newMockIDP(t *testing.T) *mockIDP {
+func newMockIDP(t *testing.T, addr ...string) *mockIDP {
 	t.Helper()
+	// The discovery/JWKS caches are process-global and keyed by URL with a
+	// 1h TTL. Two tests whose httptest servers land on the same reused
+	// ephemeral port would share a cache key — so clear the caches at the
+	// start of every test, giving each its own keys regardless of port.
+	oidc.ResetCaches()
+
 	key, err := rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {
 		t.Fatalf("gen key: %v", err)
@@ -78,10 +87,27 @@ func newMockIDP(t *testing.T) *mockIDP {
 		writeJSON(w, idp.userinfo)
 	})
 
-	idp.server = httptest.NewServer(mux)
-	t.Cleanup(idp.server.Close)
+	idp.server = httptest.NewUnstartedServer(mux)
+	if len(addr) > 0 && addr[0] != "" {
+		// Bind a caller-chosen address instead of a random port — lets a
+		// test deterministically reproduce ephemeral-port reuse across two
+		// successive servers.
+		idp.server.Listener.Close()
+		ln, err := net.Listen("tcp", addr[0])
+		if err != nil {
+			t.Fatalf("listen %s: %v", addr[0], err)
+		}
+		idp.server.Listener = ln
+	}
+	idp.server.Start()
+	t.Cleanup(idp.close)
 	return idp
 }
+
+// close shuts the mock server down at most once (httptest.Server.Close
+// panics on a second call), so a test may close it early to free its port
+// and still rely on the t.Cleanup-registered close.
+func (m *mockIDP) close() { m.closeOnce.Do(m.server.Close) }
 
 func (m *mockIDP) issuer() string { return m.server.URL }
 
@@ -289,6 +315,45 @@ func TestOIDC_ConcurrentAuthenticate_CacheSafe(t *testing.T) {
 	close(errs)
 	for err := range errs {
 		t.Errorf("concurrent authenticate failed: %v", err)
+	}
+}
+
+// TestOIDC_PortReuseDoesNotPoisonCache guards the test isolation the
+// global discovery/JWKS caches depend on: two mock IDPs with DIFFERENT
+// signing keys served on the SAME (reused) ephemeral port must each
+// verify their own id_token. Without a per-test cache reset the second
+// IDP's token is checked against the first IDP's stale cached key and
+// fails signature verification — the exact flake that
+// TestOIDC_ConcurrentAuthenticate_CacheSafe hit under load when the OS
+// recycled a prior test's port.
+func TestOIDC_PortReuseDoesNotPoisonCache(t *testing.T) {
+	// Reserve an ephemeral port, then release it so both servers bind it.
+	probe, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("probe listen: %v", err)
+	}
+	addr := probe.Addr().String()
+	probe.Close()
+
+	authOK := func(idp *mockIDP) error {
+		idp.idClaims = baseClaims(idp.issuer(), "client-123", "n")
+		cfg := oidc.ProviderConfig{Mode: oidc.ModeOIDC, IssuerURL: idp.issuer(), ClientID: "client-123"}
+		_, err := oidc.Authenticate(context.Background(), cfg, "code", "https://app/cb", "v", "n")
+		return err
+	}
+
+	idp1 := newMockIDP(t, addr)
+	if err := authOK(idp1); err != nil {
+		t.Fatalf("first IDP authenticate: %v", err)
+	}
+	idp1.close() // free the port before rebinding it
+
+	idp2 := newMockIDP(t, addr) // same URL, fresh key, resets caches
+	if idp2.issuer() != idp1.issuer() {
+		t.Fatalf("test needs both servers on one URL, got %q then %q", idp1.issuer(), idp2.issuer())
+	}
+	if err := authOK(idp2); err != nil {
+		t.Fatalf("port reuse poisoned the JWKS cache: %v", err)
 	}
 }
 
