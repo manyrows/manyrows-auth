@@ -66,6 +66,16 @@ interface OrgMember {
   roles: OrgMemberRole[]; // project (app RBAC) roles assigned in THIS org
 }
 
+interface OrgInvite {
+  id: string;
+  email: string;
+  orgRole: string;
+  status: string;
+  invitedByEmail?: string;
+  createdAt: string;
+  expiresAt: string;
+}
+
 function fmtDate(d?: string): string {
   if (!d) return "-";
   const date = new Date(d);
@@ -110,6 +120,23 @@ export default function AppOrganizations({ project, appId }: Props) {
   const [editRolesSaving, setEditRolesSaving] = React.useState(false);
   const [removeMember, setRemoveMember] = React.useState<OrgMember | null>(null);
   const [removeSaving, setRemoveSaving] = React.useState(false);
+
+  // Add existing app user to the org
+  const [addEmail, setAddEmail] = React.useState("");
+  const [addTier, setAddTier] = React.useState("member");
+  const [addSaving, setAddSaving] = React.useState(false);
+
+  // Pending invites (within the members dialog)
+  const [invites, setInvites] = React.useState<OrgInvite[]>([]);
+  const [inviteEmail, setInviteEmail] = React.useState("");
+  const [inviteTier, setInviteTier] = React.useState("member");
+  const [inviteSaving, setInviteSaving] = React.useState(false);
+  const [revokingInviteId, setRevokingInviteId] = React.useState<string | null>(null);
+
+  // Create organization dialog
+  const [createOpen, setCreateOpen] = React.useState(false);
+  const [createName, setCreateName] = React.useState("");
+  const [createSaving, setCreateSaving] = React.useState(false);
 
   // Rename dialog
   const [renameOpen, setRenameOpen] = React.useState(false);
@@ -185,12 +212,18 @@ export default function AppOrganizations({ project, appId }: Props) {
   async function openMembers(org: OrgRow) {
     setMembersOrg(org);
     setMembers([]);
+    setInvites([]);
+    setAddEmail("");
+    setAddTier("member");
+    setInviteEmail("");
+    setInviteTier("member");
     setMembersOpen(true);
     setMembersLoading(true);
     try {
-      // Load members and (once) the project's role catalog for the editor.
-      const [mRes] = await Promise.all([
+      // Load members, pending invites, and (once) the project's role catalog.
+      const [mRes, iRes] = await Promise.all([
         axios.get<{ members: OrgMember[] }>(`${appURL}/organizations/${org.id}/members`),
+        axios.get<{ invites: OrgInvite[] }>(`${appURL}/organizations/${org.id}/invites`),
         roleCatalog.length > 0
           ? Promise.resolve(null)
           : axios
@@ -198,10 +231,78 @@ export default function AppOrganizations({ project, appId }: Props) {
               .then((r) => setRoleCatalog(r.data.roles || [])),
       ]);
       setMembers(mRes.data.members || []);
+      setInvites(iRes.data.invites || []);
     } catch (e) {
       enqueueSnackbar(errText(e), { variant: "error" });
     } finally {
       setMembersLoading(false);
+    }
+  }
+
+  async function addMemberSubmit() {
+    if (!membersOrg || !addEmail.trim()) return;
+    setAddSaving(true);
+    try {
+      const res = await axios.post<OrgMember>(`${appURL}/organizations/${membersOrg.id}/members`, {
+        email: addEmail.trim(),
+        orgRole: addTier,
+      });
+      setMembers((prev) => [...prev, res.data].sort((a, b) => (a.email || "").localeCompare(b.email || "")));
+      setAddEmail("");
+      setAddTier("member");
+      enqueueSnackbar(t("organizations.memberAdded", { defaultValue: "Member added" }), { variant: "success" });
+    } catch (e) {
+      enqueueSnackbar(errText(e), { variant: "error" });
+    } finally {
+      setAddSaving(false);
+    }
+  }
+
+  async function inviteSubmit() {
+    if (!membersOrg || !inviteEmail.trim()) return;
+    setInviteSaving(true);
+    try {
+      const res = await axios.post<OrgInvite>(`${appURL}/organizations/${membersOrg.id}/invites`, {
+        email: inviteEmail.trim(),
+        orgRole: inviteTier,
+      });
+      setInvites((prev) => [res.data, ...prev]);
+      setInviteEmail("");
+      setInviteTier("member");
+      enqueueSnackbar(t("organizations.inviteSent", { defaultValue: "Invitation sent" }), { variant: "success" });
+    } catch (e) {
+      enqueueSnackbar(errText(e), { variant: "error" });
+    } finally {
+      setInviteSaving(false);
+    }
+  }
+
+  async function revokeInvite(inviteId: string) {
+    if (!membersOrg) return;
+    setRevokingInviteId(inviteId);
+    try {
+      await axios.delete(`${appURL}/organizations/${membersOrg.id}/invites/${inviteId}`);
+      setInvites((prev) => prev.filter((i) => i.id !== inviteId));
+    } catch (e) {
+      enqueueSnackbar(errText(e), { variant: "error" });
+    } finally {
+      setRevokingInviteId(null);
+    }
+  }
+
+  async function createOrgSubmit() {
+    if (!createName.trim()) return;
+    setCreateSaving(true);
+    try {
+      await axios.post(`${appURL}/organizations`, { name: createName.trim() });
+      await loadOrgs();
+      enqueueSnackbar(t("organizations.created", { defaultValue: "Organization created" }), { variant: "success" });
+      setCreateOpen(false);
+      setCreateName("");
+    } catch (e) {
+      enqueueSnackbar(errText(e), { variant: "error" });
+    } finally {
+      setCreateSaving(false);
     }
   }
 
@@ -414,6 +515,22 @@ export default function AppOrganizations({ project, appId }: Props) {
           )}
         </Box>
 
+        {/* Create organization (admin can seed an org directly). */}
+        {persistedEnabled && (
+          <Stack direction="row" justifyContent="flex-start">
+            <Button
+              variant="contained"
+              size="small"
+              onClick={() => {
+                setCreateName("");
+                setCreateOpen(true);
+              }}
+            >
+              {t("organizations.newOrg", { defaultValue: "New organization" })}
+            </Button>
+          </Stack>
+        )}
+
         {/* Status filter (only meaningful once at least one org exists) */}
         {orgs.length > 0 && (
           <Stack direction="row" justifyContent="flex-end">
@@ -622,9 +739,145 @@ export default function AppOrganizations({ project, appId }: Props) {
               </TableBody>
             </Table>
           )}
+
+          {!membersLoading && membersOrg?.status === "active" && (
+            <Stack spacing={2.5} sx={{ mt: 3 }}>
+              {/* Add an existing app user */}
+              <Box>
+                <Typography variant="subtitle2" gutterBottom>
+                  {t("organizations.addMemberTitle", { defaultValue: "Add existing user" })}
+                </Typography>
+                <Stack direction="row" spacing={1} alignItems="center">
+                  <TextField
+                    size="small"
+                    fullWidth
+                    placeholder={t("organizations.addMemberEmail", { defaultValue: "user@example.com" })}
+                    value={addEmail}
+                    onChange={(e) => setAddEmail(e.target.value)}
+                  />
+                  <TextField
+                    select
+                    size="small"
+                    value={addTier}
+                    onChange={(e) => setAddTier(e.target.value)}
+                    sx={{ minWidth: 120 }}
+                  >
+                    <MenuItem value="owner">owner</MenuItem>
+                    <MenuItem value="admin">admin</MenuItem>
+                    <MenuItem value="member">member</MenuItem>
+                  </TextField>
+                  <Button
+                    variant="outlined"
+                    onClick={() => void addMemberSubmit()}
+                    disabled={addSaving || !addEmail.trim()}
+                  >
+                    {t("organizations.add", { defaultValue: "Add" })}
+                  </Button>
+                </Stack>
+                <Typography variant="caption" color="text.secondary">
+                  {t("organizations.addMemberHelp", {
+                    defaultValue:
+                      "The user must already belong to this app. To bring in a new email, send an invitation below.",
+                  })}
+                </Typography>
+              </Box>
+
+              {/* Pending invitations */}
+              <Box>
+                <Typography variant="subtitle2" gutterBottom>
+                  {t("organizations.invitesTitle", { defaultValue: "Pending invitations" })}
+                </Typography>
+                {invites.length === 0 ? (
+                  <Typography variant="body2" color="text.secondary">
+                    {t("organizations.noInvites", { defaultValue: "No pending invitations." })}
+                  </Typography>
+                ) : (
+                  <Table size="small">
+                    <TableBody>
+                      {invites.map((inv) => (
+                        <TableRow key={inv.id}>
+                          <TableCell>{inv.email}</TableCell>
+                          <TableCell>{inv.orgRole}</TableCell>
+                          <TableCell align="right">
+                            <Button
+                              size="small"
+                              color="error"
+                              onClick={() => void revokeInvite(inv.id)}
+                              disabled={revokingInviteId === inv.id}
+                            >
+                              {t("organizations.revoke", { defaultValue: "Revoke" })}
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                )}
+                <Stack direction="row" spacing={1} alignItems="center" sx={{ mt: 1 }}>
+                  <TextField
+                    size="small"
+                    fullWidth
+                    placeholder={t("organizations.inviteEmail", { defaultValue: "invite@example.com" })}
+                    value={inviteEmail}
+                    onChange={(e) => setInviteEmail(e.target.value)}
+                  />
+                  <TextField
+                    select
+                    size="small"
+                    value={inviteTier}
+                    onChange={(e) => setInviteTier(e.target.value)}
+                    sx={{ minWidth: 120 }}
+                  >
+                    <MenuItem value="owner">owner</MenuItem>
+                    <MenuItem value="admin">admin</MenuItem>
+                    <MenuItem value="member">member</MenuItem>
+                  </TextField>
+                  <Button
+                    variant="outlined"
+                    onClick={() => void inviteSubmit()}
+                    disabled={inviteSaving || !inviteEmail.trim()}
+                  >
+                    {t("organizations.invite", { defaultValue: "Invite" })}
+                  </Button>
+                </Stack>
+              </Box>
+            </Stack>
+          )}
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setMembersOpen(false)}>{t("common.close", { defaultValue: "Close" })}</Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Create organization dialog */}
+      <Dialog open={createOpen} onClose={() => setCreateOpen(false)} fullWidth maxWidth="xs">
+        <DialogTitle>{t("organizations.createTitle", { defaultValue: "New organization" })}</DialogTitle>
+        <DialogContent>
+          <TextField
+            autoFocus
+            fullWidth
+            margin="dense"
+            label={t("organizations.nameLabel", { defaultValue: "Name" })}
+            value={createName}
+            onChange={(e) => setCreateName(e.target.value)}
+          />
+          <Typography variant="caption" color="text.secondary">
+            {t("organizations.createHelp", {
+              defaultValue: "Creates an empty organization. Add members or send invitations from its members dialog.",
+            })}
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setCreateOpen(false)} disabled={createSaving}>
+            {t("common.cancel", { defaultValue: "Cancel" })}
+          </Button>
+          <Button
+            variant="contained"
+            onClick={() => void createOrgSubmit()}
+            disabled={createSaving || !createName.trim()}
+          >
+            {t("common.create", { defaultValue: "Create" })}
+          </Button>
         </DialogActions>
       </Dialog>
 

@@ -32,6 +32,11 @@ func setupAdminOrgRouter(t *testing.T) (*chi.Mux, *TestServices) {
 	wsRouter.Delete("/projects/{projectId}/apps/{appId}/organizations/{orgId}", svc.Handler.HandleArchiveAppOrganization)
 	wsRouter.Post("/projects/{projectId}/apps/{appId}/organizations/{orgId}/restore", svc.Handler.HandleRestoreAppOrganization)
 	wsRouter.Delete("/projects/{projectId}/apps/{appId}/organizations/{orgId}/permanent", svc.Handler.HandleDeleteAppOrganization)
+	wsRouter.Post("/projects/{projectId}/apps/{appId}/organizations", svc.Handler.HandleCreateAppOrganization)
+	wsRouter.Post("/projects/{projectId}/apps/{appId}/organizations/{orgId}/members", svc.Handler.HandleAddAppOrganizationMember)
+	wsRouter.Get("/projects/{projectId}/apps/{appId}/organizations/{orgId}/invites", svc.Handler.HandleListAppOrganizationInvites)
+	wsRouter.Post("/projects/{projectId}/apps/{appId}/organizations/{orgId}/invites", svc.Handler.HandleCreateAppOrganizationInvite)
+	wsRouter.Delete("/projects/{projectId}/apps/{appId}/organizations/{orgId}/invites/{inviteId}", svc.Handler.HandleRevokeAppOrganizationInvite)
 	return r, svc
 }
 
@@ -202,6 +207,156 @@ func TestAdminOrgs_RemoveMember(t *testing.T) {
 	// Removing the last owner must 409.
 	if rr := del(owner.ID.String()); rr.Code != http.StatusConflict {
 		t.Fatalf("remove last owner: expected 409, got %d (%s)", rr.Code, rr.Body.String())
+	}
+}
+
+func TestAdminOrgs_CreateOrg(t *testing.T) {
+	ctx := context.Background()
+	router, _ := setupAdminOrgRouter(t)
+	acc := testEnv.CreateTestAccount(t, "aco-"+GenerateUniqueSlug("u")+"@example.com")
+	ws := testEnv.CreateTestWorkspace(t, acc, "WS", GenerateUniqueSlug("ws"))
+	app := testEnv.CreateTestApp(t, ws, acc)
+	sess, claims := testEnv.CreateTestSession(t, acc)
+	defer testEnv.CleanupTestData(t, &TestFixtures{Account: acc, Workspace: ws, Session: sess})
+
+	post := func() *httptest.ResponseRecorder {
+		body, _ := json.Marshal(map[string]any{"name": "Acme Inc"})
+		req := httptest.NewRequest(http.MethodPost, adminAppOrgBase(ws, app)+"/organizations", bytes.NewReader(body))
+		testEnv.SetSessionCookie(t, req, claims)
+		rr := httptest.NewRecorder()
+		router.ServeHTTP(rr, req)
+		return rr
+	}
+
+	// Orgs disabled -> 409 (fail loud, like the server provisioning API).
+	if rr := post(); rr.Code != http.StatusConflict {
+		t.Fatalf("create with orgs disabled: expected 409, got %d (%s)", rr.Code, rr.Body.String())
+	}
+	if err := testEnv.Repo.SetAppOrganizationsEnabled(ctx, app.ID, true); err != nil {
+		t.Fatalf("enable orgs: %v", err)
+	}
+
+	rr := post()
+	if rr.Code != http.StatusCreated {
+		t.Fatalf("create org: expected 201, got %d (%s)", rr.Code, rr.Body.String())
+	}
+	var resp struct{ ID, Name, Slug, Status string }
+	_ = json.Unmarshal(rr.Body.Bytes(), &resp)
+	if resp.ID == "" || resp.Name != "Acme Inc" || resp.Status != core.OrgStatusActive {
+		t.Fatalf("unexpected create response: %+v", resp)
+	}
+	views, _ := testEnv.Repo.ListOrganizationsForApp(ctx, app.ID)
+	found := false
+	for _, v := range views {
+		if v.ID.String() == resp.ID {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("created org not in app list")
+	}
+}
+
+func TestAdminOrgs_AddMember(t *testing.T) {
+	ctx := context.Background()
+	router, _ := setupAdminOrgRouter(t)
+	acc := testEnv.CreateTestAccount(t, "aam-"+GenerateUniqueSlug("u")+"@example.com")
+	ws := testEnv.CreateTestWorkspace(t, acc, "WS", GenerateUniqueSlug("ws"))
+	app := testEnv.CreateTestApp(t, ws, acc)
+	sess, claims := testEnv.CreateTestSession(t, acc)
+	defer testEnv.CleanupTestData(t, &TestFixtures{Account: acc, Workspace: ws, Session: sess})
+	if err := testEnv.Repo.SetAppOrganizationsEnabled(ctx, app.ID, true); err != nil {
+		t.Fatalf("enable orgs: %v", err)
+	}
+	user, _, _ := testEnv.GetOrCreateUserWithMembership(ctx, "joiner-"+GenerateUniqueSlug("u")+"@example.com", app, core.UserSourceInvited)
+	org, _ := testEnv.Repo.CreateOrganization(ctx, app.ID, "Acme", GenerateUniqueSlug("acme"), nil)
+
+	post := func(payload map[string]any) *httptest.ResponseRecorder {
+		body, _ := json.Marshal(payload)
+		req := httptest.NewRequest(http.MethodPost, adminAppOrgBase(ws, app)+"/organizations/"+org.ID.String()+"/members", bytes.NewReader(body))
+		testEnv.SetSessionCookie(t, req, claims)
+		rr := httptest.NewRecorder()
+		router.ServeHTTP(rr, req)
+		return rr
+	}
+
+	// Add an existing app user by email at admin tier.
+	if rr := post(map[string]any{"email": user.Email, "orgRole": "admin"}); rr.Code != http.StatusCreated {
+		t.Fatalf("add member: expected 201, got %d (%s)", rr.Code, rr.Body.String())
+	}
+	if m, _ := testEnv.Repo.GetOrganizationMember(ctx, org.ID, user.ID); m == nil || m.OrgRole != core.OrgRoleAdmin {
+		t.Fatalf("expected admin member, got %+v", m)
+	}
+	// Re-add -> 409 (already a member).
+	if rr := post(map[string]any{"email": user.Email}); rr.Code != http.StatusConflict {
+		t.Fatalf("dup add: expected 409, got %d (%s)", rr.Code, rr.Body.String())
+	}
+	// Email that isn't an app user -> 409.
+	if rr := post(map[string]any{"email": "ghost-" + GenerateUniqueSlug("g") + "@example.com"}); rr.Code != http.StatusConflict {
+		t.Fatalf("unknown email: expected 409, got %d (%s)", rr.Code, rr.Body.String())
+	}
+}
+
+func TestAdminOrgs_Invites(t *testing.T) {
+	ctx := context.Background()
+	router, _ := setupAdminOrgRouter(t)
+	acc := testEnv.CreateTestAccount(t, "ainv-"+GenerateUniqueSlug("u")+"@example.com")
+	ws := testEnv.CreateTestWorkspace(t, acc, "WS", GenerateUniqueSlug("ws"))
+	app := testEnv.CreateTestApp(t, ws, acc)
+	sess, claims := testEnv.CreateTestSession(t, acc)
+	defer testEnv.CleanupTestData(t, &TestFixtures{Account: acc, Workspace: ws, Session: sess})
+	if err := testEnv.Repo.SetAppOrganizationsEnabled(ctx, app.ID, true); err != nil {
+		t.Fatalf("enable orgs: %v", err)
+	}
+	// Invites need an app URL for the accept link.
+	if _, err := testEnv.DB.Pool().Exec(ctx, "UPDATE apps SET app_url=$1 WHERE id=$2", "https://app.example.com", app.ID); err != nil {
+		t.Fatalf("set app url: %v", err)
+	}
+	org, _ := testEnv.Repo.CreateOrganization(ctx, app.ID, "Acme", GenerateUniqueSlug("acme"), nil)
+	base := adminAppOrgBase(ws, app) + "/organizations/" + org.ID.String() + "/invites"
+
+	// Create.
+	email := "invitee-" + GenerateUniqueSlug("e") + "@example.com"
+	body, _ := json.Marshal(map[string]any{"email": email, "orgRole": "member"})
+	reqC := httptest.NewRequest(http.MethodPost, base, bytes.NewReader(body))
+	testEnv.SetSessionCookie(t, reqC, claims)
+	rrC := httptest.NewRecorder()
+	router.ServeHTTP(rrC, reqC)
+	if rrC.Code != http.StatusCreated {
+		t.Fatalf("create invite: expected 201, got %d (%s)", rrC.Code, rrC.Body.String())
+	}
+
+	// List shows it.
+	reqL := httptest.NewRequest(http.MethodGet, base, nil)
+	testEnv.SetSessionCookie(t, reqL, claims)
+	rrL := httptest.NewRecorder()
+	router.ServeHTTP(rrL, reqL)
+	if rrL.Code != http.StatusOK {
+		t.Fatalf("list invites: expected 200, got %d (%s)", rrL.Code, rrL.Body.String())
+	}
+	var listResp struct {
+		Invites []struct {
+			ID      string `json:"id"`
+			Email   string `json:"email"`
+			OrgRole string `json:"orgRole"`
+			Status  string `json:"status"`
+		} `json:"invites"`
+	}
+	_ = json.Unmarshal(rrL.Body.Bytes(), &listResp)
+	if len(listResp.Invites) != 1 || listResp.Invites[0].Email != email {
+		t.Fatalf("expected 1 pending invite for %s, got %+v", email, listResp.Invites)
+	}
+
+	// Revoke.
+	reqD := httptest.NewRequest(http.MethodDelete, base+"/"+listResp.Invites[0].ID, nil)
+	testEnv.SetSessionCookie(t, reqD, claims)
+	rrD := httptest.NewRecorder()
+	router.ServeHTTP(rrD, reqD)
+	if rrD.Code != http.StatusNoContent {
+		t.Fatalf("revoke invite: expected 204, got %d (%s)", rrD.Code, rrD.Body.String())
+	}
+	if list, _ := testEnv.Repo.ListPendingOrgInvites(ctx, org.ID); len(list) != 0 {
+		t.Fatalf("expected 0 pending after revoke, got %d", len(list))
 	}
 }
 

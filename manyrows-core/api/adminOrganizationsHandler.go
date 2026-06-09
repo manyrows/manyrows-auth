@@ -12,6 +12,7 @@ import (
 	"manyrows-core/utils"
 
 	"github.com/gofrs/uuid/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/rs/zerolog/log"
 )
 
@@ -155,6 +156,298 @@ func (handler *RequestHandler) HandleSetAppOrganizationMemberRoles(w http.Respon
 	}
 	if err := handler.repo.SetOrganizationMemberRoles(ctx, member.ID, roleIDs); err != nil {
 		log.Err(err).Msg("HandleSetAppOrganizationMemberRoles: set roles failed")
+		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+type createAppOrganizationRequest struct {
+	Name string `json:"name"`
+	Slug string `json:"slug"`
+}
+
+// HandleCreateAppOrganization seeds an org from the admin panel (ownerless;
+// the operator then adds members + sets an owner). Requires organizations
+// enabled (fail loud — provisioning into a disabled app makes rows runtime
+// resolution never reads). Slug collisions get a -2, -3 … suffix.
+func (handler *RequestHandler) HandleCreateAppOrganization(w http.ResponseWriter, r *http.Request) {
+	_, ws, ok := handler.adminAndWorkspace(w, r)
+	if !ok {
+		return
+	}
+	projectID, appID, ok := handler.resolvePathIDs(w, r)
+	if !ok {
+		return
+	}
+	appRow, err := handler.repo.GetAppByIDForProject(r.Context(), ws.ID, projectID, appID)
+	if err != nil {
+		if errors.Is(err, repo.ErrNotFound) {
+			WriteError(w, r, "error.appNotFound", http.StatusNotFound)
+			return
+		}
+		log.Err(err).Msg("HandleCreateAppOrganization: load app failed")
+		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
+		return
+	}
+	if !appRow.OrganizationsEnabled {
+		WriteError(w, r, "error.conflict", http.StatusConflict)
+		return
+	}
+	var body createAppOrganizationRequest
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || strings.TrimSpace(body.Name) == "" {
+		WriteError(w, r, "error.badRequest", http.StatusBadRequest)
+		return
+	}
+	name := strings.TrimSpace(body.Name)
+	if len(name) > maxOrgNameLen || len(strings.TrimSpace(body.Slug)) > maxOrgNameLen {
+		WriteError(w, r, "error.badRequest", http.StatusBadRequest)
+		return
+	}
+	slug := strings.TrimSpace(body.Slug)
+	if slug == "" {
+		slug = simpleSlug(name)
+	}
+	org, err := handler.repo.CreateOrganizationWithUniqueSlug(r.Context(), appID, name, slug, nil)
+	if err != nil {
+		log.Err(err).Msg("HandleCreateAppOrganization: create failed")
+		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
+		return
+	}
+	utils.WriteJsonWithStatusCode(w, adminOrgResponse{
+		ID: org.ID.String(), Name: org.Name, Slug: org.Slug, Status: org.Status,
+	}, http.StatusCreated)
+}
+
+type addAppOrgMemberRequest struct {
+	UserID  string `json:"userId"`
+	Email   string `json:"email"`
+	OrgRole string `json:"orgRole"`
+}
+
+// HandleAddAppOrganizationMember adds an existing app user to an org from the
+// admin panel. The target must already be a member of this app's pool (invites
+// onboard new emails). Defaults to the member tier; 409 if already a member.
+func (handler *RequestHandler) HandleAddAppOrganizationMember(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	_, appID, ok := handler.adminAppScope(w, r)
+	if !ok {
+		return
+	}
+	org, ok := handler.adminOrgFromURL(w, r, appID)
+	if !ok {
+		return
+	}
+	appRow, err := handler.repo.GetAppByID(ctx, appID)
+	if err != nil {
+		log.Err(err).Msg("HandleAddAppOrganizationMember: load app failed")
+		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
+		return
+	}
+	var body addAppOrgMemberRequest
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		WriteError(w, r, "error.badRequest", http.StatusBadRequest)
+		return
+	}
+	role := strings.TrimSpace(body.OrgRole)
+	if role == "" {
+		role = core.OrgRoleMember
+	}
+	if !validOrgRole(role) {
+		WriteError(w, r, "error.badRequest", http.StatusBadRequest)
+		return
+	}
+
+	// Resolve the target user by id or email; either way they must be an
+	// existing member of this app.
+	var user *core.User
+	if s := strings.TrimSpace(body.UserID); s != "" {
+		uid, perr := uuid.FromString(s)
+		if perr != nil || uid == uuid.Nil {
+			WriteError(w, r, "error.badRequest", http.StatusBadRequest)
+			return
+		}
+		u, uerr := handler.repo.GetUserByID(ctx, uid)
+		if uerr != nil || u == nil {
+			WriteError(w, r, "error.userNotSignedIn", http.StatusConflict)
+			return
+		}
+		user = u
+	} else if e := strings.TrimSpace(strings.ToLower(body.Email)); e != "" {
+		u, uerr := handler.repo.GetUserByEmail(ctx, e, &appRow)
+		if uerr != nil && !errors.Is(uerr, repo.ErrNotFound) {
+			log.Err(uerr).Msg("HandleAddAppOrganizationMember: email lookup failed")
+			WriteError(w, r, "error.internalError", http.StatusInternalServerError)
+			return
+		}
+		if u == nil {
+			WriteError(w, r, "error.userNotSignedIn", http.StatusConflict)
+			return
+		}
+		user = u
+	} else {
+		WriteError(w, r, "error.badRequest", http.StatusBadRequest)
+		return
+	}
+
+	member, err := handler.repo.GetAppUser(ctx, appID, user.ID)
+	if err != nil {
+		log.Err(err).Msg("HandleAddAppOrganizationMember: membership check failed")
+		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
+		return
+	}
+	if member == nil {
+		WriteError(w, r, "error.userNotSignedIn", http.StatusConflict) // not an app member
+		return
+	}
+
+	m, err := handler.repo.AddOrganizationMember(ctx, org.ID, user.ID, role)
+	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+			WriteError(w, r, "error.conflict", http.StatusConflict) // already a member
+			return
+		}
+		log.Err(err).Msg("HandleAddAppOrganizationMember: add failed")
+		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
+		return
+	}
+	utils.WriteJsonWithStatusCode(w, repo.OrganizationMemberView{
+		UserID: user.ID, Email: user.Email, OrgRole: m.OrgRole, Status: m.Status, Roles: []repo.OrgMemberRoleRef{},
+	}, http.StatusCreated)
+}
+
+// HandleListAppOrganizationInvites lists an org's pending invites (admin
+// visibility). App/workspace-scoped via adminAppScope + adminOrgFromURL.
+func (handler *RequestHandler) HandleListAppOrganizationInvites(w http.ResponseWriter, r *http.Request) {
+	_, appID, ok := handler.adminAppScope(w, r)
+	if !ok {
+		return
+	}
+	org, ok := handler.adminOrgFromURL(w, r, appID)
+	if !ok {
+		return
+	}
+	views, err := handler.repo.ListPendingOrgInvites(r.Context(), org.ID)
+	if err != nil {
+		log.Err(err).Msg("HandleListAppOrganizationInvites failed")
+		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
+		return
+	}
+	if views == nil {
+		views = []repo.OrganizationInviteView{}
+	}
+	utils.WriteJsonWithStatusCode(w, map[string]any{"invites": views}, http.StatusOK)
+}
+
+type createAppOrgInviteRequest struct {
+	Email   string      `json:"email"`
+	OrgRole string      `json:"orgRole"`
+	RoleIDs []uuid.UUID `json:"roleIds"`
+}
+
+// HandleCreateAppOrganizationInvite creates + emails an org invite from the
+// admin panel (reuses the shared invite helper). Defaults to the member tier;
+// role ids are validated against the app's project catalog.
+func (handler *RequestHandler) HandleCreateAppOrganizationInvite(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	_, ws, ok := handler.adminAndWorkspace(w, r)
+	if !ok {
+		return
+	}
+	projectID, appID, ok := handler.resolvePathIDs(w, r)
+	if !ok {
+		return
+	}
+	appRow, err := handler.repo.GetAppByIDForProject(ctx, ws.ID, projectID, appID)
+	if err != nil {
+		if errors.Is(err, repo.ErrNotFound) {
+			WriteError(w, r, "error.appNotFound", http.StatusNotFound)
+			return
+		}
+		log.Err(err).Msg("HandleCreateAppOrganizationInvite: load app failed")
+		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
+		return
+	}
+	org, ok := handler.adminOrgFromURL(w, r, appID)
+	if !ok {
+		return
+	}
+	var body createAppOrgInviteRequest
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		WriteError(w, r, "error.invalidJson", http.StatusBadRequest)
+		return
+	}
+	emailAddr := strings.TrimSpace(strings.ToLower(body.Email))
+	if emailAddr == "" {
+		WriteError(w, r, "error.badRequest", http.StatusBadRequest)
+		return
+	}
+	orgRole := strings.TrimSpace(body.OrgRole)
+	if orgRole == "" {
+		orgRole = core.OrgRoleMember
+	}
+	if !validOrgRole(orgRole) {
+		WriteError(w, r, "error.badRequest", http.StatusBadRequest)
+		return
+	}
+	roleIDs := dedupeUUIDs(body.RoleIDs)
+	if len(roleIDs) > 0 {
+		n, cerr := handler.repo.CountRolesInProject(ctx, projectID, roleIDs)
+		if cerr != nil {
+			log.Err(cerr).Msg("HandleCreateAppOrganizationInvite: role validation failed")
+			WriteError(w, r, "error.internalError", http.StatusInternalServerError)
+			return
+		}
+		if n != len(roleIDs) {
+			WriteError(w, r, "error.badRequest", http.StatusBadRequest)
+			return
+		}
+	}
+	inv, err := handler.createAndEmailOrgInvite(ctx, &appRow, ws, org, emailAddr, orgRole, roleIDs, nil)
+	if err != nil {
+		switch {
+		case errors.Is(err, errOrgInviteAppURLMissing):
+			WriteError(w, r, "error.appUrlRequired", http.StatusBadRequest)
+		case errors.Is(err, errOrgInviteMemberExists):
+			WriteError(w, r, "error.conflict", http.StatusConflict)
+		case errors.Is(err, repo.ErrInvitePending):
+			WriteError(w, r, "error.invitePending", http.StatusConflict)
+		case errors.Is(err, errOrgInviteEmailFailed):
+			WriteError(w, r, "error.inviteEmailFailed", http.StatusInternalServerError)
+		default:
+			log.Err(err).Msg("HandleCreateAppOrganizationInvite failed")
+			WriteError(w, r, "error.internalError", http.StatusInternalServerError)
+		}
+		return
+	}
+	utils.WriteJsonWithStatusCode(w, map[string]any{
+		"id": inv.ID.String(), "email": inv.Email, "orgRole": inv.OrgRole, "status": inv.Status,
+		"createdAt": inv.CreatedAt.Format(time.RFC3339), "expiresAt": inv.ExpiresAt.Format(time.RFC3339),
+	}, http.StatusCreated)
+}
+
+// HandleRevokeAppOrganizationInvite revokes a pending org invite (admin).
+func (handler *RequestHandler) HandleRevokeAppOrganizationInvite(w http.ResponseWriter, r *http.Request) {
+	_, appID, ok := handler.adminAppScope(w, r)
+	if !ok {
+		return
+	}
+	org, ok := handler.adminOrgFromURL(w, r, appID)
+	if !ok {
+		return
+	}
+	inviteID, err := utils.GetPathUUID("inviteId", r)
+	if err != nil || inviteID == uuid.Nil {
+		WriteError(w, r, "error.notFound", http.StatusNotFound)
+		return
+	}
+	if err := handler.repo.RevokeOrganizationInvite(r.Context(), org.ID, inviteID); err != nil {
+		if errors.Is(err, repo.ErrNotFound) {
+			WriteError(w, r, "error.notFound", http.StatusNotFound)
+			return
+		}
+		log.Err(err).Msg("HandleRevokeAppOrganizationInvite failed")
 		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 		return
 	}
