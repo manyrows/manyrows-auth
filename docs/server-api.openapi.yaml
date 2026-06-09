@@ -39,6 +39,8 @@ tags:
     description: Manage config values and feature-flag overrides (read via delivery).
   - name: Webhooks
     description: Manage the endpoints ManyRows POSTs auth events to.
+  - name: Organizations
+    description: Provision multi-tenant organizations, their members, and invites.
 
 paths:
   /apps/{appId}:
@@ -1262,6 +1264,254 @@ paths:
         "204": { description: Cleared. }
         "404": { $ref: "#/components/responses/NotFound" }
 
+  /apps/{appId}/organizations:
+    parameters:
+      - $ref: "#/components/parameters/AppId"
+    get:
+      tags: [Organizations]
+      summary: List a user's organizations
+      description: The organizations the given user belongs to in this app.
+      operationId: listOrganizationsForUser
+      parameters:
+        - { name: userId, in: query, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: The user's organization memberships.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  organizations: { type: array, items: { $ref: "#/components/schemas/OrganizationMembership" } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+    post:
+      tags: [Organizations]
+      summary: Create an organization
+      description: >
+        Creates an org and seeds ownerUserId (who must already be a member of
+        this app) as its owner. Requires organizations to be enabled for the app.
+      operationId: createOrganization
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateOrganizationRequest" }
+      responses:
+        "201":
+          description: The created organization.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Organization" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "409": { description: Organizations not enabled for this app, or the owner is not an app member. }
+
+  /apps/{appId}/organizations/{orgId}:
+    parameters:
+      - $ref: "#/components/parameters/AppId"
+      - $ref: "#/components/parameters/OrgId"
+    get:
+      tags: [Organizations]
+      summary: Get an organization
+      operationId: getOrganization
+      responses:
+        "200":
+          description: The organization.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Organization" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    patch:
+      tags: [Organizations]
+      summary: Update an organization
+      description: Rename and/or change the slug. Slug collisions are auto-suffixed.
+      operationId: updateOrganization
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UpdateOrganizationRequest" }
+      responses:
+        "200":
+          description: The updated organization.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Organization" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      tags: [Organizations]
+      summary: Delete an organization
+      description: >
+        Hard-deletes the org (members, member-roles and invites cascade;
+        sessions detach). Owner-only and fail-closed: actorUserId must name an
+        active OWNER of the org.
+      operationId: deleteOrganization
+      parameters:
+        - { name: actorUserId, in: query, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "204": { description: Deleted. }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { description: actorUserId is not an active owner of the org. }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /apps/{appId}/organizations/{orgId}/members:
+    parameters:
+      - $ref: "#/components/parameters/AppId"
+      - $ref: "#/components/parameters/OrgId"
+    get:
+      tags: [Organizations]
+      summary: List organization members
+      operationId: listOrganizationMembers
+      parameters:
+        - { name: page, in: query, schema: { type: integer } }
+        - { name: pageSize, in: query, schema: { type: integer } }
+        - { name: search, in: query, schema: { type: string } }
+      responses:
+        "200":
+          description: A page of members.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  members: { type: array, items: { $ref: "#/components/schemas/OrganizationMember" } }
+                  total: { type: integer }
+                  page: { type: integer }
+                  pageSize: { type: integer }
+    post:
+      tags: [Organizations]
+      summary: Add an organization member
+      description: >
+        Adds an existing app member to the org by userId or email. The target
+        must already belong to the app's pool (use an invite to onboard a new
+        email). Defaults to the member tier.
+      operationId: addOrganizationMember
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AddOrganizationMemberRequest" }
+      responses:
+        "201":
+          description: The added member.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OrganizationMember" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "409": { description: Already a member, or the target is not an app member. }
+
+  /apps/{appId}/organizations/{orgId}/members/{userId}:
+    parameters:
+      - $ref: "#/components/parameters/AppId"
+      - $ref: "#/components/parameters/OrgId"
+      - $ref: "#/components/parameters/UserId"
+    get:
+      tags: [Organizations]
+      summary: Get an organization member
+      description: >
+        Returns the member's tier, or 404 if they are not an active member.
+        Intended as a 200/404 authorization check for a consumer's per-request
+        middleware.
+      operationId: getOrganizationMember
+      responses:
+        "200":
+          description: The member's tier and status.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  userId: { type: string, format: uuid }
+                  orgRole: { $ref: "#/components/schemas/OrgRole" }
+                  status: { type: string }
+        "404": { $ref: "#/components/responses/NotFound" }
+    patch:
+      tags: [Organizations]
+      summary: Set a member's tier
+      description: Changes the member's org tier. Last-owner protected.
+      operationId: setOrganizationMemberRole
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [orgRole]
+              properties:
+                orgRole: { $ref: "#/components/schemas/OrgRole" }
+      responses:
+        "204": { description: Updated. }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { description: Would remove the last owner. }
+    delete:
+      tags: [Organizations]
+      summary: Remove an organization member
+      operationId: removeOrganizationMember
+      responses:
+        "204": { description: Removed. }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { description: Would remove the last owner. }
+
+  /apps/{appId}/organizations/{orgId}/invites:
+    parameters:
+      - $ref: "#/components/parameters/AppId"
+      - $ref: "#/components/parameters/OrgId"
+    get:
+      tags: [Organizations]
+      summary: List pending invites
+      operationId: listOrganizationInvites
+      parameters:
+        - { name: page, in: query, schema: { type: integer } }
+        - { name: pageSize, in: query, schema: { type: integer } }
+        - { name: search, in: query, schema: { type: string } }
+      responses:
+        "200":
+          description: A page of pending invites.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  invites: { type: array, items: { $ref: "#/components/schemas/OrganizationInvite" } }
+                  total: { type: integer }
+                  page: { type: integer }
+                  pageSize: { type: integer }
+    post:
+      tags: [Organizations]
+      summary: Create an invite
+      description: >
+        Creates a pending invite and emails the accept link. Requires the app's
+        configured app URL (the invite link lands there). 409 if the email is
+        already an active member or already has a pending invite.
+      operationId: createOrganizationInvite
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateOrganizationInviteRequest" }
+      responses:
+        "201":
+          description: The created invite.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OrganizationInvite" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "409": { description: Already an active member, or a pending invite already exists. }
+
+  /apps/{appId}/organizations/{orgId}/invites/{inviteId}:
+    parameters:
+      - $ref: "#/components/parameters/AppId"
+      - $ref: "#/components/parameters/OrgId"
+      - { name: inviteId, in: path, required: true, schema: { type: string, format: uuid } }
+    delete:
+      tags: [Organizations]
+      summary: Revoke an invite
+      operationId: revokeOrganizationInvite
+      responses:
+        "204": { description: Revoked. }
+        "404": { $ref: "#/components/responses/NotFound" }
+
 components:
   securitySchemes:
     ApiKeyAuth:
@@ -1277,6 +1527,11 @@ components:
       schema: { type: string, format: uuid }
     UserId:
       name: userId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    OrgId:
+      name: orgId
       in: path
       required: true
       schema: { type: string, format: uuid }
@@ -1686,7 +1941,7 @@ components:
         appId: { type: string, format: uuid }
         url: { type: string, format: uri }
         secret: { type: string, description: "HMAC signing secret — present only in the create response." }
-        events: { type: array, items: { type: string } }
+        events: { type: array, items: { $ref: "#/components/schemas/WebhookEventName" } }
         status: { type: string, enum: [active, disabled] }
         description: { type: string }
         createdAt: { type: string, format: date-time }
@@ -1705,15 +1960,15 @@ components:
         url: { type: string, format: uri }
         events:
           type: array
-          items: { type: string }
-          description: "Events to subscribe to — e.g. user.created, user.login, user.password_change."
+          items: { $ref: "#/components/schemas/WebhookEventName" }
+          description: "Events to subscribe to. See WebhookEventName for the full set."
         description: { type: string }
 
     UpdateWebhookRequest:
       type: object
       properties:
         url: { type: string, format: uri }
-        events: { type: array, items: { type: string } }
+        events: { type: array, items: { $ref: "#/components/schemas/WebhookEventName" } }
         status: { type: string, enum: [active, disabled] }
         description: { type: string }
 
@@ -1849,3 +2104,112 @@ components:
           type: array
           items: { type: string, format: uuid }
           description: If set, the flag applies only to users with one of these roles.
+
+    OrgRole:
+      type: string
+      enum: [owner, admin, member]
+
+    Organization:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        appId: { type: string, format: uuid }
+        name: { type: string }
+        slug: { type: string }
+        status: { type: string, description: "active | archived" }
+        createdAt: { type: string, format: date-time }
+
+    OrganizationMembership:
+      type: object
+      description: An organization together with the queried user's tier in it.
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        slug: { type: string }
+        status: { type: string }
+        orgRole: { $ref: "#/components/schemas/OrgRole" }
+
+    OrgMemberRoleRef:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        slug: { type: string }
+        name: { type: string }
+
+    OrganizationMember:
+      type: object
+      properties:
+        userId: { type: string, format: uuid }
+        email: { type: string, format: email }
+        orgRole: { $ref: "#/components/schemas/OrgRole" }
+        status: { type: string }
+        roles: { type: array, items: { $ref: "#/components/schemas/OrgMemberRoleRef" } }
+
+    OrganizationInvite:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        email: { type: string, format: email }
+        orgRole: { $ref: "#/components/schemas/OrgRole" }
+        status: { type: string }
+        createdAt: { type: string, format: date-time }
+        expiresAt: { type: string, format: date-time }
+
+    CreateOrganizationRequest:
+      type: object
+      required: [name, ownerUserId]
+      properties:
+        name: { type: string }
+        slug: { type: string, description: Optional; derived from the name when omitted. }
+        ownerUserId: { type: string, format: uuid, description: An existing app member, seeded as the org owner. }
+
+    UpdateOrganizationRequest:
+      type: object
+      properties:
+        name: { type: string }
+        slug: { type: string }
+
+    AddOrganizationMemberRequest:
+      type: object
+      description: Provide userId or email (one is required).
+      properties:
+        userId: { type: string, format: uuid }
+        email: { type: string, format: email }
+        orgRole: { $ref: "#/components/schemas/OrgRole" }
+
+    CreateOrganizationInviteRequest:
+      type: object
+      required: [email]
+      properties:
+        email: { type: string, format: email }
+        orgRole: { $ref: "#/components/schemas/OrgRole" }
+        roleIds: { type: array, items: { type: string, format: uuid } }
+
+    WebhookEventName:
+      type: string
+      description: The set of subscribable webhook event names.
+      enum:
+        - user.login
+        - user.register
+        - user.logout
+        - user.password_change
+        - user.password_reset
+        - user.delete
+        - user.created
+        - user.email_change
+        - user.passkey_register
+        - user.passkey_delete
+        - user.mfa_enabled
+        - user.mfa_disabled
+        - session.revoked
+        - organization.created
+        - organization.updated
+        - organization.archived
+        - organization.unarchived
+        - organization.deleted
+        - organization.member_added
+        - organization.member_removed
+        - organization.member_updated
+        - organization.invite_created
+        - organization.invite_accepted
+        - organization.invite_revoked
