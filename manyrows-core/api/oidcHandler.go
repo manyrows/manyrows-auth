@@ -11,6 +11,7 @@ import (
 	"html/template"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -657,6 +658,42 @@ func oidcTokenError(w http.ResponseWriter, status int, code, description string)
 	_ = json.NewEncoder(w).Encode(body)
 }
 
+// attemptPurposeOIDCToken is the rate-limit bucket for the OIDC token
+// endpoint. IP-keyed (subject is always ""), shared across all of an
+// install's OIDC apps.
+const attemptPurposeOIDCToken = "oidc_token"
+
+// checkOIDCTokenRateLimit enforces the per-IP attempt cap on the OIDC
+// token endpoint. It mirrors the refresh-token rotation limiter
+// (IP-only, same maxAttemptsPerIP10Min cap) but writes an OAuth-shaped
+// error so RP libraries still parse the 429. Only FAILED attempts burn
+// the budget (see burnOIDCTokenAttempt on the invalid_client /
+// invalid_grant paths), so a busy RP behind a shared egress IP whose
+// exchanges succeed is never throttled. Returns false (response already
+// written) to abort.
+func (handler *RequestHandler) checkOIDCTokenRateLimit(w http.ResponseWriter, r *http.Request, ip string) bool {
+	since := time.Now().UTC().Add(-attemptWindow)
+	count, err := handler.repo.CountAttemptsByIP(r.Context(), attemptPurposeOIDCToken, ip, since)
+	if err != nil {
+		log.Err(err).Msg("OIDCToken: failed to count attempts by IP")
+		oidcTokenError(w, http.StatusInternalServerError, "server_error", "rate-limit check failed")
+		return false
+	}
+	if count >= maxAttemptsPerIP10Min {
+		w.Header().Set("Retry-After", strconv.Itoa(int(attemptWindow.Seconds())))
+		oidcTokenError(w, http.StatusTooManyRequests, "temporarily_unavailable", "too many token requests; slow down and retry later")
+		return false
+	}
+	return true
+}
+
+// burnOIDCTokenAttempt records a failed /oidc/token attempt against the
+// caller's IP. Best-effort: a DB blip here doesn't change the outcome
+// of the current (already-failed) request.
+func (handler *RequestHandler) burnOIDCTokenAttempt(r *http.Request, ip string) {
+	_ = handler.repo.InsertAttempt(r.Context(), attemptPurposeOIDCToken, "", ip)
+}
+
 // OIDCToken handles POST /oidc/token. Supports authorization_code +
 // refresh_token grants; rejects everything else with unsupported_grant_type.
 func (handler *RequestHandler) OIDCToken(w http.ResponseWriter, r *http.Request) {
@@ -684,6 +721,15 @@ func (handler *RequestHandler) OIDCToken(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
+	// Per-IP rate limit. This is a public, unauthenticated surface:
+	// without a cap the client_secret and code/refresh_token grants are
+	// brute-forceable. Only failures burn the budget (below), so
+	// legitimate token exchanges are unaffected.
+	ip := auth.ClientIP(r)
+	if !handler.checkOIDCTokenRateLimit(w, r, ip) {
+		return
+	}
+
 	grantType := strings.TrimSpace(r.PostForm.Get("grant_type"))
 
 	// Client auth — Basic header takes precedence over form body.
@@ -693,10 +739,12 @@ func (handler *RequestHandler) OIDCToken(w http.ResponseWriter, r *http.Request)
 		clientSecret = strings.TrimSpace(r.PostForm.Get("client_secret"))
 	}
 	if clientID != app.ID.String() {
+		handler.burnOIDCTokenAttempt(r, ip)
 		oidcTokenError(w, http.StatusUnauthorized, "invalid_client", "client_id does not match this app")
 		return
 	}
 	if !verifyOIDCClientAuth(cfg, clientSecret) {
+		handler.burnOIDCTokenAttempt(r, ip)
 		oidcTokenError(w, http.StatusUnauthorized, "invalid_client", "client credentials are not valid")
 		return
 	}
@@ -717,6 +765,7 @@ func (handler *RequestHandler) OIDCToken(w http.ResponseWriter, r *http.Request)
 func (handler *RequestHandler) handleOIDCAuthorizationCodeGrant(w http.ResponseWriter, r *http.Request, app *core.App) {
 	ctx := r.Context()
 	ws, _ := core.WorkspaceFromContext(ctx)
+	ip := auth.ClientIP(r)
 
 	rawCode := strings.TrimSpace(r.PostForm.Get("code"))
 	redirectURI := strings.TrimSpace(r.PostForm.Get("redirect_uri"))
@@ -751,6 +800,9 @@ func (handler *RequestHandler) handleOIDCAuthorizationCodeGrant(w http.ResponseW
 				Msg("OIDC token: replay of consumed authorization code — revoking session")
 			_ = handler.clientAuthService.RevokeAllSessionTokens(ctx, *sessionID)
 		}
+		// Guessing/replay vector: an unknown or already-consumed code.
+		// Burn the budget so floods are throttled.
+		handler.burnOIDCTokenAttempt(r, ip)
 		oidcTokenError(w, http.StatusBadRequest, "invalid_grant", "code is invalid, expired, or already used")
 		return
 	}
@@ -828,6 +880,7 @@ func (handler *RequestHandler) handleOIDCAuthorizationCodeGrant(w http.ResponseW
 func (handler *RequestHandler) handleOIDCRefreshTokenGrant(w http.ResponseWriter, r *http.Request, app *core.App) {
 	ctx := r.Context()
 	ws, _ := core.WorkspaceFromContext(ctx)
+	ip := auth.ClientIP(r)
 
 	refreshTokenStr := strings.TrimSpace(r.PostForm.Get("refresh_token"))
 	if refreshTokenStr == "" {
@@ -854,6 +907,10 @@ func (handler *RequestHandler) handleOIDCRefreshTokenGrant(w http.ResponseWriter
 	// set before the rotate.
 	rt, err := handler.repo.GetClientRefreshTokenByHash(ctx, hashTokenForRefresh(refreshTokenStr))
 	if err != nil || rt == nil {
+		// Guessing vector: a bad refresh_token value. Burn the budget so
+		// floods of guesses are throttled (a valid token that succeeds
+		// never reaches here, so legitimate refreshes are unaffected).
+		handler.burnOIDCTokenAttempt(r, ip)
 		oidcTokenError(w, http.StatusBadRequest, "invalid_grant", "refresh_token is invalid")
 		return
 	}
