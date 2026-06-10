@@ -77,6 +77,11 @@ type OIDCAuthorizeParams struct {
 	Nonce               string `json:"nonce"`
 	CodeChallenge       string `json:"code_challenge"`
 	CodeChallengeMethod string `json:"code_challenge_method"`
+	// Prompt is the space-separated set of OIDC prompt values from the
+	// original /authorize request. Persisted on the pending row so that
+	// Resume and the consent handlers can re-evaluate prompt=consent and
+	// prompt=none without re-parsing the URL.
+	Prompt string `json:"prompt,omitempty"`
 }
 
 // OIDCPendingAuthorize is the short-lived row holding an /authorize

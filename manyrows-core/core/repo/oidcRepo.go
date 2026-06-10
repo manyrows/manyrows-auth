@@ -219,6 +219,34 @@ func (r *Repo) ConsumeOIDCPendingAuthorize(ctx context.Context, id uuid.UUID) (*
 	return &p, &params, true, nil
 }
 
+// PeekOIDCPendingAuthorize reads a pending /authorize row without
+// consuming it — the consent GET renders from it; only the consent POST
+// consumes. Same return shape as Consume.
+func (r *Repo) PeekOIDCPendingAuthorize(ctx context.Context, id uuid.UUID) (*core.OIDCPendingAuthorize, *core.OIDCAuthorizeParams, bool, error) {
+	const q = `
+		select id, app_id, request_params, created_at, expires_at, consumed_at
+		from oidc_pending_authorize
+		where id = $1
+		  and consumed_at is null
+		  and expires_at > now()
+	`
+	var p core.OIDCPendingAuthorize
+	err := r.db.Pool().QueryRow(ctx, q, id).Scan(
+		&p.ID, &p.AppID, &p.RequestParams, &p.CreatedAt, &p.ExpiresAt, &p.ConsumedAt,
+	)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, nil, false, nil
+		}
+		return nil, nil, false, fmt.Errorf("PeekOIDCPendingAuthorize: %w", err)
+	}
+	var params core.OIDCAuthorizeParams
+	if err := json.Unmarshal(p.RequestParams, &params); err != nil {
+		return nil, nil, false, fmt.Errorf("PeekOIDCPendingAuthorize unmarshal: %w", err)
+	}
+	return &p, &params, true, nil
+}
+
 // SweepExpiredOIDCPendingAuthorize is the janitor counterpart for
 // pending /authorize rows. Same shape as SweepExpiredOIDCAuthCodes.
 func (r *Repo) SweepExpiredOIDCPendingAuthorize(ctx context.Context) (int64, error) {
@@ -275,7 +303,7 @@ type UpdateAppOIDCConfigParams struct {
 	RequireConsent         bool
 }
 
-// UpdateAppOIDCConfig writes the four OIDC columns. ClientSecretHash
+// UpdateAppOIDCConfig writes the five OIDC columns. ClientSecretHash
 // uses tri-state nil-sentinel semantics — nil means "leave as-is" so
 // admins can toggle redirect URIs without re-pasting the secret hash;
 // an explicit empty string clears it (downgrade to public client).

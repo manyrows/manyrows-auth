@@ -256,6 +256,9 @@ func (handler *RequestHandler) OIDCAuthorize(w http.ResponseWriter, r *http.Requ
 		Nonce:               strings.TrimSpace(q.Get("nonce")),
 		CodeChallenge:       strings.TrimSpace(q.Get("code_challenge")),
 		CodeChallengeMethod: strings.TrimSpace(q.Get("code_challenge_method")),
+		// Prompt is stored on the pending row so Resume + consent can
+		// re-evaluate prompt=consent / prompt=none without re-parsing the URL.
+		Prompt: strings.TrimSpace(q.Get("prompt")),
 	}
 
 	if e := validateOIDCAuthorizeParams(params); e != nil {
@@ -275,6 +278,14 @@ func (handler *RequestHandler) OIDCAuthorize(w http.ResponseWriter, r *http.Requ
 			}
 		}
 		return false
+	}
+	// OIDC §3.1.2.1: "none" MUST NOT be combined with other prompt values.
+	if hasPrompt("none") && len(prompts) > 1 {
+		redirectOIDCAuthorizeError(w, r, redirectURI, params.State, oidcAuthorizeError{
+			Code:        "invalid_request",
+			Description: "prompt=none must not be combined with other prompt values",
+		})
+		return
 	}
 	maxAge := -1
 	if ma := strings.TrimSpace(q.Get("max_age")); ma != "" {
@@ -299,6 +310,52 @@ func (handler *RequestHandler) OIDCAuthorize(w http.ResponseWriter, r *http.Requ
 		forceReauth = true // the existing auth is older than the RP allows
 	}
 	if sessionUsable && !forceReauth {
+		// Check whether the consent screen should interpose.
+		grantScope, grantFound, grantErr := handler.repo.GetOIDCConsent(ctx, ses.UserID, app.ID)
+		if grantErr != nil {
+			log.Err(grantErr).Str("app_id", app.ID.String()).Msg("OIDCAuthorize: GetOIDCConsent failed")
+			redirectOIDCAuthorizeError(w, r, redirectURI, params.State, oidcAuthorizeError{
+				Code:        "server_error",
+				Description: "consent lookup failed",
+			})
+			return
+		}
+		if consentNeeded(cfg, prompts, grantScope, grantFound, params.Scope) {
+			// prompt=none cannot interact — signal consent_required.
+			if hasPrompt("none") {
+				redirectOIDCAuthorizeError(w, r, redirectURI, params.State, oidcAuthorizeError{
+					Code:        "consent_required",
+					Description: "consent is required and prompt=none was requested",
+				})
+				return
+			}
+			// Create a pending row and route the browser to the consent page.
+			// Reuse the same flood-cap as the unauthenticated login path.
+			ip := auth.ClientIP(r)
+			since := time.Now().UTC().Add(-attemptWindow)
+			if count, cerr := handler.repo.CountAttemptsByIP(ctx, attemptPurposeOIDCAuthorize, ip, since); cerr == nil && count >= maxOIDCAuthorizeStartsPerIP10Min {
+				w.Header().Set("Retry-After", strconv.Itoa(int(attemptWindow.Seconds())))
+				redirectOIDCAuthorizeError(w, r, redirectURI, params.State, oidcAuthorizeError{
+					Code:        "temporarily_unavailable",
+					Description: "too many authorize requests; slow down and retry later",
+				})
+				return
+			}
+			_ = handler.repo.InsertAttempt(ctx, attemptPurposeOIDCAuthorize, "", ip)
+			pendingID, cerr := handler.repo.CreateOIDCPendingAuthorize(ctx, app.ID, params)
+			if cerr != nil {
+				log.Err(cerr).Str("app_id", app.ID.String()).Msg("OIDCAuthorize: CreateOIDCPendingAuthorize (consent) failed")
+				redirectOIDCAuthorizeError(w, r, redirectURI, params.State, oidcAuthorizeError{
+					Code:        "server_error",
+					Description: "could not start consent",
+				})
+				return
+			}
+			consentURL := fmt.Sprintf("/x/%s/apps/%s/oidc/consent?req=%s",
+				url.PathEscape(ws.Slug), app.ID.String(), pendingID.String())
+			http.Redirect(w, r, consentURL, http.StatusFound)
+			return
+		}
 		handler.mintCodeAndRedirect(w, r, app, ses, params)
 		return
 	}
@@ -404,6 +461,40 @@ func (handler *RequestHandler) OIDCAuthorizeResume(w http.ResponseWriter, r *htt
 			Code:        "access_denied",
 			Description: "sign-in did not complete",
 		})
+		return
+	}
+
+	// After sign-in, check whether the consent screen should interpose.
+	// Use the Prompt field stored on the params (set at /authorize parse time).
+	resumePrompts := strings.Fields(params.Prompt)
+	grantScope, grantFound, grantErr := handler.repo.GetOIDCConsent(ctx, ses.UserID, app.ID)
+	if grantErr != nil {
+		log.Err(grantErr).Str("app_id", app.ID.String()).Msg("OIDCAuthorizeResume: GetOIDCConsent failed")
+		redirectOIDCAuthorizeError(w, r, params.RedirectURI, params.State, oidcAuthorizeError{
+			Code:        "server_error",
+			Description: "consent lookup failed",
+		})
+		return
+	}
+	if consentNeeded(cfg, resumePrompts, grantScope, grantFound, params.Scope) {
+		// Create a fresh pending row for the consent page.
+		ws, _ := core.WorkspaceFromContext(ctx)
+		pendingID, cerr := handler.repo.CreateOIDCPendingAuthorize(ctx, app.ID, *params)
+		if cerr != nil {
+			log.Err(cerr).Str("app_id", app.ID.String()).Msg("OIDCAuthorizeResume: CreateOIDCPendingAuthorize (consent) failed")
+			redirectOIDCAuthorizeError(w, r, params.RedirectURI, params.State, oidcAuthorizeError{
+				Code:        "server_error",
+				Description: "could not start consent",
+			})
+			return
+		}
+		var slug string
+		if ws != nil {
+			slug = ws.Slug
+		}
+		consentURL := fmt.Sprintf("/x/%s/apps/%s/oidc/consent?req=%s",
+			url.PathEscape(slug), app.ID.String(), pendingID.String())
+		http.Redirect(w, r, consentURL, http.StatusFound)
 		return
 	}
 

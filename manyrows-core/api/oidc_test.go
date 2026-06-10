@@ -110,6 +110,8 @@ func setupOIDCRouter(t *testing.T) *oidcTestEnv {
 			oidc.Get("/authorize", h.OIDCAuthorize)
 			oidc.Get("/authorize/resume", h.OIDCAuthorizeResume)
 			oidc.Get("/login", h.OIDCLoginPage)
+			oidc.Get("/consent", h.OIDCConsentPage)
+			oidc.Post("/consent", h.OIDCConsentDecision)
 			oidc.Post("/token", h.OIDCToken)
 			oidc.Post("/revoke", h.OIDCRevoke)
 			oidc.Post("/introspect", h.OIDCIntrospect)
