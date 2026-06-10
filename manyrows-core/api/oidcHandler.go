@@ -655,10 +655,10 @@ var oidcLoginTmpl = template.Must(template.New("oidc_login").Parse(`<!doctype ht
     <div id="root"></div>
     <script>
       (function () {
-        var resumeURL = {{ .ResumeURL | js }};
-        var workspace = {{ .WorkspaceSlug | js }};
-        var appId = {{ .AppID | js }};
-        var loginHint = {{ .LoginHint | js }};
+        var resumeURL = {{ .ResumeURL }};
+        var workspace = {{ .WorkspaceSlug }};
+        var appId = {{ .AppID }};
+        var loginHint = {{ .LoginHint }};
         function boot() {
           if (!window.ManyRows || !window.ManyRows.AppKit) {
             return setTimeout(boot, 50);

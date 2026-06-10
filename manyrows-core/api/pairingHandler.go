@@ -506,9 +506,9 @@ var qrSignInTmpl = template.Must(template.New("qr_sign_in").Parse(`<!doctype htm
     </div>
     <script>
       (function () {
-        var workspace = {{ .WorkspaceSlug | js }};
-        var appId = {{ .AppID | js }};
-        var returnTo = {{ .ReturnTo | js }};
+        var workspace = {{ .WorkspaceSlug }};
+        var appId = {{ .AppID }};
+        var returnTo = {{ .ReturnTo }};
         var base = "/x/" + encodeURIComponent(workspace) + "/apps/" + encodeURIComponent(appId);
         var pollTimer = null, expiresTimer = null;
 
@@ -710,9 +710,9 @@ var pairLandingTmpl = template.Must(template.New("pair_landing").Parse(`<!doctyp
     </div>
     <script>
       (function () {
-        var workspace = {{ .WorkspaceSlug | js }};
-        var appId = {{ .AppID | js }};
-        var pairingCode = {{ .PairingCode | js }};
+        var workspace = {{ .WorkspaceSlug }};
+        var appId = {{ .AppID }};
+        var pairingCode = {{ .PairingCode }};
         var base = "/x/" + encodeURIComponent(workspace) + "/apps/" + encodeURIComponent(appId);
 
         // AppKit's onJWT hands us the live bearer token. We carry it

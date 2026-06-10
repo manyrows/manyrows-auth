@@ -159,21 +159,74 @@ func TestOIDCAuthorize_LoginHint_ThreadsToShim(t *testing.T) {
 
 	t.Run("hint reaches AppKit init options", func(t *testing.T) {
 		body := loginPageFor(t, "hint@example.com")
-		if !strings.Contains(body, "loginHint") {
-			t.Errorf("login page missing loginHint option:\n%s", body)
-		}
-		if !strings.Contains(body, "hint@example.com") {
-			t.Errorf("login page missing hint value:\n%s", body)
+		if !strings.Contains(body, `var loginHint = "hint@example.com";`) {
+			t.Errorf("login page missing rendered loginHint value:\n%s", body)
 		}
 	})
 
 	t.Run("over-length hint is dropped", func(t *testing.T) {
 		long := strings.Repeat("a", 250) + "@example.com" // > 254 chars
 		body := loginPageFor(t, long)
+		if !strings.Contains(body, `var loginHint = "";`) {
+			t.Errorf("over-length login_hint should render as empty string")
+		}
 		if strings.Contains(body, long) || strings.Contains(body, strings.Repeat("a", 250)) {
 			t.Errorf("over-length login_hint should be dropped, but appears on page")
 		}
 	})
+
+	t.Run("script-closing hint cannot break out of the inline script", func(t *testing.T) {
+		body := loginPageFor(t, "</script><script>alert(1)</script>@x.com")
+		if strings.Contains(body, "<script>alert(1)</script>") {
+			t.Errorf("raw script payload leaked into the page:\n%s", body)
+		}
+	})
+}
+
+// The login shim's resumeURL must be a clean JS string literal whose query
+// key is literally `req`. With the old `{{ .ResumeURL | js }}` pipeline the
+// value was double-escaped (text/template JSEscaper + html/template
+// jsValEscaper), rendering `req\u003d` — the browser then sent a query key
+// literally named `req\u003d...` and resume broke.
+func TestOIDCLoginShim_ResumeURLNotMangled(t *testing.T) {
+	e := setupOIDCRouter(t)
+	redirect := "https://customer.example/callback"
+	e.enableOIDC(t, []string{redirect}, nil, "")
+	_, challenge := makePKCE()
+
+	rr := authorizeGET(e, baseAuthorizeQuery(e, redirect, challenge), "") // no session → login shim
+	if rr.Code != http.StatusFound {
+		t.Fatalf("authorize: expected 302, got %d (%s)", rr.Code, rr.Body.String())
+	}
+	loc := rr.Header().Get("Location")
+	if !strings.Contains(loc, "/oidc/login?req=") {
+		t.Fatalf("expected redirect to oidc/login, got %q", loc)
+	}
+	req := httptest.NewRequest("GET", loc, nil)
+	page := httptest.NewRecorder()
+	e.router.ServeHTTP(page, req)
+	if page.Code != http.StatusOK {
+		t.Fatalf("login page: expected 200, got %d (%s)", page.Code, page.Body.String())
+	}
+	body := page.Body.String()
+
+	// Pull out the rendered `var resumeURL = ...;` line.
+	var line string
+	for _, l := range strings.Split(body, "\n") {
+		if strings.Contains(l, "var resumeURL") {
+			line = strings.TrimSpace(l)
+			break
+		}
+	}
+	if line == "" {
+		t.Fatalf("login page missing `var resumeURL` line:\n%s", body)
+	}
+	if strings.Contains(strings.ToLower(line), `\u003d`) {
+		t.Errorf("resumeURL is double-escaped (contains \\u003d): %s", line)
+	}
+	if !strings.Contains(line, "req=") {
+		t.Errorf("resumeURL missing literal `req=` query key: %s", line)
+	}
 }
 
 // max_age=0 forces re-auth: the existing session is always "too old".
