@@ -1857,6 +1857,8 @@
   "projectMembers.enableBody": "이 사용자가 다시 로그인할 수 있게 됩니다.",
   "projectMembers.userEnabled": "사용자가 활성화되었습니다",
   "projectMembers.userDisabled": "사용자가 비활성화되었습니다",
+  "appUsers.organizations": "조직",
+  "appUsers.orgNone": "소속된 조직이 없습니다",
   "sessions.columnUserId": "사용자 ID",
   "sessions.user": "사용자"
 }

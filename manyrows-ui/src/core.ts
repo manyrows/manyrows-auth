@@ -90,6 +90,7 @@ export interface App {
   enabled?: boolean;
   appUrl?: string;
   authDomain?: string;
+  organizationsEnabled?: boolean;
   createdAt: string;
   updatedAt: string;
 }

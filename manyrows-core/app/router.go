@@ -366,6 +366,9 @@ func (a *AppService) initRouter() error {
 			r.Get("/users/{userId}/passkeys", requestHandler.HandleAdminListUserPasskeys)
 			r.Delete("/users/{userId}/passkeys/{passkeyId}", requestHandler.HandleAdminDeleteUserPasskey)
 
+			// Organizations (app-scoped, display-only for user-detail)
+			r.Get("/users/{userId}/organizations", requestHandler.HandleAdminUserOrganizations)
+
 			// Social-account identities (Google/Apple/Microsoft/GitHub)
 			r.Get("/users/{userId}/identities", requestHandler.HandleAdminListUserIdentities)
 			r.Delete("/users/{userId}/identities/{provider}", requestHandler.HandleAdminDeleteUserIdentity)

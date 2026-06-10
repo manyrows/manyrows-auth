@@ -742,6 +742,25 @@ export default function AppUsers({ project, appId: appIdProp }: Props) {
     }
   }, [project.workspaceId, project.id]);
 
+  // User's org memberships in the info dialog (orgs feature only)
+  type OrgMembership = { id: string; name: string; slug: string; orgRole: string };
+  const [userOrgs, setUserOrgs] = React.useState<OrgMembership[]>([]);
+  const [userOrgsLoading, setUserOrgsLoading] = React.useState(false);
+
+  const loadUserOrgs = React.useCallback(async (userId: string, appId: string) => {
+    setUserOrgsLoading(true);
+    try {
+      const r = await axios.get<{ organizations: OrgMembership[] }>(
+        `/admin/workspace/${project.workspaceId}/projects/${project.id}/apps/${appId}/users/${userId}/organizations`,
+      );
+      setUserOrgs(r.data?.organizations ?? []);
+    } catch {
+      setUserOrgs([]);
+    } finally {
+      setUserOrgsLoading(false);
+    }
+  }, [project.workspaceId, project.id]);
+
   const memberPermsUrl = `/admin/workspace/${project.workspaceId}/projects/${project.id}/memberPermissions`;
 
   // Load a member's current direct (per-user) permission ids for an app, used
@@ -800,9 +819,13 @@ export default function AppUsers({ project, appId: appIdProp }: Props) {
     setUserFieldEdits({});
     setUserFieldEditing(false);
     setIdentities([]);
+    setUserOrgs([]);
     void loadUserFields(member.accountId);
     if (selectedAppId) {
       void loadIdentities(member.accountId, selectedAppId);
+      if (selectedApp?.organizationsEnabled) {
+        void loadUserOrgs(member.accountId, selectedAppId);
+      }
     }
   };
 
@@ -2246,6 +2269,32 @@ export default function AppUsers({ project, appId: appIdProp }: Props) {
                   </Stack>
                 )}
               </Stack>
+
+              {/* Organizations (visible only when app has orgs enabled) */}
+              {selectedApp?.organizationsEnabled && (
+                <>
+                  <Divider />
+                  <Stack spacing={0.75}>
+                    <SectionLabel>{t("appUsers.organizations", { defaultValue: "Organizations" })}</SectionLabel>
+                    {userOrgsLoading ? (
+                      <CircularProgress size={14} />
+                    ) : userOrgs.length === 0 ? (
+                      <Typography variant="caption" color="text.disabled">
+                        {t("appUsers.orgNone", { defaultValue: "Not a member of any organization" })}
+                      </Typography>
+                    ) : (
+                      <Stack spacing={0.5}>
+                        {userOrgs.map((org) => (
+                          <Stack key={org.id} direction="row" spacing={1} alignItems="center">
+                            <Typography variant="body2" sx={{ fontWeight: 500 }}>{org.name}</Typography>
+                            <Chip size="small" label={org.orgRole} />
+                          </Stack>
+                        ))}
+                      </Stack>
+                    )}
+                  </Stack>
+                </>
+              )}
 
               {/* User Fields */}
               {userFields.length > 0 && (

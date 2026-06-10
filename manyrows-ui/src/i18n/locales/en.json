@@ -1861,6 +1861,8 @@
   "projectMembers.enableBody": "This user will be able to log in again.",
   "projectMembers.userEnabled": "User enabled",
   "projectMembers.userDisabled": "User disabled",
+  "appUsers.organizations": "Organizations",
+  "appUsers.orgNone": "Not a member of any organization",
   "sessions.columnUserId": "User ID",
   "sessions.user": "User"
 }
