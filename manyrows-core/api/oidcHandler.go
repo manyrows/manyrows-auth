@@ -503,8 +503,14 @@ func (handler *RequestHandler) OIDCAuthorizeResume(w http.ResponseWriter, r *htt
 	}
 	// max_age has the same shape as prompt=login: the demand was made at
 	// /authorize, so a session older than the RP allows cannot satisfy it
-	// at Resume either. Same surface as sign-in not completing.
-	if params.MaxAge != nil && time.Since(ses.CreatedAt) > time.Duration(*params.MaxAge)*time.Second {
+	// at Resume either. Same surface as sign-in not completing. The demand
+	// was made when the pending row was minted, so a session created
+	// at-or-after the row is the fresh sign-in the RP asked for (sessions
+	// require authentication to create) and passes unconditionally —
+	// otherwise max_age=0 could never complete. Only a session that
+	// predates the row is checked against max_age.
+	if params.MaxAge != nil && ses.CreatedAt.Before(p.CreatedAt) &&
+		time.Since(ses.CreatedAt) > time.Duration(*params.MaxAge)*time.Second {
 		redirectOIDCAuthorizeError(w, r, params.RedirectURI, params.State, oidcAuthorizeError{
 			Code:        "access_denied",
 			Description: "sign-in did not complete",

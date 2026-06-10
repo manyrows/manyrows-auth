@@ -404,6 +404,36 @@ func TestOIDCAuthorizeResume_MaxAge_StaleSessionRejected(t *testing.T) {
 	if freshLoc.Query().Get("error") != "" {
 		t.Errorf("fresh resume unexpectedly errored: %s", freshRes.Header().Get("Location"))
 	}
+
+	// --- positive: max_age=0 ("always force fresh authentication") must
+	// still be completable. Unauthenticated authorize routes to the login
+	// shim; a session minted mid-flow is by definition the fresh sign-in
+	// the RP demanded (it cannot predate the pending row), so resume must
+	// mint a code even though time.Since(CreatedAt) > 0s. ---
+	_, challenge3 := makePKCE()
+	q3 := baseAuthorizeQuery(e, redirect, challenge3)
+	q3.Set("max_age", "0")
+	rr3 := authorizeGET(e, q3, "") // no session → login shim
+	if rr3.Code != http.StatusFound {
+		t.Fatalf("authorize (max_age=0): expected 302, got %d (%s)", rr3.Code, rr3.Body.String())
+	}
+	u3, _ := url.Parse(rr3.Header().Get("Location"))
+	if !strings.Contains(u3.Path, "/oidc/login") || u3.Query().Get("req") == "" {
+		t.Fatalf("expected login redirect with req, got %s", rr3.Header().Get("Location"))
+	}
+	_, zeroJWT := e.seedSessionForApp(t) // "signs in" mid-flow
+	zeroRes := resumeGET(e, u3.Query().Get("req"), zeroJWT)
+	if zeroRes.Code != http.StatusFound {
+		t.Fatalf("max_age=0 resume: expected 302, got %d (%s)", zeroRes.Code, zeroRes.Body.String())
+	}
+	zeroLoc, _ := url.Parse(zeroRes.Header().Get("Location"))
+	if zeroLoc.Query().Get("code") == "" {
+		t.Errorf("fresh sign-in must satisfy max_age=0 at resume, got %s",
+			zeroRes.Header().Get("Location"))
+	}
+	if zeroLoc.Query().Get("error") != "" {
+		t.Errorf("max_age=0 resume unexpectedly errored: %s", zeroRes.Header().Get("Location"))
+	}
 }
 
 // max_age=0 forces re-auth: the existing session is always "too old".
