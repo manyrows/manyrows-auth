@@ -182,6 +182,7 @@ type RefreshResult =
   | { kind: "transient" };
 
 export interface Account {
+  id: string;
   email: string;
   name: string;
   metadata: Record<string, any>;
@@ -1355,11 +1356,12 @@ export default function AppKit(props: AppKitProps) {
 
             const base: AppData = {
               account: acct ? {
+                id: acct.id || "",
                 email: acct.email,
                 name: acct.displayName || acct.email || "",
                 metadata: acct.metadata || {},
                 appMetadata: acct.appMetadata || {},
-              } : { email: "", name: "", metadata: {}, appMetadata: {} },
+              } : { id: "", email: "", name: "", metadata: {}, appMetadata: {} },
               workspaceSlug: props.workspaceSlug,
               workspaceName: me.workspaceName,
               hasAppAccess: !!me.app?.hasAccess,
@@ -1960,7 +1962,7 @@ export default function AppKit(props: AppKitProps) {
             <Profile
               workspaceBaseUrl={appBaseURL}
               jwtToken={accessToken}
-              user={appData?.account ? { id: (appData.account as any).id || "", email: appData.account.email } : null}
+              user={appData?.account ? { id: appData.account.id || "", email: appData.account.email } : null}
               onBack={() => setProfileOpen(false)}
               hideBranding={app?.hideBranding}
               passkeyEnabled={app?.passkeyEnabled}
