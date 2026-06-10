@@ -23,17 +23,21 @@ export function useAuthTransitions(
   useEffect(() => {
     const status = snapshot?.status;
     if (!status || status === "checking") return;
-    const next = status === "authenticated" ? "authed" : "unauthed";
     const prev = authStateRef.current;
-    if (next === prev) return;
-    authStateRef.current = next;
-    if (next === "authed") {
+    if (status === "authenticated") {
+      // Today's runtime always attaches an account to authenticated
+      // snapshots; if a future runtime ever emits authenticated-before-
+      // account, wait for the complete snapshot instead of swallowing
+      // the sign-in event forever.
       const account = snapshot?.appData?.account;
-      if (account) signInRef.current?.(account);
-    } else if (prev === "authed") {
-      // prev === null means "first resolution was unauthenticated" — that's
-      // not a sign-out, so only fire when we actually saw an authed state.
-      signOutRef.current?.();
+      if (!account || prev === "authed") return;
+      authStateRef.current = "authed";
+      signInRef.current?.(account);
+    } else {
+      authStateRef.current = "unauthed";
+      if (prev === "authed") {
+        signOutRef.current?.();
+      }
     }
   }, [snapshot]);
 }

@@ -51,4 +51,19 @@ describe("useAuthTransitions", () => {
     rerender(makeSnapshot({ status: "authenticated", jwtToken: "tok-456" }));
     expect(onSignIn).toHaveBeenCalledTimes(1);
   });
+
+  it("fires onSignIn on a fresh login from a logged-out state", () => {
+    const { onSignIn, rerender } = setup(makeSnapshot({ status: "unauthenticated", jwtToken: null, appData: null }));
+    rerender(makeSnapshot({ status: "authenticated" }));
+    expect(onSignIn).toHaveBeenCalledTimes(1);
+    expect(onSignIn).toHaveBeenCalledWith({ id: "u1", email: "u@example.com" });
+  });
+
+  it("defers onSignIn until the authenticated snapshot carries an account", () => {
+    const { onSignIn, rerender } = setup(null);
+    rerender(makeSnapshot({ status: "authenticated", appData: null }));
+    expect(onSignIn).not.toHaveBeenCalled();
+    rerender(makeSnapshot({ status: "authenticated" }));
+    expect(onSignIn).toHaveBeenCalledTimes(1);
+  });
 });

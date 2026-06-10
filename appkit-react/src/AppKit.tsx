@@ -277,7 +277,8 @@ export type AppKitProps = {
 
   /**
    * Fired when the user becomes signed in: on a fresh login AND when an
-   * existing session resolves on page load. Receives the account.
+   * existing session resolves after the component mounts (a remount re-fires
+   * it for the same session). Receives the account.
    */
   onSignIn?: (user: AppKitAccount) => void;
   /**
