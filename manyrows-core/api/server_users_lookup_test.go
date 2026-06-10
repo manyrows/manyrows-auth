@@ -101,10 +101,16 @@ func scopeGatedLookupRouter(t *testing.T, rh *api.RequestHandler, ws *core.Works
 				api.WriteError(w, r, "error.unauthorized", http.StatusUnauthorized)
 				return
 			}
+			// Segment-structure check for read-only custom methods (e.g., :lookup)
+			isReadOnly := func(path string) bool {
+				seg := strings.Split(strings.Trim(path, "/"), "/")
+				n := len(seg)
+				return n >= 3 && seg[n-1] == "users:lookup" && seg[n-3] == "apps"
+			}
 			if !key.AllowsWrite() &&
 				r.Method != http.MethodGet &&
 				r.Method != http.MethodHead &&
-				!strings.HasSuffix(r.URL.Path, ":lookup") {
+				!isReadOnly(r.URL.Path) {
 				api.WriteError(w, r, "error.forbidden", http.StatusForbidden)
 				return
 			}

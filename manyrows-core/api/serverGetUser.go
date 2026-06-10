@@ -178,6 +178,9 @@ func (handler *RequestHandler) ServerUsersLookup(w http.ResponseWriter, r *http.
 			// Invalid emails are treated as unknown (they can never match).
 			email = strings.TrimSpace(strings.ToLower(raw))
 		}
+		if email == "" {
+			continue
+		}
 		if _, dup := seen[email]; dup {
 			continue
 		}
