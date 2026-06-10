@@ -211,7 +211,11 @@ var apiTranslations = map[string]map[string]string{
 		"error.team.alreadyInvited":        "An invitation has already been sent to this email",
 
 		// Lockout errors
-		"error.accountLocked": "Account is temporarily locked due to too many failed attempts. Please try again later.",
+		"error.accountLocked":          "Account is temporarily locked due to too many failed attempts. Please try again later.",
+		"error.passwordRecentlyUsed":   "You've used that password recently. Choose a password you haven't used before.",
+	},
+	"ko": {
+		"error.passwordRecentlyUsed": "최근에 사용한 비밀번호입니다. 이전에 사용하지 않은 비밀번호를 선택해 주세요.",
 	},
 }
 

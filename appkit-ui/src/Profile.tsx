@@ -386,7 +386,11 @@ export default function Profile({ workspaceBaseUrl, jwtToken, user, onBack, hide
   }, [workspaceBaseUrl, authHeaders]);
 
   React.useEffect(() => {
-    if (tab === "sessions") void loadSessions();
+    if (tab === "sessions") {
+      void loadSessions();
+    } else {
+      setConfirmingRevokeAll(false);
+    }
   }, [tab]);
 
   // Connected accounts (Google / Apple / Microsoft / GitHub)
@@ -442,9 +446,11 @@ export default function Profile({ workspaceBaseUrl, jwtToken, user, onBack, hide
   };
 
   const [revokingOthers, setRevokingOthers] = React.useState(false);
+  const [confirmingRevokeAll, setConfirmingRevokeAll] = React.useState(false);
 
   const revokeOtherSessions = async () => {
     setRevokingOthers(true);
+    setConfirmingRevokeAll(false);
     try {
       await authedAxios.delete(`${workspaceBaseUrl}/a/me/sessions`, authHeaders);
       await loadSessions();
@@ -1529,11 +1535,17 @@ export default function Profile({ workspaceBaseUrl, jwtToken, user, onBack, hide
             <div style={{ marginBottom: 4 }}>
               <button
                 type="button"
-                onClick={() => void revokeOtherSessions()}
+                onClick={() => {
+                  if (confirmingRevokeAll) {
+                    void revokeOtherSessions();
+                  } else {
+                    setConfirmingRevokeAll(true);
+                  }
+                }}
                 disabled={revokingOthers}
                 style={{ ...btnOutlinedStyle, width: "auto", padding: "6px 12px", fontSize: 12, color: "var(--ak-color-error, #dc2626)", borderColor: "var(--ak-color-error, #dc2626)" }}
               >
-                {revokingOthers ? "Signing out…" : "Sign out other devices"}
+                {revokingOthers ? "Signing out…" : confirmingRevokeAll ? "Click again to confirm" : "Sign out other devices"}
               </button>
             </div>
           )}

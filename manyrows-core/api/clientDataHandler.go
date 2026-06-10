@@ -798,6 +798,7 @@ func (handler *RequestHandler) DeleteMySession(w http.ResponseWriter, r *http.Re
 // full logout is the existing /logout. Follows the password-change
 // convention: bulk row delete; session.revoked fired once with no
 // sessionId (bulk semantics, matching the admin bulk revoke).
+// Row deletion alone fully revokes: access tokens re-check the session row per request and refresh tokens cascade-delete with it (no RevokeAllSessionTokens needed, unlike the legacy single-session path).
 func (handler *RequestHandler) DeleteMyOtherSessions(w http.ResponseWriter, r *http.Request) {
 	ses, identity, _, ok := handler.requireActiveClientSession(w, r)
 	if !ok {
