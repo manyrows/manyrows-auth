@@ -16,7 +16,7 @@ CREATE TABLE password_history (
 ALTER TABLE ONLY password_history ADD CONSTRAINT password_history_pkey PRIMARY KEY (id);
 ALTER TABLE ONLY password_history ADD CONSTRAINT password_history_user_id_fkey FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE;
 
-CREATE INDEX password_history_user_created_idx ON password_history (user_id, created_at DESC);
+CREATE INDEX idx_password_history_user_created ON password_history (user_id, created_at DESC);
 
 ALTER TABLE apps ADD COLUMN password_reuse_prevention boolean DEFAULT false NOT NULL;
 

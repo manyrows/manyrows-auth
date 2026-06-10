@@ -197,7 +197,7 @@ func (r *Repo) UpdateAppEnabled(ctx context.Context, workspaceID, projectID, app
 
 // scanAppFull reads a full apps-table row into a core.App. The column
 // order here must match appColumnsReturning; every read/write that returns
-// an apps row pairs the two so the 55-field list lives in exactly one place.
+// an apps row pairs the two so the 58-field list lives in exactly one place.
 type appRowScanner interface {
 	Scan(dest ...any) error
 }
