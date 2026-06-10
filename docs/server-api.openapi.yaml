@@ -49,8 +49,10 @@ tags:
       issuer base — `https://{host}/x/{workspaceSlug}/apps/{appId}`, or simply
       `https://<authDomain>` when the app has a custom auth domain. They
       authenticate per OAuth/OIDC (client credentials, bearer tokens, or
-      nothing), not with an API key. All return 404 until OIDC is enabled on
-      the app.
+      nothing), not with an API key. The flow endpoints (discovery, authorize,
+      token, revoke, introspect, end-session) return 404 until OIDC is enabled
+      on the app; the JWKS document is always served, and `/oidc/userinfo`
+      accepts any valid app access token regardless of the toggle.
 
 paths:
   /apps/{appId}:
@@ -1774,7 +1776,9 @@ paths:
         PKCE `code_verifier`; the `redirect_uri` must equal the one used at
         `/oidc/authorize`) and `refresh_token` (rotates the refresh token and
         re-issues an id_token; an optional `scope` may narrow — never widen —
-        the original grant for this response only). Client authentication is
+        the response's `scope` field and id_token claims; the access token
+        itself still carries the full stored grant scope). Client
+        authentication is
         HTTP Basic (`client_secret_basic`) or form fields
         (`client_secret_post`); public clients (no secret configured) must
         omit the secret entirely. A refresh token is returned on the code
@@ -2816,7 +2820,7 @@ components:
         redirect_uri: { type: string, format: uri, description: Must equal the redirect_uri used at /oidc/authorize (authorization_code grant). }
         code_verifier: { type: string, minLength: 43, maxLength: 128, description: PKCE verifier whose S256 hash matches the code_challenge (authorization_code grant). }
         refresh_token: { type: string, description: The refresh token to rotate (refresh_token grant). }
-        scope: { type: string, description: "Optional on the refresh_token grant: space-delimited subset of the original grant to narrow this response to. No overlap at all is invalid_scope; the stored grant itself is never narrowed." }
+        scope: { type: string, description: "Optional on the refresh_token grant: space-delimited subset of the original grant. Narrows the response `scope` field and id_token claims only — the issued access token carries the full stored grant scope, and the stored grant itself is never narrowed. No overlap at all is invalid_scope." }
         client_id: { type: string, description: The app ID. May be sent here or via HTTP Basic. }
         client_secret: { type: string, description: Required for confidential clients; MUST be omitted by public clients. }
 
