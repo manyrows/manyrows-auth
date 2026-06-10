@@ -65,7 +65,35 @@ func newCookieStore(c *config.Config) (*sessions.CookieStore, error) {
 	if err != nil {
 		return nil, err
 	}
-	store := sessions.NewCookieStore([]byte(authKey), []byte(encryptionKey))
+	prevAuth, err := c.GetSessionAuthKeyPrevious()
+	if err != nil {
+		return nil, err
+	}
+	prevEnc, err := c.GetSessionSecretKeyPrevious()
+	if err != nil {
+		return nil, err
+	}
+
+	// gorilla tries key pairs in order: current first, then each previous
+	// pair so cookies minted before a rotation keep validating during the
+	// grace window. When only one of the two secrets rotated, the other
+	// slot falls back to its current value (index-aligned lists).
+	keyPairs := [][]byte{[]byte(authKey), []byte(encryptionKey)}
+	n := len(prevAuth)
+	if len(prevEnc) > n {
+		n = len(prevEnc)
+	}
+	for i := 0; i < n; i++ {
+		a, e := authKey, encryptionKey
+		if i < len(prevAuth) {
+			a = prevAuth[i]
+		}
+		if i < len(prevEnc) {
+			e = prevEnc[i]
+		}
+		keyPairs = append(keyPairs, []byte(a), []byte(e))
+	}
+	store := sessions.NewCookieStore(keyPairs...)
 
 	store.Options.HttpOnly = true
 	store.Options.SameSite = http.SameSiteStrictMode
