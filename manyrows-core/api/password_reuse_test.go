@@ -112,9 +112,8 @@ func TestSetPassword_ReuseOfOlderBlocked_ThenRotatesOut(t *testing.T) {
 	clientSes, accessToken := createTestClientSessionForApp(t, ws, acc, app)
 
 	// Seed fixture password P0 directly — no history row created.
-	pwP0 := "OldPassword!2026a" // reused as P0 seed; A will be the same value after step 1
-	// Use a distinct P0 so A enters history through the API.
-	pwP0 = "OldPassword!2026a-seed"
+	// P0 is distinct from A so that A enters the history table through the API.
+	pwP0 := "OldPassword!2026a-seed"
 	hashP0, err := passwordhash.Hash(pwP0)
 	if err != nil {
 		t.Fatalf("hash P0: %v", err)
@@ -183,6 +182,50 @@ func TestSetPassword_ReuseOfOlderBlocked_ThenRotatesOut(t *testing.T) {
 	rr = doSetPassword(t, router, ws.Slug, app.ID.String(), accessToken, pwF, pwA)
 	if rr.Code != http.StatusOK {
 		t.Fatalf("step 8 F→A: expected 200 (A rotated out), got %d: %s", rr.Code, rr.Body.String())
+	}
+}
+
+// TestSetPassword_RateLimited verifies that a single user is throttled after
+// exhausting the per-subject budget on /a/set-password. Each request is made
+// with a wrong currentPassword so the argon2id comparison work is done but
+// the password is never actually changed — the test is about the rate cap,
+// not correctness. The cap+1-th request must return 429.
+func TestSetPassword_RateLimited(t *testing.T) {
+	// const mirrors api.maxAttemptsPerSubject10Min (unexported); keep in sync.
+	const setPasswordSubjectCap = 10
+
+	testEnv.ClearRateLimitAttempts(t)
+	defer testEnv.ClearRateLimitAttempts(t)
+
+	router := setupClientAPIRouter(t)
+
+	emailAddr := "rate-limit-sp-" + GenerateUniqueSlug("test") + "@example.com"
+	acc := testEnv.CreateTestAccount(t, emailAddr)
+	ws := testEnv.CreateTestWorkspace(t, acc, "Test WS", GenerateUniqueSlug("ws"))
+	app := testEnv.CreateTestApp(t, ws, acc)
+
+	fixtures := &TestFixtures{Account: acc, Workspace: ws}
+	defer testEnv.CleanupTestData(t, fixtures)
+
+	_, accessToken := createTestClientSessionForApp(t, ws, acc, app)
+
+	// Burn the full budget with wrong currentPassword (cheap — the
+	// current hash is empty so the handler 400s early, but it has already
+	// recorded an attempt for each call).
+	for i := 0; i < setPasswordSubjectCap; i++ {
+		rr := doSetPassword(t, router, ws.Slug, app.ID.String(), accessToken, "wrongcurrent", "SomeNewPassword!2026x")
+		if rr.Code == http.StatusTooManyRequests {
+			t.Fatalf("attempt %d: hit 429 too early (cap=%d)", i+1, setPasswordSubjectCap)
+		}
+	}
+
+	// The cap+1-th attempt must be rate-limited.
+	rr := doSetPassword(t, router, ws.Slug, app.ID.String(), accessToken, "wrongcurrent", "SomeNewPassword!2026x")
+	if rr.Code != http.StatusTooManyRequests {
+		t.Fatalf("expected 429 after %d attempts, got %d (body=%s)", setPasswordSubjectCap, rr.Code, rr.Body.String())
+	}
+	if ra := rr.Header().Get("Retry-After"); ra == "" {
+		t.Errorf("expected Retry-After header on 429, got none")
 	}
 }
 

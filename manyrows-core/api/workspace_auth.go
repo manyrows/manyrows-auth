@@ -1115,6 +1115,11 @@ const (
 	// (code + new password), separate from the send step above so the two
 	// don't share a budget. Mirrors the admin split (forgot vs reset-verify).
 	attemptPurposeWorkspaceResetPWVerify = "workspace_reset_pw_verify"
+	// attemptPurposeWorkspaceSetPassword rate-limits the set-password
+	// endpoint per authenticated user. Each request can cost several
+	// argon2id verifications (current-password check + reuse-history
+	// scan), so a compromised session must not be able to grind it.
+	attemptPurposeWorkspaceSetPassword = "client_set_password"
 
 	// passwordSetAfterRegisterWindow gates the initial-set escape hatch
 	// in WorkspaceSetPassword for users who recently proved email
@@ -1415,6 +1420,24 @@ func (handler *RequestHandler) WorkspaceSetPassword(w http.ResponseWriter, r *ht
 		WriteError(w, r, "error.appNotFound", http.StatusNotFound)
 		return
 	}
+
+	// Per-user rate limit: every request can cost several argon2id
+	// verifications (current-password check + reuse-history scan), so an
+	// authed session must not be able to grind this endpoint.
+	ip := auth.ClientIP(r)
+	since := time.Now().UTC().Add(-workspacePasswordAuthWindow)
+	subject := ses.UserID.String()
+	subjectCount, cerr := handler.repo.CountAttemptsBySubject(r.Context(), attemptPurposeWorkspaceSetPassword, subject, since)
+	if cerr != nil {
+		log.Err(cerr).Msg("failed to count attempts for set-password")
+		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
+		return
+	}
+	if subjectCount >= maxAttemptsPerSubject10Min {
+		WriteRateLimitError(w, r, 600)
+		return
+	}
+	_ = handler.repo.InsertAttempt(r.Context(), attemptPurposeWorkspaceSetPassword, subject, ip)
 
 	var req WorkspaceSetPasswordRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {

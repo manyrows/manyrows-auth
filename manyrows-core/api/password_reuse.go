@@ -8,6 +8,7 @@ import (
 	"manyrows-core/crypto/passwordhash"
 
 	"github.com/gofrs/uuid/v5"
+	"github.com/rs/zerolog/log"
 )
 
 // passwordRecentlyUsed reports whether candidate matches any of the user's
@@ -21,11 +22,24 @@ func passwordRecentlyUsed(ctx context.Context, rpo *repo.Repo, userID uuid.UUID,
 		return false, err
 	}
 	if currentHash != "" {
-		hashes = append(hashes, currentHash)
+		dup := false
+		for _, h := range hashes {
+			if h == currentHash {
+				dup = true
+				break
+			}
+		}
+		if !dup {
+			hashes = append(hashes, currentHash)
+		}
 	}
 	for _, h := range hashes {
 		ok, verr := passwordhash.Verify(h, candidate)
-		if verr == nil && ok {
+		if verr != nil {
+			log.Warn().Err(verr).Msg("unverifiable password-history hash; skipping")
+			continue
+		}
+		if ok {
 			return true, nil
 		}
 	}
@@ -36,7 +50,9 @@ func passwordRecentlyUsed(ctx context.Context, rpo *repo.Repo, userID uuid.UUID,
 // history. Best-effort: a failure must never block the user's password
 // change (enforcement still has the live users.password_hash safety net).
 func recordPasswordHistory(ctx context.Context, rpo *repo.Repo, userID uuid.UUID, newHash string) {
-	_ = rpo.AppendPasswordHistory(ctx, userID, newHash)
+	if err := rpo.AppendPasswordHistory(ctx, userID, newHash); err != nil {
+		log.Err(err).Msg("password history append failed (non-fatal)")
+	}
 }
 
 // appBlocksPasswordReuse is a nil-safe accessor for the per-app toggle.
