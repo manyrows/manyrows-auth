@@ -1972,6 +1972,28 @@ func (handler *RequestHandler) WorkspaceResetPassword(w http.ResponseWriter, r *
 		return
 	}
 
+	// Per-app reuse prevention. Runs after the OTP is validated and burned:
+	// a rejected reuse costs the caller a fresh code, and the "recently
+	// used" signal is only revealed to someone who proved email control.
+	// The user's live hash isn't loaded on this path, so fetch it for the
+	// safety-net comparison.
+	if appBlocksPasswordReuse(ctxApp) {
+		var liveHash string
+		_ = handler.repo.DB().Pool().QueryRow(r.Context(),
+			`SELECT COALESCE(password_hash, '') FROM users WHERE id = $1`, user.ID,
+		).Scan(&liveHash)
+		reused, rerr := passwordRecentlyUsed(r.Context(), handler.repo, user.ID, newPw, liveHash)
+		if rerr != nil {
+			log.Err(rerr).Msg("password reuse check failed (reset)")
+			WriteError(w, r, "error.internalError", http.StatusInternalServerError)
+			return
+		}
+		if reused {
+			WriteError(w, r, "error.passwordRecentlyUsed", http.StatusBadRequest)
+			return
+		}
+	}
+
 	// Setting password is allowed even if the user had no password before (OTP-only).
 	// This lets users add password auth via the reset flow.
 	newHash, err := passwordhash.Hash(newPw)
@@ -1987,6 +2009,9 @@ func (handler *RequestHandler) WorkspaceResetPassword(w http.ResponseWriter, r *
 		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 		return
 	}
+
+	// Record regardless of the toggle so enabling it later has history.
+	recordPasswordHistory(r.Context(), handler.repo, user.ID, newHash)
 
 	// Mark email as verified — the user just proved ownership via OTP code
 	if !user.IsEmailVerified() {

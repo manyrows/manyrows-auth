@@ -8,8 +8,11 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
+	"manyrows-core/core"
 	"manyrows-core/crypto/passwordhash"
+	"manyrows-core/utils"
 
 	"github.com/gofrs/uuid/v5"
 )
@@ -226,6 +229,117 @@ func TestSetPassword_RateLimited(t *testing.T) {
 	}
 	if ra := rr.Header().Get("Retry-After"); ra == "" {
 		t.Errorf("expected Retry-After header on 429, got none")
+	}
+}
+
+// mintResetOTP inserts a fresh, unused client OTP for the password-reset flow
+// and returns the plain-text 6-digit code.  It replicates the server-side
+// insertion so that WorkspaceResetPassword can verify it.
+func mintResetOTP(t *testing.T, appID uuid.UUID, emailAddr string) string {
+	t.Helper()
+	ctx := context.Background()
+	knownCode := "654321"
+	otpID := utils.NewUUID()
+	codeHash := testHashOTP(otpID, knownCode, testOTPPepper)
+	now := time.Now().UTC()
+
+	otp := core.ClientOTPCode{
+		ID:        otpID,
+		AppID:     appID,
+		EmailNorm: strings.ToLower(strings.TrimSpace(emailAddr)),
+		CodeHash:  codeHash,
+		CreatedAt: now,
+		ExpiresAt: now.Add(15 * time.Minute),
+	}
+	if err := testEnv.Repo.InsertClientOTP(ctx, otp); err != nil {
+		t.Fatalf("mintResetOTP: insert OTP: %v", err)
+	}
+	return knownCode
+}
+
+// doResetPassword hits POST /x/{slug}/apps/{appID}/auth/reset-password.
+func doResetPassword(t *testing.T, router http.Handler, wsSlug, appID, email, code, newPW string) *httptest.ResponseRecorder {
+	t.Helper()
+	body := map[string]any{
+		"email":       email,
+		"code":        code,
+		"newPassword": newPW,
+	}
+	bodyBytes, _ := json.Marshal(body)
+	req := httptest.NewRequest(http.MethodPost, "/x/"+wsSlug+"/apps/"+appID+"/auth/reset-password", bytes.NewReader(bodyBytes))
+	req.Header.Set("Content-Type", "application/json")
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+	return rr
+}
+
+// TestResetPassword_ReuseBlocked verifies that password-reuse prevention is
+// enforced on the forgot-password reset flow.
+func TestResetPassword_ReuseBlocked(t *testing.T) {
+	testEnv.ClearRateLimitAttempts(t)
+	defer testEnv.ClearRateLimitAttempts(t)
+
+	router := setupClientAPIRouter(t)
+
+	emailAddr := "reset-reuse-" + GenerateUniqueSlug("test") + "@example.com"
+	acc := testEnv.CreateTestAccount(t, emailAddr)
+	ws := testEnv.CreateTestWorkspace(t, acc, "Test WS", GenerateUniqueSlug("ws"))
+	app := testEnv.CreateTestApp(t, ws, acc)
+
+	fixtures := &TestFixtures{Account: acc, Workspace: ws}
+	defer testEnv.CleanupTestData(t, fixtures)
+
+	// Create a user in this app's scope.
+	ctx := context.Background()
+	user, _, err := testEnv.GetOrCreateUserWithMembership(ctx, emailAddr, app, core.UserSourceInvited)
+	if err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	defer func() {
+		_, _ = testEnv.DB.Pool().Exec(ctx, "DELETE FROM users WHERE id = $1", user.ID)
+	}()
+
+	// Seed password A directly (no history row — live hash acts as safety net).
+	pwA := "OldPassword!2026a"
+	hashA, err := passwordhash.Hash(pwA)
+	if err != nil {
+		t.Fatalf("hash A: %v", err)
+	}
+	if _, err := testEnv.DB.Pool().Exec(ctx,
+		"UPDATE users SET password_hash = $1, email_verified_at = now() WHERE id = $2", hashA, user.ID,
+	); err != nil {
+		t.Fatalf("seed password: %v", err)
+	}
+
+	setAppReusePrevention(t, app.ID, true)
+
+	pwB := "NewPassword!2026b"
+
+	// --- Step 1: reset to A → must be blocked (A is the live hash) ---
+	code1 := mintResetOTP(t, app.ID, emailAddr)
+	rr := doResetPassword(t, router, ws.Slug, app.ID.String(), emailAddr, code1, pwA)
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("step 1 (reset to A): expected 400, got %d: %s", rr.Code, rr.Body.String())
+	}
+	if !strings.Contains(rr.Body.String(), "passwordRecentlyUsed") {
+		t.Errorf("step 1: expected error.passwordRecentlyUsed in body, got: %s", rr.Body.String())
+	}
+
+	// --- Step 2: reset to B → must succeed ---
+	code2 := mintResetOTP(t, app.ID, emailAddr)
+	rr = doResetPassword(t, router, ws.Slug, app.ID.String(), emailAddr, code2, pwB)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("step 2 (reset to B): expected 200, got %d: %s", rr.Code, rr.Body.String())
+	}
+
+	// --- Step 3: reset to B again → must be blocked (B is now in history) ---
+	code3 := mintResetOTP(t, app.ID, emailAddr)
+	rr = doResetPassword(t, router, ws.Slug, app.ID.String(), emailAddr, code3, pwB)
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("step 3 (reset to B again): expected 400, got %d: %s", rr.Code, rr.Body.String())
+	}
+	if !strings.Contains(rr.Body.String(), "passwordRecentlyUsed") {
+		t.Errorf("step 3: expected error.passwordRecentlyUsed in body, got: %s", rr.Body.String())
 	}
 }
 
