@@ -262,6 +262,26 @@ func (handler *RequestHandler) OIDCAuthorize(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
+	// prompt / max_age (OIDC §3.1.2.1). prompt=login (or a session older
+	// than max_age) forces re-authentication; prompt=none forbids any
+	// interaction and errors with login_required if we can't satisfy the
+	// request from an existing session.
+	prompts := strings.Fields(strings.TrimSpace(q.Get("prompt")))
+	hasPrompt := func(v string) bool {
+		for _, p := range prompts {
+			if p == v {
+				return true
+			}
+		}
+		return false
+	}
+	maxAge := -1
+	if ma := strings.TrimSpace(q.Get("max_age")); ma != "" {
+		if n, perr := strconv.Atoi(ma); perr == nil && n >= 0 {
+			maxAge = n
+		}
+	}
+
 	// Already signed in to this app? Skip the AppKit round-trip.
 	ses, err := handler.clientAuthService.GetSession(r)
 	if err != nil {
@@ -272,8 +292,21 @@ func (handler *RequestHandler) OIDCAuthorize(w http.ResponseWriter, r *http.Requ
 		})
 		return
 	}
-	if ses != nil && ses.AppID != nil && *ses.AppID == app.ID {
+	sessionUsable := ses != nil && ses.AppID != nil && *ses.AppID == app.ID
+	forceReauth := hasPrompt("login")
+	if sessionUsable && maxAge >= 0 && time.Since(ses.CreatedAt) > time.Duration(maxAge)*time.Second {
+		forceReauth = true // the existing auth is older than the RP allows
+	}
+	if sessionUsable && !forceReauth {
 		handler.mintCodeAndRedirect(w, r, app, ses, params)
+		return
+	}
+	// (Re)authentication is required, but prompt=none forbids interaction.
+	if hasPrompt("none") {
+		redirectOIDCAuthorizeError(w, r, redirectURI, params.State, oidcAuthorizeError{
+			Code:        "login_required",
+			Description: "no usable session and prompt=none was requested",
+		})
 		return
 	}
 
@@ -953,6 +986,7 @@ func (handler *RequestHandler) handleOIDCRefreshTokenGrant(w http.ResponseWriter
 	// id_token does NOT echo a nonce on the refresh grant per OIDC §12.
 	// Uses per-app-path iss to match discovery.
 	idClaims := buildIDTokenClaimSet(idIssuer, app, ses, user, scope, "")
+	idClaims.AtHash = oidcAtHash(pair.AccessToken)
 	idToken, _, err := handler.clientAuthService.IssueIDToken(idClaims)
 	if err != nil {
 		oidcTokenError(w, http.StatusInternalServerError, "server_error", "id_token issuance failed")
@@ -981,6 +1015,7 @@ func (handler *RequestHandler) issueOIDCTokenSet(ctx context.Context, w http.Res
 	}
 
 	idClaims := buildIDTokenClaimSet(idIssuer, app, ses, user, scope, nonce)
+	idClaims.AtHash = oidcAtHash(accessToken)
 	idToken, _, err := handler.clientAuthService.IssueIDToken(idClaims)
 	if err != nil {
 		oidcTokenError(w, http.StatusInternalServerError, "server_error", "id_token issuance failed")
@@ -1083,11 +1118,12 @@ func subtle_ConstantTimeCompare(a, b string) bool {
 // than wrong.
 func buildIDTokenClaimSet(issuer string, app *core.App, ses *core.ClientSession, user *core.User, scope, nonce string) client.IDTokenClaimSet {
 	claims := client.IDTokenClaimSet{
-		Issuer:   issuer,
-		Audience: app.ID.String(),
-		Subject:  user.ID,
-		AuthTime: ses.CreatedAt,
-		Nonce:    nonce,
+		Issuer:          issuer,
+		Audience:        app.ID.String(),
+		Subject:         user.ID,
+		AuthTime:        ses.CreatedAt,
+		Nonce:           nonce,
+		AuthorizedParty: app.ID.String(),
 	}
 	if scopeContainsEmail(scope) {
 		claims.HasEmail = true
@@ -1131,6 +1167,14 @@ func scopeContainsProfile(scope string) bool {
 		}
 	}
 	return false
+}
+
+// oidcAtHash computes the OIDC at_hash claim (§3.1.3.6) for an access
+// token: base64url (no padding) of the left-most half of SHA-256(token),
+// SHA-256 because the id_token is ES256-signed.
+func oidcAtHash(accessToken string) string {
+	sum := sha256.Sum256([]byte(accessToken))
+	return base64.RawURLEncoding.EncodeToString(sum[:16])
 }
 
 // ttlFromAppMinutes converts an *int minutes pointer to a time.Duration,

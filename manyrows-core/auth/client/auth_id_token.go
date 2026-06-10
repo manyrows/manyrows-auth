@@ -40,6 +40,11 @@ type mrIDTokenClaims struct {
 	Name              string `json:"name,omitempty"`
 	PreferredUsername string `json:"preferred_username,omitempty"`
 	Picture           string `json:"picture,omitempty"`
+	// AtHash binds the id_token to the access_token returned alongside it
+	// (OIDC §3.1.3.6). AuthorizedParty (azp) names the client the token was
+	// issued to. Both omitted when empty.
+	AtHash          string `json:"at_hash,omitempty"`
+	AuthorizedParty string `json:"azp,omitempty"`
 	jwt.RegisteredClaims
 }
 
@@ -84,6 +89,12 @@ type IDTokenClaimSet struct {
 	Name              string
 	PreferredUsername string
 	Picture           string
+
+	// AtHash is the access-token hash (OIDC §3.1.3.6), set by the token
+	// endpoint when an access_token is returned alongside. AuthorizedParty
+	// (azp) is the client the token was issued to. Both optional.
+	AtHash          string
+	AuthorizedParty string
 }
 
 // IssueIDToken signs an OIDC id_token from the supplied claim set.
@@ -115,6 +126,8 @@ func (a *AuthService) IssueIDToken(claims IDTokenClaimSet) (string, time.Time, e
 		Name:              claims.Name,
 		PreferredUsername: claims.PreferredUsername,
 		Picture:           claims.Picture,
+		AtHash:            claims.AtHash,
+		AuthorizedParty:   claims.AuthorizedParty,
 		RegisteredClaims: jwt.RegisteredClaims{
 			Issuer:    iss,
 			Subject:   claims.Subject.String(),
