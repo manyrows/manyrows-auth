@@ -1,17 +1,14 @@
-import { describe, it, expect, vi, afterEach } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { renderHook } from "@testing-library/react";
+import type { ManyRowsAppKitSnapshot } from "../../types";
 import { makeSnapshot } from "./testUtils";
 
 const h = vi.hoisted(() => ({
-  ctx: { snapshot: null as unknown, refresh: vi.fn(), logout: vi.fn() },
+  ctx: { snapshot: null as ManyRowsAppKitSnapshot | null, refresh: vi.fn(), logout: vi.fn() },
 }));
 vi.mock("../../AppKit", () => ({ useAppKit: () => h.ctx }));
 
 import { useUser } from "../../hooks";
-
-afterEach(() => {
-  vi.unstubAllGlobals();
-});
 
 describe("useUser", () => {
   it("returns the account from the snapshot", () => {

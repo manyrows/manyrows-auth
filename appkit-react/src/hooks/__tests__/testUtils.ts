@@ -23,7 +23,7 @@ export function makeSnapshot(over: Partial<ManyRowsAppKitSnapshot> = {}): ManyRo
   };
 }
 
-/** Stub global fetch to resolve once with the given status/body. Returns the mock. */
+/** Stub global fetch to resolve with the given status/body on every call. Returns the mock. */
 export function stubFetch(status: number, body: unknown) {
   const fn = vi.fn().mockResolvedValue({
     ok: status >= 200 && status < 300,
