@@ -59,6 +59,28 @@ describe("encodeAttestationResponse", () => {
       },
     });
   });
+
+  it("uses url-safe chars and strips padding for awkward byte lengths", () => {
+    // 0xfb,0xff,0xfe → "+//+" in standard base64 → "-__-" url-safe (chars 62/63);
+    // single byte 0xfb → "+w==" → "-w" (double padding stripped).
+    const tricky = new Uint8Array([0xfb, 0xff, 0xfe]).buffer;
+    const single = new Uint8Array([0xfb]).buffer;
+    const cred = {
+      id: "cred-2",
+      rawId: tricky,
+      authenticatorAttachment: null,
+      getClientExtensionResults: () => ({}),
+      response: {
+        clientDataJSON: single,
+        attestationObject: tricky,
+        getTransports: () => [],
+      },
+    } as unknown as PublicKeyCredential;
+    const out = encodeAttestationResponse(cred);
+    expect(out.rawId).toBe("-__-");
+    expect(out.response.clientDataJSON).toBe("-w");
+    expect(out.rawId).not.toMatch(/[+/=]/);
+  });
 });
 
 describe("isPasskeySupported", () => {
