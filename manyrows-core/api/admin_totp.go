@@ -497,7 +497,10 @@ func (handler *RequestHandler) consumeBackupCode(
 	}
 
 	// New format: JSON array of HMAC hashes.
-	pepper, err := handler.getOTPPepper()
+	// Try every pepper in the rotation list (current first, then any _PREVIOUS
+	// peppers). Backup codes live for years, so after a pepper rotation they
+	// must still verify during the overlap window.
+	peppers, err := handler.getOTPPeppers()
 	if err != nil {
 		log.Err(err).Msg("backup code: missing OTP pepper")
 		return false
@@ -506,11 +509,16 @@ func (handler *RequestHandler) consumeBackupCode(
 	if json.Unmarshal(blob, &hashes) != nil {
 		return false
 	}
-	want := hashBackupCode(code, ownerID, pepper)
 	idx := -1
-	for i, h := range hashes {
-		if subtle.ConstantTimeCompare([]byte(h), []byte(want)) == 1 {
-			idx = i
+	for _, p := range peppers {
+		want := hashBackupCode(code, ownerID, p)
+		for i, h := range hashes {
+			if subtle.ConstantTimeCompare([]byte(h), []byte(want)) == 1 {
+				idx = i
+				break
+			}
+		}
+		if idx >= 0 {
 			break
 		}
 	}
