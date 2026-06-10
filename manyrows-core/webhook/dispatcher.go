@@ -9,7 +9,7 @@ import (
 	"manyrows-core/core"
 	"manyrows-core/core/repo"
 	"manyrows-core/crypto"
-	"math/rand"
+	mrand "math/rand/v2"
 	"net"
 	"net/http"
 	"syscall"
@@ -271,7 +271,9 @@ func (d *Dispatcher) scheduleRetry(ctx context.Context, delivery core.WebhookDel
 		idx = len(backoffs) - 1
 	}
 	base := backoffs[idx]
-	jitter := time.Duration(rand.Int63n(int64(base / 5))) // ±20% jitter
+	// Jitter is a non-security timing offset; math/rand/v2 is auto-seeded
+	// (no global Seed) and avoids the deprecated top-level math/rand here.
+	jitter := time.Duration(mrand.Int64N(int64(base / 5))) // ±20% jitter
 	next := time.Now().UTC().Add(base + jitter)
 	delivery.NextRetryAt = &next
 	if errMsg != "" && delivery.ResponseBody == nil {

@@ -491,10 +491,12 @@ func (r *Repo) ListUsersInPool(ctx context.Context, poolID uuid.UUID, emailQuery
 	}
 	q += ` ORDER BY u.email ASC, u.id ASC` // u.id tiebreaker = stable pagination
 	if limit > 0 {
-		q += fmt.Sprintf(` LIMIT %d`, limit)
+		args = append(args, limit)
+		q += fmt.Sprintf(` LIMIT $%d`, len(args)) // only the placeholder index is formatted, never data
 	}
 	if offset > 0 {
-		q += fmt.Sprintf(` OFFSET %d`, offset)
+		args = append(args, offset)
+		q += fmt.Sprintf(` OFFSET $%d`, len(args))
 	}
 
 	rows, err := r.db.Pool().Query(ctx, q, args...)
@@ -541,10 +543,12 @@ WHERE u.user_pool_id IN (SELECT id FROM user_pools WHERE workspace_id = $1)`
 	}
 	q += ` ORDER BY u.email ASC, u.id ASC` // u.id tiebreaker = stable pagination
 	if limit > 0 {
-		q += fmt.Sprintf(` LIMIT %d`, limit)
+		args = append(args, limit)
+		q += fmt.Sprintf(` LIMIT $%d`, len(args)) // only the placeholder index is formatted, never data
 	}
 	if offset > 0 {
-		q += fmt.Sprintf(` OFFSET %d`, offset)
+		args = append(args, offset)
+		q += fmt.Sprintf(` OFFSET $%d`, len(args))
 	}
 
 	rows, err := r.db.Pool().Query(ctx, q, args...)
@@ -592,10 +596,12 @@ WHERE a.project_id = $1`
 	}
 	q += ` ORDER BY u.email ASC, u.id ASC` // u.id tiebreaker = stable pagination
 	if limit > 0 {
-		q += fmt.Sprintf(` LIMIT %d`, limit)
+		args = append(args, limit)
+		q += fmt.Sprintf(` LIMIT $%d`, len(args)) // only the placeholder index is formatted, never data
 	}
 	if offset > 0 {
-		q += fmt.Sprintf(` OFFSET %d`, offset)
+		args = append(args, offset)
+		q += fmt.Sprintf(` OFFSET $%d`, len(args))
 	}
 
 	rows, err := r.db.Pool().Query(ctx, q, args...)
