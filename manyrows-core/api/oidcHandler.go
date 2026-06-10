@@ -348,7 +348,12 @@ func (handler *RequestHandler) OIDCAuthorize(w http.ResponseWriter, r *http.Requ
 				return
 			}
 			_ = handler.repo.InsertAttempt(ctx, attemptPurposeOIDCAuthorize, "", ip)
-			pendingID, cerr := handler.repo.CreateOIDCPendingAuthorize(ctx, app.ID, params)
+			// Stage-bind the row: only the consent endpoints may spend it.
+			// Copy before tagging so the original params stay login-stage
+			// (defensive — this branch returns, but don't rely on that).
+			consentParams := params
+			consentParams.ConsentStage = true
+			pendingID, cerr := handler.repo.CreateOIDCPendingAuthorize(ctx, app.ID, consentParams)
 			if cerr != nil {
 				log.Err(cerr).Str("app_id", app.ID.String()).Msg("OIDCAuthorize: CreateOIDCPendingAuthorize (consent) failed")
 				redirectOIDCAuthorizeError(w, r, redirectURI, params.State, oidcAuthorizeError{
@@ -428,14 +433,16 @@ func (handler *RequestHandler) OIDCAuthorizeResume(w http.ResponseWriter, r *htt
 	}
 
 	// A row minted for a different app is treated exactly like a dead
-	// one (no oracle distinguishing wrong-app from expired).
+	// one (no oracle distinguishing wrong-app from expired). Same for a
+	// consent-stage row: Resume only spends login-stage reqs — accepting
+	// a consent-stage req here would skip the pending consent decision.
 	p, params, found, err := handler.repo.ConsumeOIDCPendingAuthorize(ctx, reqID)
 	if err != nil {
 		log.Err(err).Str("app_id", app.ID.String()).Msg("OIDCAuthorizeResume: ConsumeOIDCPendingAuthorize failed")
 		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 		return
 	}
-	if !found || params == nil || p == nil || p.AppID != app.ID {
+	if !found || params == nil || p == nil || p.AppID != app.ID || params.ConsentStage {
 		renderOIDCAuthorizePageError(w, "invalid_request", "authorize request expired or already consumed")
 		return
 	}
@@ -501,9 +508,13 @@ func (handler *RequestHandler) OIDCAuthorizeResume(w http.ResponseWriter, r *htt
 		return
 	}
 	if consentNeeded(cfg, resumePrompts, grantScope, grantFound, params.Scope) {
-		// Create a fresh pending row for the consent page.
+		// Create a fresh pending row for the consent page. Stage-bind it:
+		// only the consent endpoints may spend it. Copy before tagging —
+		// params is a pointer and the error paths below still read it.
 		ws, _ := core.WorkspaceFromContext(ctx)
-		pendingID, cerr := handler.repo.CreateOIDCPendingAuthorize(ctx, app.ID, *params)
+		consentParams := *params
+		consentParams.ConsentStage = true
+		pendingID, cerr := handler.repo.CreateOIDCPendingAuthorize(ctx, app.ID, consentParams)
 		if cerr != nil {
 			log.Err(cerr).Str("app_id", app.ID.String()).Msg("OIDCAuthorizeResume: CreateOIDCPendingAuthorize (consent) failed")
 			redirectOIDCAuthorizeError(w, r, params.RedirectURI, params.State, oidcAuthorizeError{

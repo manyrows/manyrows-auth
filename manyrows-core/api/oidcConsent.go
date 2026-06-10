@@ -161,14 +161,17 @@ func (handler *RequestHandler) OIDCConsentPage(w http.ResponseWriter, r *http.Re
 	}
 
 	// Non-destructive read — the POST will consume. A row minted for a
-	// different app is treated exactly like a dead one (no oracle).
+	// different app is treated exactly like a dead one (no oracle), and so
+	// is a login-stage row: only consent-stage reqs render here, otherwise
+	// a req lifted from the login-shim URL could reach the consent screen
+	// without the forced re-authentication it was minted for.
 	p, params, found, err := handler.repo.PeekOIDCPendingAuthorize(ctx, reqID)
 	if err != nil {
 		log.Err(err).Str("app_id", app.ID.String()).Msg("OIDCConsentPage: PeekOIDCPendingAuthorize failed")
 		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 		return
 	}
-	if !found || params == nil || p == nil || p.AppID != app.ID {
+	if !found || params == nil || p == nil || p.AppID != app.ID || !params.ConsentStage {
 		renderOIDCAuthorizePageError(w, "invalid_request", "consent request expired or already handled")
 		return
 	}
@@ -248,14 +251,17 @@ func (handler *RequestHandler) OIDCConsentDecision(w http.ResponseWriter, r *htt
 	}
 
 	// Consume the pending row (single-use). A row minted for a different
-	// app is treated exactly like a dead one (no oracle).
+	// app is treated exactly like a dead one (no oracle), and so is a
+	// login-stage row: only consent-stage reqs may be spent here —
+	// accepting a login-stage req would mint a code while bypassing the
+	// forced re-authentication (prompt=login / max_age) it was minted for.
 	p, params, found, err := handler.repo.ConsumeOIDCPendingAuthorize(ctx, reqID)
 	if err != nil {
 		log.Err(err).Str("app_id", app.ID.String()).Msg("OIDCConsentDecision: ConsumeOIDCPendingAuthorize failed")
 		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 		return
 	}
-	if !found || params == nil || p == nil || p.AppID != app.ID {
+	if !found || params == nil || p == nil || p.AppID != app.ID || !params.ConsentStage {
 		renderOIDCAuthorizePageError(w, "invalid_request", "consent request expired or already handled")
 		return
 	}

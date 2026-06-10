@@ -697,6 +697,122 @@ func TestOIDCConsent_Unauthenticated_NoOracle(t *testing.T) {
 	}
 }
 
+// =============================================================================
+// 12. Stage binding — login-stage reqs must not be spendable at /oidc/consent
+// =============================================================================
+
+// A LOGIN-stage pending req (minted because prompt=login forced
+// re-authentication) must not be presentable at the consent endpoints.
+// Otherwise a user holding a stale-but-valid session can lift the req id
+// from the login-shim redirect and POST it straight to
+// /oidc/consent?decision=allow, minting a code without ever
+// re-authenticating. Both GET and POST must show the same
+// expired/already-handled surface as a dead req (no stage oracle), the
+// POST must not mint a code, and no consent row may be written.
+func TestOIDCConsent_LoginStageReq_RejectedAtConsent(t *testing.T) {
+	e := setupOIDCRouter(t)
+	e.enableOIDCWithConsent(t, true)
+	ses, accessJWT := e.seedSessionForApp(t)
+	_, challenge := makePKCE()
+
+	// prompt=login while holding a valid session → forced re-auth path →
+	// 302 to the login shim carrying a LOGIN-stage req id.
+	redirect := "https://customer.example/callback"
+	q := baseAuthorizeQuery(e, redirect, challenge)
+	q.Set("prompt", "login")
+	rr := authorizeGET(e, q, accessJWT)
+	if rr.Code != http.StatusFound {
+		t.Fatalf("prompt=login authorize expected 302, got %d (%s)", rr.Code, rr.Body.String())
+	}
+	u, _ := url.Parse(rr.Header().Get("Location"))
+	reqID := u.Query().Get("req")
+	if reqID == "" || !strings.Contains(u.Path, "/oidc/login") {
+		t.Fatalf("expected login-shim redirect with req, got %s", rr.Header().Get("Location"))
+	}
+
+	// GET the consent page with the login-stage req (still holding the
+	// valid session) — must hit the expired/already-handled surface.
+	getRR := consentGET(e, reqID, accessJWT)
+	if getRR.Code != http.StatusBadRequest {
+		t.Errorf("GET consent with login-stage req expected 400, got %d (%s)", getRR.Code, getRR.Body.String())
+	}
+	getBody := getRR.Body.String()
+	if !strings.Contains(getBody, "expired") && !strings.Contains(getBody, "already") {
+		t.Errorf("login-stage GET should show the expired/already-handled surface, body=%.300s", getBody)
+	}
+
+	// POST decision=allow with the login-stage req — this is the bypass.
+	postRR := consentPOST(e, reqID, "allow", accessJWT)
+	if postRR.Code != http.StatusBadRequest {
+		t.Errorf("POST consent with login-stage req expected 400, got %d (%s)", postRR.Code, postRR.Body.String())
+	}
+	if loc := postRR.Header().Get("Location"); loc != "" {
+		if pu, _ := url.Parse(loc); pu != nil && pu.Query().Get("code") != "" {
+			t.Errorf("login-stage req must NOT mint a code, got %s", loc)
+		}
+	}
+	postBody := postRR.Body.String()
+	if !strings.Contains(postBody, "expired") && !strings.Contains(postBody, "already") {
+		t.Errorf("login-stage POST should show the expired/already-handled surface, body=%.300s", postBody)
+	}
+
+	// No consent row may have been written.
+	_, found, err := testEnv.Repo.GetOIDCConsent(context.Background(), ses.UserID, e.app.ID)
+	if err != nil {
+		t.Fatalf("GetOIDCConsent: %v", err)
+	}
+	if found {
+		t.Error("consent row must NOT exist after rejected login-stage POST")
+	}
+}
+
+// =============================================================================
+// 13. Stage binding — consent-stage reqs must not be spendable at /resume
+// =============================================================================
+
+// A CONSENT-stage pending req (minted at the consent interposition point)
+// must not be presentable at /oidc/authorize/resume: Resume would skip the
+// pending consent decision entirely. Expect Resume's expired/consumed
+// surface, not a code or a fresh consent hop.
+func TestOIDCAuthorizeResume_ConsentStageReq_Rejected(t *testing.T) {
+	e := setupOIDCRouter(t)
+	e.enableOIDCWithConsent(t, true)
+	_, accessJWT := e.seedSessionForApp(t)
+	_, challenge := makePKCE()
+
+	// Authenticated authorize with the toggle on → 302 to the consent
+	// page carrying a CONSENT-stage req id.
+	redirect := "https://customer.example/callback"
+	rr := authorizeGET(e, baseAuthorizeQuery(e, redirect, challenge), accessJWT)
+	if rr.Code != http.StatusFound {
+		t.Fatalf("authenticated authorize expected 302, got %d (%s)", rr.Code, rr.Body.String())
+	}
+	u, _ := url.Parse(rr.Header().Get("Location"))
+	reqID := u.Query().Get("req")
+	if reqID == "" || !strings.Contains(u.Path, "/oidc/consent") {
+		t.Fatalf("expected consent redirect with req, got %s", rr.Header().Get("Location"))
+	}
+
+	// Feed the consent-stage req to RESUME.
+	resReq := httptest.NewRequest("GET",
+		"/x/"+e.ws.Slug+"/apps/"+e.app.ID.String()+"/oidc/authorize/resume?req="+reqID, nil)
+	resReq.Header.Set("Authorization", "Bearer "+accessJWT)
+	resRR := httptest.NewRecorder()
+	e.router.ServeHTTP(resRR, resReq)
+	if resRR.Code != http.StatusBadRequest {
+		t.Errorf("resume with consent-stage req expected 400, got %d (%s)", resRR.Code, resRR.Body.String())
+	}
+	if loc := resRR.Header().Get("Location"); loc != "" {
+		if pu, _ := url.Parse(loc); pu != nil && pu.Query().Get("code") != "" {
+			t.Errorf("consent-stage req at resume must NOT mint a code, got %s", loc)
+		}
+	}
+	resBody := resRR.Body.String()
+	if !strings.Contains(resBody, "expired") && !strings.Contains(resBody, "consumed") && !strings.Contains(resBody, "already") {
+		t.Errorf("consent-stage resume should show the expired/consumed surface, body=%.300s", resBody)
+	}
+}
+
 // A pending req id minted at app A's /authorize (unauthenticated path) must
 // not be resumable at app B's /authorize/resume, even with a valid app B
 // session. Same expired/consumed surface as a dead req id.

@@ -87,6 +87,14 @@ type OIDCAuthorizeParams struct {
 	// prefill the email field — never trusted for anything else, and
 	// dropped entirely at parse time when longer than 254 chars.
 	LoginHint string `json:"login_hint,omitempty"`
+	// ConsentStage marks a pending row minted at a consent interposition
+	// point, as opposed to the login stage. Consumers enforce the stage
+	// binding: the consent endpoints require it and Resume rejects it, so
+	// a login-stage req (whose id rides in the login-shim URL) can never
+	// be spent at /oidc/consent to skip a forced re-authentication, and a
+	// consent-stage req can never be spent at /resume to skip the consent
+	// decision.
+	ConsentStage bool `json:"consent_stage,omitempty"`
 }
 
 // OIDCPendingAuthorize is the short-lived row holding an /authorize
