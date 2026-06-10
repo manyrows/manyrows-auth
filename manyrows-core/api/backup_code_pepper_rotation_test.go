@@ -5,8 +5,9 @@ package api_test
 // Scenario: backup codes were hashed under pepper-A (the "old" pepper).
 // After rotating to pepper-B the codes must still verify when pepper-A is
 // listed in MANYROWS_OTP_PEPPER_PREVIOUS. Without PREVIOUS the codes must
-// reject. On a successful match under a previous pepper the surviving hashes
-// must be rewritten under the current pepper (migrate-forward).
+// reject. Hashed backup codes cannot be re-hashed under a new pepper (no plaintexts)
+// — operators keep the old pepper in OTP_PEPPER_PREVIOUS until users regenerate or
+// exhaust codes minted before the rotation.
 
 import (
 	"context"
