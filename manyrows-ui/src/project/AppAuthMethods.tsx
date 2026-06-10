@@ -1898,6 +1898,7 @@ type OIDCConfigResponse = {
   oidcDiscoveryUrl: string;
   oidcRedirectUris: string[];
   oidcPostLogoutRedirectUris: string[];
+  oidcRequireConsent: boolean;
 };
 
 function OIDCProviderCard({ app, cardURL, onError, onSuccess }: CardProps) {
@@ -1911,6 +1912,7 @@ function OIDCProviderCard({ app, cardURL, onError, onSuccess }: CardProps) {
   const [enabled, setEnabled] = React.useState(false);
   const [redirects, setRedirects] = React.useState<string[]>([]);
   const [postLogoutUris, setPostLogoutUris] = React.useState<string[]>([]);
+  const [requireConsent, setRequireConsent] = React.useState(false);
   const [newRedirect, setNewRedirect] = React.useState("");
   const [newPostLogout, setNewPostLogout] = React.useState("");
   const [saving, setSaving] = React.useState(false);
@@ -1925,6 +1927,7 @@ function OIDCProviderCard({ app, cardURL, onError, onSuccess }: CardProps) {
       setEnabled(res.data.oidcEnabled);
       setRedirects(res.data.oidcRedirectUris || []);
       setPostLogoutUris(res.data.oidcPostLogoutRedirectUris || []);
+      setRequireConsent(res.data.oidcRequireConsent);
     } catch (e) {
       onError(e);
     } finally {
@@ -1937,7 +1940,8 @@ function OIDCProviderCard({ app, cardURL, onError, onSuccess }: CardProps) {
   const dirty = !!cfg && (
     enabled !== cfg.oidcEnabled ||
     redirects.join("|") !== (cfg.oidcRedirectUris || []).join("|") ||
-    postLogoutUris.join("|") !== (cfg.oidcPostLogoutRedirectUris || []).join("|")
+    postLogoutUris.join("|") !== (cfg.oidcPostLogoutRedirectUris || []).join("|") ||
+    requireConsent !== cfg.oidcRequireConsent
   );
 
   async function copyToClipboard(text: string, label: string) {
@@ -1994,11 +1998,13 @@ function OIDCProviderCard({ app, cardURL, onError, onSuccess }: CardProps) {
         enabled,
         redirectUris: redirects,
         postLogoutRedirectUris: postLogoutUris,
+        requireConsent,
       });
       setCfg(res.data);
       setEnabled(res.data.oidcEnabled);
       setRedirects(res.data.oidcRedirectUris || []);
       setPostLogoutUris(res.data.oidcPostLogoutRedirectUris || []);
+      setRequireConsent(res.data.oidcRequireConsent);
       onSuccess();
     } catch (e) {
       onError(e);
@@ -2046,6 +2052,7 @@ function OIDCProviderCard({ app, cardURL, onError, onSuccess }: CardProps) {
     setEnabled(cfg.oidcEnabled);
     setRedirects(cfg.oidcRedirectUris || []);
     setPostLogoutUris(cfg.oidcPostLogoutRedirectUris || []);
+    setRequireConsent(cfg.oidcRequireConsent);
     setNewRedirect("");
     setNewPostLogout("");
   }
@@ -2216,6 +2223,30 @@ function OIDCProviderCard({ app, cardURL, onError, onSuccess }: CardProps) {
           onRemove={(u) => setPostLogoutUris(postLogoutUris.filter((x) => x !== u))}
           placeholder="https://customer-app.example.com/signed-out"
           disabled={saving}
+        />
+      </Section>
+
+      <Section
+        overline={t("apps.sectionOverline.oidcProvider", { defaultValue: "OIDC provider" })}
+        title={t("apps.oidc.requireConsent", { defaultValue: "Require consent" })}
+        desc={t("apps.oidc.requireConsentHint", { defaultValue: "Show a consent screen before completing OIDC sign-in for scopes the user hasn't approved. Leave off when this app's OIDC client is your own first-party site." })}
+      >
+        <FormControlLabel
+          control={
+            <Switch
+              checked={requireConsent}
+              onChange={(e) => setRequireConsent(e.target.checked)}
+              disabled={saving}
+            />
+          }
+          label={
+            <Stack spacing={0}>
+              <Typography variant="body2" sx={{ fontWeight: 500 }}>
+                {t("apps.oidc.requireConsent", { defaultValue: "Require consent" })}
+              </Typography>
+            </Stack>
+          }
+          sx={{ ml: 0 }}
         />
       </Section>
 

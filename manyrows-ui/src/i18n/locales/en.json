@@ -1571,6 +1571,8 @@
   "apps.oidc.redirectUrisRequired": "Add at least one Redirect URI before enabling OIDC.",
   "apps.oidc.redirectUrisRequiredHint": "Add at least one Redirect URI before saving.",
   "apps.oidc.redirectUrisTitle": "Redirect URIs",
+  "apps.oidc.requireConsent": "Require consent",
+  "apps.oidc.requireConsentHint": "Show a consent screen before completing OIDC sign-in for scopes the user hasn't approved. Leave off when this app's OIDC client is your own first-party site.",
   "apps.oidc.rotateSecret": "Rotate secret",
   "apps.oidc.saveChangesFirst": "Save your pending changes first.",
   "apps.oidc.secretConfigured": "Configured",

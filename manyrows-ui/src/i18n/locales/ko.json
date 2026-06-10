@@ -1567,6 +1567,8 @@
   "apps.oidc.redirectUrisRequired": "OIDC를 활성화하기 전에 Redirect URI를 하나 이상 추가해 주세요.",
   "apps.oidc.redirectUrisRequiredHint": "저장하기 전에 Redirect URI를 하나 이상 추가해 주세요.",
   "apps.oidc.redirectUrisTitle": "Redirect URI",
+  "apps.oidc.requireConsent": "동의 화면 필수",
+  "apps.oidc.requireConsentHint": "사용자가 아직 승인하지 않은 범위에 대해 OIDC 로그인 완료 전 동의 화면을 표시합니다. 이 앱의 OIDC 클라이언트가 자사 사이트라면 끄세요.",
   "apps.oidc.rotateSecret": "시크릿 교체",
   "apps.oidc.saveChangesFirst": "먼저 보류 중인 변경 사항을 저장해 주세요.",
   "apps.oidc.secretConfigured": "구성됨",
