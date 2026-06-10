@@ -472,9 +472,25 @@ func (handler *RequestHandler) OIDCAuthorizeResume(w http.ResponseWriter, r *htt
 		return
 	}
 
-	// After sign-in, check whether the consent screen should interpose.
-	// Use the Prompt field stored on the params (set at /authorize parse time).
+	// Prompt was stored on the params at /authorize parse time so Resume
+	// and the consent hop can re-evaluate it without re-parsing the URL.
 	resumePrompts := strings.Fields(params.Prompt)
+
+	// prompt=login demanded re-authentication. A session created before
+	// the pending authorize row predates that demand — the browser hit
+	// the resume URL with a pre-existing session instead of going through
+	// the login shim — so it cannot satisfy prompt=login. Same error
+	// surface as sign-in not completing (no new oracle distinguishing
+	// "stale session" from "no session"). A session created at-or-after
+	// the row passes: the forced login can complete within the same
+	// clock tick. max_age re-validation is intentionally not done here.
+	if oidcPromptsContain(resumePrompts, "login") && ses.CreatedAt.Before(p.CreatedAt) {
+		redirectOIDCAuthorizeError(w, r, params.RedirectURI, params.State, oidcAuthorizeError{
+			Code:        "access_denied",
+			Description: "sign-in did not complete",
+		})
+		return
+	}
 	grantScope, grantFound, grantErr := handler.repo.GetOIDCConsent(ctx, ses.UserID, app.ID)
 	if grantErr != nil {
 		log.Err(grantErr).Str("app_id", app.ID.String()).Msg("OIDCAuthorizeResume: GetOIDCConsent failed")
@@ -768,6 +784,17 @@ func renderOIDCAuthorizePageError(w http.ResponseWriter, code, description strin
 	w.WriteHeader(http.StatusBadRequest)
 	_, _ = fmt.Fprintf(w, `<!doctype html><html><head><meta charset="utf-8"><title>Authorization error</title></head><body style="font-family:system-ui;padding:2rem"><h1>Authorization error</h1><p><strong>%s</strong></p><p>%s</p></body></html>`,
 		template.HTMLEscapeString(code), template.HTMLEscapeString(description))
+}
+
+// oidcPromptsContain reports whether the space-split prompt values
+// include v.
+func oidcPromptsContain(prompts []string, v string) bool {
+	for _, p := range prompts {
+		if p == v {
+			return true
+		}
+	}
+	return false
 }
 
 // oidcTransportModeSupported is the OIDC requires-cookie predicate.

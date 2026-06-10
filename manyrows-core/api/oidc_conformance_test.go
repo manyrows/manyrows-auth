@@ -1,6 +1,7 @@
 package api_test
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"net/http"
@@ -124,6 +125,102 @@ func TestOIDCAuthorize_PromptLogin_ForcesReauth(t *testing.T) {
 	}
 	if loc := rr.Header().Get("Location"); !strings.Contains(loc, "/oidc/login") {
 		t.Errorf("prompt=login should route to login, got %s", loc)
+	}
+}
+
+// resumeGET issues a GET /oidc/authorize/resume?req=<id>, optionally
+// carrying a session (Bearer access JWT).
+func resumeGET(e *oidcTestEnv, reqID string, accessJWT string) *httptest.ResponseRecorder {
+	req := httptest.NewRequest("GET",
+		"/x/"+e.ws.Slug+"/apps/"+e.app.ID.String()+"/oidc/authorize/resume?req="+reqID, nil)
+	if accessJWT != "" {
+		req.Header.Set("Authorization", "Bearer "+accessJWT)
+	}
+	rr := httptest.NewRecorder()
+	e.router.ServeHTTP(rr, req)
+	return rr
+}
+
+// promptLoginReqID starts a prompt=login authorize (carrying the given
+// session, if any) and returns the pending req id from the login redirect.
+func promptLoginReqID(t *testing.T, e *oidcTestEnv, redirect, accessJWT string) string {
+	t.Helper()
+	_, challenge := makePKCE()
+	q := baseAuthorizeQuery(e, redirect, challenge)
+	q.Set("prompt", "login")
+	rr := authorizeGET(e, q, accessJWT)
+	if rr.Code != http.StatusFound {
+		t.Fatalf("authorize: expected 302, got %d (%s)", rr.Code, rr.Body.String())
+	}
+	u, _ := url.Parse(rr.Header().Get("Location"))
+	if !strings.Contains(u.Path, "/oidc/login") || u.Query().Get("req") == "" {
+		t.Fatalf("expected login redirect with req, got %s", rr.Header().Get("Location"))
+	}
+	return u.Query().Get("req")
+}
+
+// prompt=login must still be in force at /authorize/resume: a session
+// created BEFORE the pending authorize row predates the forced re-auth
+// (the holder skipped the login shim, e.g. by hitting the resume URL
+// directly), so it must NOT satisfy prompt=login. The error surface must
+// be byte-identical to the unauthenticated-resume case (no new oracle).
+// A session created after the row (a real re-login) passes.
+func TestOIDCAuthorizeResume_PromptLogin_RequiresFreshSession(t *testing.T) {
+	e := setupOIDCRouter(t)
+	redirect := "https://customer.example/callback"
+	e.enableOIDC(t, []string{redirect}, nil, "") // consent toggle off
+	staleSes, staleJWT := e.seedSessionForApp(t)
+
+	// Backdate the pre-existing session so it is unambiguously older
+	// than any pending row minted below (no same-millisecond flakiness).
+	if _, err := testEnv.DB.Pool().Exec(context.Background(),
+		`update client_sessions set created_at = created_at - interval '1 minute' where id = $1`,
+		staleSes.ID); err != nil {
+		t.Fatalf("backdate session: %v", err)
+	}
+
+	// --- negative: resume with the PRE-EXISTING (stale) session ---
+	req1 := promptLoginReqID(t, e, redirect, staleJWT)
+	staleRes := resumeGET(e, req1, staleJWT)
+	if staleRes.Code != http.StatusFound {
+		t.Fatalf("stale resume: expected 302, got %d (%s)", staleRes.Code, staleRes.Body.String())
+	}
+	staleLoc, _ := url.Parse(staleRes.Header().Get("Location"))
+	if staleLoc.Query().Get("code") != "" {
+		t.Fatalf("stale session must NOT satisfy prompt=login at resume, got code in %s",
+			staleRes.Header().Get("Location"))
+	}
+	if got := staleLoc.Query().Get("error"); got != "access_denied" {
+		t.Errorf("stale resume error = %q, want access_denied (Location=%s)",
+			got, staleRes.Header().Get("Location"))
+	}
+
+	// --- no-oracle: identical surface to the unauthenticated resume ---
+	req2 := promptLoginReqID(t, e, redirect, staleJWT)
+	anonRes := resumeGET(e, req2, "")
+	if anonRes.Code != staleRes.Code {
+		t.Errorf("stale-session resume status %d != unauthenticated resume status %d",
+			staleRes.Code, anonRes.Code)
+	}
+	if anonRes.Header().Get("Location") != staleRes.Header().Get("Location") {
+		t.Errorf("stale-session resume surface differs from unauthenticated:\n stale: %s\n anon:  %s",
+			staleRes.Header().Get("Location"), anonRes.Header().Get("Location"))
+	}
+
+	// --- positive: a session minted AFTER the pending row passes ---
+	req3 := promptLoginReqID(t, e, redirect, staleJWT)
+	_, freshJWT := e.seedSessionForApp(t) // created after the pending row
+	freshRes := resumeGET(e, req3, freshJWT)
+	if freshRes.Code != http.StatusFound {
+		t.Fatalf("fresh resume: expected 302, got %d (%s)", freshRes.Code, freshRes.Body.String())
+	}
+	freshLoc, _ := url.Parse(freshRes.Header().Get("Location"))
+	if freshLoc.Query().Get("code") == "" {
+		t.Errorf("fresh session should satisfy prompt=login and mint a code, got %s",
+			freshRes.Header().Get("Location"))
+	}
+	if freshLoc.Query().Get("error") != "" {
+		t.Errorf("fresh resume unexpectedly errored: %s", freshRes.Header().Get("Location"))
 	}
 }
 

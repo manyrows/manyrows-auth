@@ -538,6 +538,165 @@ func TestOIDCConsent_WrongApp_Rejected(t *testing.T) {
 	}
 }
 
+// =============================================================================
+// 10. TestOIDCConsent_ResumeInterposition_EndToEnd
+// =============================================================================
+
+// Pins the full unauthenticated path through the consent seam:
+// authorize (login_hint) → login shim (hint survives) → sign-in →
+// resume → consent hop → consent page → allow → code at redirect_uri.
+func TestOIDCConsent_ResumeInterposition_EndToEnd(t *testing.T) {
+	e := setupOIDCRouter(t)
+	e.enableOIDCWithConsent(t, true)
+	_, challenge := makePKCE()
+
+	// 1. Unauthenticated authorize with login_hint → 302 to login shim.
+	redirect := "https://customer.example/callback"
+	q := baseAuthorizeQuery(e, redirect, challenge)
+	q.Set("login_hint", "hint@example.com")
+	rr := authorizeGET(e, q, "")
+	if rr.Code != http.StatusFound {
+		t.Fatalf("unauthenticated authorize expected 302, got %d (%s)", rr.Code, rr.Body.String())
+	}
+	loginLoc := rr.Header().Get("Location")
+	loginURL, _ := url.Parse(loginLoc)
+	reqID := loginURL.Query().Get("req")
+	if reqID == "" || !strings.Contains(loginURL.Path, "/oidc/login") {
+		t.Fatalf("expected login redirect with req, got %s", loginLoc)
+	}
+
+	// 2. GET the shim — login_hint must survive into the page.
+	shimReq := httptest.NewRequest("GET", loginLoc, nil)
+	shimRR := httptest.NewRecorder()
+	e.router.ServeHTTP(shimRR, shimReq)
+	if shimRR.Code != http.StatusOK {
+		t.Fatalf("login shim expected 200, got %d (%s)", shimRR.Code, shimRR.Body.String())
+	}
+	if !strings.Contains(shimRR.Body.String(), "hint@example.com") {
+		t.Errorf("login shim lost login_hint; body starts: %.300s", shimRR.Body.String())
+	}
+
+	// 3. Simulate sign-in (same way other resume tests authenticate).
+	ses, accessJWT := e.seedSessionForApp(t)
+
+	// 4. Resume → must interpose the consent hop, not mint a code.
+	resReq := httptest.NewRequest("GET",
+		"/x/"+e.ws.Slug+"/apps/"+e.app.ID.String()+"/oidc/authorize/resume?req="+reqID, nil)
+	resReq.Header.Set("Authorization", "Bearer "+accessJWT)
+	resRR := httptest.NewRecorder()
+	e.router.ServeHTTP(resRR, resReq)
+	if resRR.Code != http.StatusFound {
+		t.Fatalf("resume expected 302, got %d (%s)", resRR.Code, resRR.Body.String())
+	}
+	consentLoc, _ := url.Parse(resRR.Header().Get("Location"))
+	if !strings.Contains(consentLoc.Path, "/oidc/consent") {
+		t.Fatalf("resume should redirect to consent, got %s", resRR.Header().Get("Location"))
+	}
+	consentReqID := consentLoc.Query().Get("req")
+	if consentReqID == "" {
+		t.Fatal("consent redirect from resume has no req parameter")
+	}
+
+	// 5. GET the consent page: 200 with app name + scope bullets.
+	getRR := consentGET(e, consentReqID, accessJWT)
+	if getRR.Code != http.StatusOK {
+		t.Fatalf("consent page expected 200, got %d (%s)", getRR.Code, getRR.Body.String())
+	}
+	body := getRR.Body.String()
+	if !strings.Contains(body, e.app.DisplayName()) {
+		t.Errorf("consent page missing app display name %q; body starts: %.300s", e.app.DisplayName(), body)
+	}
+	if !strings.Contains(body, "View your email address") {
+		t.Errorf("consent page missing email scope bullet; body starts: %.300s", body)
+	}
+
+	// 6. POST allow → 302 to redirect_uri with code.
+	postRR := consentPOST(e, consentReqID, "allow", accessJWT)
+	if postRR.Code != http.StatusFound {
+		t.Fatalf("consent allow expected 302, got %d (%s)", postRR.Code, postRR.Body.String())
+	}
+	postLoc, _ := url.Parse(postRR.Header().Get("Location"))
+	if !strings.HasPrefix(postRR.Header().Get("Location"), redirect) {
+		t.Errorf("allow should land on redirect_uri, got %s", postRR.Header().Get("Location"))
+	}
+	if postLoc.Query().Get("code") == "" {
+		t.Fatalf("expected code after allow, got %s", postRR.Header().Get("Location"))
+	}
+
+	// 7. Consent row was written for the signed-in user.
+	scope, found, err := testEnv.Repo.GetOIDCConsent(context.Background(), ses.UserID, e.app.ID)
+	if err != nil {
+		t.Fatalf("GetOIDCConsent: %v", err)
+	}
+	if !found {
+		t.Fatal("expected consent row after end-to-end allow")
+	}
+	if !strings.Contains(scope, "openid") {
+		t.Errorf("consent row scope %q missing openid", scope)
+	}
+}
+
+// =============================================================================
+// 11. TestOIDCConsent_Unauthenticated_NoOracle
+// =============================================================================
+
+// Unauthenticated callers must not be able to probe pending-req liveness
+// via the consent endpoints: GET and POST without a session must return
+// byte-identical responses for a LIVE req id and a random one (the
+// login_required surface), pinning the session-before-peek ordering.
+func TestOIDCConsent_Unauthenticated_NoOracle(t *testing.T) {
+	e := setupOIDCRouter(t)
+	e.enableOIDCWithConsent(t, true)
+	_, accessJWT := e.seedSessionForApp(t)
+	_, challenge := makePKCE()
+
+	// Mint a LIVE pending req via an authenticated authorize → consent hop.
+	redirect := "https://customer.example/callback"
+	rr := authorizeGET(e, baseAuthorizeQuery(e, redirect, challenge), accessJWT)
+	u, _ := url.Parse(rr.Header().Get("Location"))
+	liveReq := u.Query().Get("req")
+	if liveReq == "" || !strings.Contains(u.Path, "/oidc/consent") {
+		t.Fatalf("expected consent redirect with live req, got %s", rr.Header().Get("Location"))
+	}
+	deadReq := uuid.Must(uuid.NewV4()).String()
+
+	// GET without a session: live vs random must be indistinguishable.
+	liveGET := consentGET(e, liveReq, "")
+	deadGET := consentGET(e, deadReq, "")
+	if liveGET.Code != deadGET.Code {
+		t.Errorf("GET status oracle: live=%d dead=%d", liveGET.Code, deadGET.Code)
+	}
+	if liveGET.Body.String() != deadGET.Body.String() {
+		t.Errorf("GET body oracle:\n live: %.300s\n dead: %.300s", liveGET.Body.String(), deadGET.Body.String())
+	}
+	if !strings.Contains(liveGET.Body.String(), "login_required") {
+		t.Errorf("unauthenticated GET should show the login_required surface, body=%.300s", liveGET.Body.String())
+	}
+
+	// POST without a session: same property.
+	livePOST := consentPOST(e, liveReq, "allow", "")
+	deadPOST := consentPOST(e, deadReq, "allow", "")
+	if livePOST.Code != deadPOST.Code {
+		t.Errorf("POST status oracle: live=%d dead=%d", livePOST.Code, deadPOST.Code)
+	}
+	if livePOST.Body.String() != deadPOST.Body.String() {
+		t.Errorf("POST body oracle:\n live: %.300s\n dead: %.300s", livePOST.Body.String(), deadPOST.Body.String())
+	}
+	if !strings.Contains(livePOST.Body.String(), "login_required") {
+		t.Errorf("unauthenticated POST should show the login_required surface, body=%.300s", livePOST.Body.String())
+	}
+
+	// The unauthenticated probes must not have consumed the live row:
+	// the legitimate, authenticated POST still succeeds.
+	allowRR := consentPOST(e, liveReq, "allow", accessJWT)
+	if allowRR.Code != http.StatusFound {
+		t.Fatalf("authenticated allow after probes expected 302, got %d (%s)", allowRR.Code, allowRR.Body.String())
+	}
+	if loc, _ := url.Parse(allowRR.Header().Get("Location")); loc.Query().Get("code") == "" {
+		t.Errorf("authenticated allow should still mint a code, got %s", allowRR.Header().Get("Location"))
+	}
+}
+
 // A pending req id minted at app A's /authorize (unauthenticated path) must
 // not be resumable at app B's /authorize/resume, even with a valid app B
 // session. Same expired/consumed surface as a dead req id.
