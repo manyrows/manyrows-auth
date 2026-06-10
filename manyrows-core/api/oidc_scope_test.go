@@ -633,6 +633,37 @@ func TestOIDCScope_EscalationEndToEnd(t *testing.T) {
 	}
 }
 
+// TestOIDCRefresh_ZeroOverlap_InvalidScope verifies that a refresh request
+// whose scope parameter has zero overlap with the original grant is rejected
+// with HTTP 400 and error="invalid_scope" (RFC 6749 §6). The client has
+// already authenticated and presented a valid refresh token, so no
+// rate-limit attempt is burned — this is purely a client parameter error.
+func TestOIDCRefresh_ZeroOverlap_InvalidScope(t *testing.T) {
+	e := setupOIDCRouter(t)
+	// Grant does NOT include profile.
+	_, refreshToken, _ := oidcFullGrant(t, e, "openid offline_access")
+
+	// Request a scope that has zero overlap with the stored grant.
+	rr := oidcPostForm(e, "/oidc/token", url.Values{
+		"grant_type":    {"refresh_token"},
+		"refresh_token": {refreshToken},
+		"client_id":     {e.app.ID.String()},
+		"scope":         {"profile"}, // zero overlap — "openid" is absent
+	})
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d (body=%s)", rr.Code, rr.Body.String())
+	}
+	var resp struct {
+		Error string `json:"error"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal error response: %v", err)
+	}
+	if resp.Error != "invalid_scope" {
+		t.Errorf("error = %q, want %q", resp.Error, "invalid_scope")
+	}
+}
+
 // TestOIDCRefresh_LegacyEmptyRow_DefaultsOpenidEmail verifies that a refresh
 // token row with an empty oidc_scope (pre-migration legacy row) falls back to
 // the historical "openid email" scope in the response.

@@ -1003,6 +1003,15 @@ func (handler *RequestHandler) handleOIDCRefreshTokenGrant(w http.ResponseWriter
 	scope := stored
 	if requested := strings.TrimSpace(r.PostForm.Get("scope")); requested != "" {
 		scope = intersectScopes(stored, requested)
+		if scope == "" {
+			// Zero overlap with the grant is a client error (RFC 6749 §6:
+			// the requested scope must not exceed the original grant; with
+			// NO overlap there is nothing to narrow to). Not a guessing
+			// vector — the client already authenticated and presented a
+			// valid refresh token — so no rate-limit attempt is burned.
+			oidcTokenError(w, http.StatusBadRequest, "invalid_scope", "requested scope is not within the original grant")
+			return
+		}
 	}
 
 	// Flow any DPoP proof through: a DPoP-bound refresh token requires a
@@ -1205,8 +1214,8 @@ func buildIDTokenClaimSet(issuer string, app *core.App, ses *core.ClientSession,
 
 // intersectScopes returns the space-joined tokens of stored that also
 // appear in requested, preserving stored's order. An empty intersection
-// yields "" — returned verbatim rather than erroring (the RP asked for
-// none of its grant; the id_token gates then strip the optional claims).
+// yields ""; callers are responsible for rejecting that case with
+// invalid_scope when appropriate (e.g. the refresh-token grant).
 func intersectScopes(stored, requested string) string {
 	req := make(map[string]bool)
 	for _, t := range strings.Fields(requested) {
