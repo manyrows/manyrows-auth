@@ -15,6 +15,8 @@ import Auth, { type TokenPairResponse } from "./Auth";
 import { UserButton } from "./UserButton";
 import { ToastProvider } from "./Toast";
 import { withDPoPHeader } from "./dpop";
+import { extractInviteError, inviteErrorMessage } from "./inviteError";
+import { useToast } from "./Toast";
 
 // Shape-validate a BroadcastChannel token-pair message before treating it
 // as auth tokens. Same-origin scripts can post arbitrary objects on the
@@ -487,6 +489,27 @@ function norm(v: unknown): string {
 // =====================================
 // TOTP Setup Gate
 // =====================================
+
+// InviteErrorHandler runs once on mount (inside ToastProvider) to detect and
+// surface a #mr_invite_error=<code> fragment that the server appends when
+// an org-invite acceptance fails. It surgically removes only the
+// mr_invite_error pair from the hash, leaving any other fragment params
+// (e.g. session tokens) untouched. In practice an invite-error fragment
+// never coexists with token fragments, but the strip is safe regardless.
+function InviteErrorHandler() {
+  const { showError } = useToast();
+  React.useEffect(() => {
+    const { code, rest } = extractInviteError(window.location.hash);
+    if (!code) return;
+    showError(inviteErrorMessage(code));
+    window.history.replaceState(
+      null,
+      "",
+      window.location.pathname + window.location.search + rest
+    );
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  return null;
+}
 
 type TOTPSetupStep = "intro" | "scan" | "verify" | "backup" | "done";
 
@@ -1824,6 +1847,7 @@ export default function AppKit(props: AppKitProps) {
     <DebugContext.Provider value={debug}>
     <AppKitThemeProvider theme={theme}>
       <ToastProvider>
+      <InviteErrorHandler />
       <ErrorBoundary>
       <AppKitContext.Provider value={ctx}>
         {configError ? (
