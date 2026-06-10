@@ -107,7 +107,7 @@ func (a *AuthService) issueAccessToken(s *core.ClientSession, ttl time.Duration,
 // dpopJKT is the JWK SHA-256 thumbprint of the keypair binding this refresh
 // token to a DPoP proof; empty for clients that didn't opt into DPoP.
 // oidcScope is the space-separated OIDC scope granted for this token chain;
-// empty for first-party / non-OIDC tokens. Task 2 wires real values.
+// empty for first-party / non-OIDC tokens; inherited on rotation.
 // Returns the raw token (to send to client) and the stored record.
 func (a *AuthService) IssueRefreshToken(
 	ctx context.Context,

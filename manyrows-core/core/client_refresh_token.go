@@ -38,7 +38,7 @@ type ClientRefreshToken struct {
 
 	// Space-separated OIDC scopes granted for this refresh-token chain.
 	// '' for first-party / pre-feature tokens. Inherited by replacement
-	// rows on rotation. Task 2 wires real values at issuance time.
+	// rows on rotation.
 	OIDCScope string `db:"oidc_scope" json:"-"`
 }
 
