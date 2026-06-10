@@ -441,6 +441,20 @@ export default function Profile({ workspaceBaseUrl, jwtToken, user, onBack, hide
     }
   };
 
+  const [revokingOthers, setRevokingOthers] = React.useState(false);
+
+  const revokeOtherSessions = async () => {
+    setRevokingOthers(true);
+    try {
+      await authedAxios.delete(`${workspaceBaseUrl}/a/me/sessions`, authHeaders);
+      await loadSessions();
+    } catch {
+      setSessionsError("Failed to sign out other devices");
+    } finally {
+      setRevokingOthers(false);
+    }
+  };
+
   // Email change
   const [emailStep, setEmailStep] = React.useState<"idle" | "form" | "verify" | "done">("idle");
   const [emailPw, setEmailPw] = React.useState("");
@@ -1510,6 +1524,18 @@ export default function Profile({ workspaceBaseUrl, jwtToken, user, onBack, hide
           {sessionsError && <div style={alertError}><span>{sessionsError}</span></div>}
           {!sessionsLoading && sessions.length === 0 && !sessionsError && (
             <span style={{ fontSize: 13, color: "var(--ak-color-text-secondary, #666)" }}>No active sessions</span>
+          )}
+          {sessions.length > 1 && (
+            <div style={{ marginBottom: 4 }}>
+              <button
+                type="button"
+                onClick={() => void revokeOtherSessions()}
+                disabled={revokingOthers}
+                style={{ ...btnOutlinedStyle, width: "auto", padding: "6px 12px", fontSize: 12, color: "var(--ak-color-error, #dc2626)", borderColor: "var(--ak-color-error, #dc2626)" }}
+              >
+                {revokingOthers ? "Signing out…" : "Sign out other devices"}
+              </button>
+            </div>
           )}
           {sessions.map((s) => (
             <div
