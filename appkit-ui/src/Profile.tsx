@@ -465,7 +465,8 @@ export default function Profile({ workspaceBaseUrl, jwtToken, user, onBack, hide
   const [emailStep, setEmailStep] = React.useState<"idle" | "form" | "verify" | "done">("idle");
   const [emailPw, setEmailPw] = React.useState("");
   const [emailNew, setEmailNew] = React.useState("");
-  const [emailCode, setEmailCode] = React.useState("");
+  const [emailOldCode, setEmailOldCode] = React.useState("");
+  const [emailNewCode, setEmailNewCode] = React.useState("");
   const [emailLoading, setEmailLoading] = React.useState(false);
   const [emailError, setEmailError] = React.useState<string | null>(null);
   const [emailSuccess, setEmailSuccess] = React.useState<string | null>(null);
@@ -490,18 +491,23 @@ export default function Profile({ workspaceBaseUrl, jwtToken, user, onBack, hide
   };
 
   const verifyEmailChange = async () => {
-    if (!emailCode.trim()) return;
+    if (!emailOldCode.trim() || !emailNewCode.trim()) return;
     setEmailLoading(true);
     setEmailError(null);
     try {
-      const res = await authedAxios.post(`${workspaceBaseUrl}/a/me/verify-email-change`, { code: emailCode.trim() }, authHeaders);
+      const res = await authedAxios.post(
+        `${workspaceBaseUrl}/a/me/verify-email-change`,
+        { oldCode: emailOldCode.trim(), newCode: emailNewCode.trim() },
+        authHeaders,
+      );
       const newEmail = res.data?.email || emailNew;
       setDisplayEmail(newEmail);
       setEmailSuccess("Email changed successfully");
       setEmailStep("done");
       setEmailPw("");
       setEmailNew("");
-      setEmailCode("");
+      setEmailOldCode("");
+      setEmailNewCode("");
       setTimeout(() => { setEmailSuccess(null); setEmailStep("idle"); }, 4000);
     } catch (err: any) {
       setEmailError(extractApiErrorMessage(err, "Invalid code"));
@@ -1394,24 +1400,33 @@ export default function Profile({ workspaceBaseUrl, jwtToken, user, onBack, hide
               {emailStep === "verify" && (
                 <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                   <p style={{ fontSize: 13, color: "var(--ak-color-text-secondary, #666)", margin: 0 }}>
-                    A verification code was sent to <strong>{emailNew}</strong>. Enter it below.
+                    Verification codes were sent to both your current and new email addresses. Enter both codes below.
                   </p>
                   <input
                     style={{ ...inputStyle, textAlign: "center", letterSpacing: 4, fontSize: 18 }}
                     type="text"
-                    placeholder="000000"
-                    value={emailCode}
-                    onChange={(e) => setEmailCode(e.target.value)}
+                    placeholder="Code sent to your current email"
+                    value={emailOldCode}
+                    onChange={(e) => setEmailOldCode(e.target.value)}
+                    maxLength={6}
+                    disabled={emailLoading}
+                  />
+                  <input
+                    style={{ ...inputStyle, textAlign: "center", letterSpacing: 4, fontSize: 18 }}
+                    type="text"
+                    placeholder="Code sent to your new email"
+                    value={emailNewCode}
+                    onChange={(e) => setEmailNewCode(e.target.value)}
                     maxLength={6}
                     disabled={emailLoading}
                   />
                   {emailError && <div style={alertError}><span>{emailError}</span></div>}
                   <div style={{ display: "flex", gap: 8 }}>
-                    <button style={btnOutlinedStyle} onClick={() => { setEmailStep("form"); setEmailCode(""); setEmailError(null); }}>Back</button>
+                    <button style={btnOutlinedStyle} onClick={() => { setEmailStep("form"); setEmailOldCode(""); setEmailNewCode(""); setEmailError(null); }}>Back</button>
                     <button
                       onClick={verifyEmailChange}
-                      disabled={emailLoading || emailCode.trim().length < 6}
-                      style={{ ...btnStyle, flex: 1, opacity: (emailLoading || emailCode.trim().length < 6) ? 0.5 : 1 }}
+                      disabled={emailLoading || emailOldCode.trim().length < 6 || emailNewCode.trim().length < 6}
+                      style={{ ...btnStyle, flex: 1, opacity: (emailLoading || emailOldCode.trim().length < 6 || emailNewCode.trim().length < 6) ? 0.5 : 1 }}
                     >
                       {emailLoading ? <Spinner size={16} /> : "Verify & Change"}
                     </button>
