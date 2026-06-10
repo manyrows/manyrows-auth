@@ -9,8 +9,9 @@ import type { AppKitReauthParams, AppKitTOTPSetup } from "../types";
  * Returns a function that begins TOTP enrollment. A sensitive operation —
  * pass `{password}` or `{code}` (see `useRequestReauthCode`). Resolves with
  * the shared secret and an `otpauth://` URI to render as a QR code; finish
- * enrollment with `useEnableTOTP`. Rejects with `error.totpAlreadyEnabled`
- * when 2FA is already on.
+ * enrollment with `useEnableTOTP`. Calling this again before enabling discards
+ * the previous pending secret (any earlier QR code stops working). Rejects with
+ * `error.totpAlreadyEnabled` when 2FA is already on.
  *
  * ```tsx
  * const startTOTPSetup = useStartTOTPSetup();

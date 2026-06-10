@@ -44,6 +44,8 @@ describe("useEnableTOTP", () => {
       "https://api.test/x/acme/apps/app1/a/totp/enable",
       expect.objectContaining({ method: "POST" }),
     );
+    expect(JSON.parse((fetchMock.mock.calls[0][1] as RequestInit).body as string))
+      .toEqual({ code: "123456" });
     expect(h.ctx.refresh).toHaveBeenCalledOnce();
   });
 });
