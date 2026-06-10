@@ -126,9 +126,10 @@ func NewAppService() (*AppService, error) {
 	// auth_logs) per the operator's retention settings. Without this,
 	// every transient-data table grows for the life of the install.
 	janitorCfg := janitor.Config{
-		Interval:          time.Duration(app.config.GetJanitorIntervalMinutes()) * time.Minute,
-		AttemptsRetention: time.Duration(app.config.GetAttemptsRetentionDays()) * 24 * time.Hour,
-		AuthLogRetention:  time.Duration(app.config.GetAuthLogRetentionDays()) * 24 * time.Hour,
+		Interval:                 time.Duration(app.config.GetJanitorIntervalMinutes()) * time.Minute,
+		AttemptsRetention:        time.Duration(app.config.GetAttemptsRetentionDays()) * 24 * time.Hour,
+		AuthLogRetention:         time.Duration(app.config.GetAuthLogRetentionDays()) * 24 * time.Hour,
+		WebhookDeliveryRetention: time.Duration(app.config.GetWebhookDeliveryRetentionDays()) * 24 * time.Hour,
 	}
 	janitorCtx, janitorCancel := context.WithCancel(context.Background())
 	app.stopCleanup = janitorCancel

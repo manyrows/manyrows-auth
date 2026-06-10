@@ -28,6 +28,18 @@ type Service struct {
 }
 
 const sessionTTL = 30 * 24 * time.Hour
+
+// adminIdleTimeout logs out an admin session that has gone unused for this
+// long, even though its absolute sessionTTL hasn't elapsed. It bounds how long
+// a stolen MRSESSION cookie stays usable on an unattended console.
+const adminIdleTimeout = 8 * time.Hour
+
+// adminIdleTouchInterval throttles the last_seen_at write that drives the idle
+// clock, so an active admin doesn't trigger an UPDATE on every request. The
+// idle clock therefore has this granularity, which is immaterial at an
+// hours-scale timeout.
+const adminIdleTouchInterval = 5 * time.Minute
+
 const CookieName = "MRSESSION"
 
 // Store token claims as strings in the gorilla session map.
@@ -123,6 +135,22 @@ func (a *Service) GetSession(r *http.Request) (*core.Session, error) {
 	}
 	if sess == nil {
 		return nil, errors.New("session not found")
+	}
+
+	// Idle timeout. GetSessionByToken already enforced the absolute TTL; this
+	// adds a sliding inactivity window so an idle admin (or a lifted cookie on
+	// an unattended console) is logged out well before the 30-day cap.
+	now := time.Now().UTC()
+	if now.Sub(sess.LastSeenAt) > adminIdleTimeout {
+		// Best-effort: drop the row so it doesn't linger until absolute expiry.
+		_ = a.repo.DeleteSessionByToken(r.Context(), claims.TokenID)
+		return nil, nil
+	}
+	// Advance the idle clock, throttled to avoid a write per request.
+	if now.Sub(sess.LastSeenAt) > adminIdleTouchInterval {
+		if _, err := a.repo.TouchSessionLastSeenByToken(r.Context(), claims.TokenID); err != nil {
+			log.Debug().Err(err).Msg("touch admin session last_seen failed (non-fatal)")
+		}
 	}
 	return sess, nil
 }

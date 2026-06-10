@@ -434,15 +434,12 @@ func (handler *RequestHandler) HandleWorkspaceTOTPVerify(w http.ResponseWriter, 
 		return
 	}
 
-	// Rate limit (shares counter with workspace password login)
+	// Rate limit shares the counter with workspace password login. We key it on
+	// the email subject too (not just IP), so a multi-IP attacker who cleared
+	// the password step can't get the full per-IP budget against each IP for
+	// the same account. The subject needs the resolved user, so the limit is
+	// applied just below, after the (unforgeable) challenge token is verified.
 	ip := auth.ClientIP(r)
-
-	if bfpEnabled {
-		if !handler.checkAttemptRateLimit(w, r, attemptPurposeWorkspaceLoginPassword, ip, "", "workspace TOTP verify",
-			func() { recordTOTPFailure(core.LoginFailureRateLimit, "") }) {
-			return
-		}
-	}
 
 	userID, rememberMe, err := auth.VerifyTOTPChallenge(handler.totpKey, req.ChallengeToken)
 	if err != nil {
@@ -474,6 +471,16 @@ func (handler *RequestHandler) HandleWorkspaceTOTPVerify(w http.ResponseWriter, 
 		recordTOTPFailure(core.LoginFailureTOTPInvalid, maskEmail(userWithTOTP.Email))
 		WriteError(w, r, "error.invalidCredentials", http.StatusUnauthorized)
 		return
+	}
+
+	// Rate limit by IP AND subject (email). Gated by bfpEnabled, matching the
+	// password step. Applied here (not before challenge verification) so the
+	// per-subject key is available.
+	if bfpEnabled {
+		if !handler.checkAttemptRateLimit(w, r, attemptPurposeWorkspaceLoginPassword, ip, strings.ToLower(userWithTOTP.Email), "workspace TOTP verify",
+			func() { recordTOTPFailure(core.LoginFailureRateLimit, maskEmail(userWithTOTP.Email)) }) {
+			return
+		}
 	}
 
 	// Check account lockout (gated; see bfpEnabled above)

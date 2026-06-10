@@ -25,7 +25,7 @@ func signTestSetupChallenge(t *testing.T, userID, appID uuid.UUID, ttl time.Dura
 	t.Helper()
 	cfg := GetTestConfig()
 	totpKey, _ := cfg.GetSessionAuthKey()
-	return auth.SignTOTPSetupChallenge([]byte(totpKey), userID, appID, ttl, rememberMe)
+	return auth.SignTOTPSetupChallenge(auth.DeriveTokenSigningKey([]byte(totpKey)), userID, appID, ttl, rememberMe)
 }
 
 // configureAppRequire2FA flips Require2FA on a test app via the

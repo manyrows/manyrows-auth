@@ -87,6 +87,38 @@ func timePtr(t time.Time) *time.Time { return &t }
 /* Tests                                                                       */
 /* -------------------------------------------------------------------------- */
 
+// TestDeleteOldWebhookDeliveries pins the janitor's retention sweep: terminal
+// (success/failed) rows past the window are deleted, while recent rows and
+// non-terminal (pending) rows of any age are kept. Delivery payloads carry PII,
+// so this is data-minimization, not just table-size control.
+func TestDeleteOldWebhookDeliveries(t *testing.T) {
+	_, _, appID := newWebhookHealthApp(t)
+	wh := insertWebhook(t, appID, "active")
+	now := time.Now().UTC()
+
+	insertDelivery(t, wh, "success", intPtr(200), now.Add(-40*24*time.Hour), 1, nil) // old terminal → delete
+	insertDelivery(t, wh, "failed", intPtr(500), now.Add(-31*24*time.Hour), 5, nil)  // old terminal → delete
+	insertDelivery(t, wh, "success", intPtr(200), now.Add(-1*24*time.Hour), 1, nil)  // recent terminal → keep
+	insertDelivery(t, wh, "pending", nil, now.Add(-40*24*time.Hour), 2, timePtr(now.Add(time.Hour))) // old pending → keep
+
+	n, err := testEnv.Repo.DeleteOldWebhookDeliveries(context.Background(), 30*24*time.Hour)
+	if err != nil {
+		t.Fatalf("DeleteOldWebhookDeliveries: %v", err)
+	}
+	if n != 2 {
+		t.Fatalf("deleted %d rows, want 2 (the two old terminal deliveries)", n)
+	}
+
+	var remaining int
+	if err := testEnv.DB.Pool().QueryRow(context.Background(),
+		`SELECT count(*) FROM webhook_deliveries WHERE webhook_id = $1`, wh).Scan(&remaining); err != nil {
+		t.Fatalf("count remaining: %v", err)
+	}
+	if remaining != 2 {
+		t.Fatalf("remaining %d, want 2 (recent terminal + old pending)", remaining)
+	}
+}
+
 func TestWebhookHealth_EmptyApp(t *testing.T) {
 	_, _, appID := newWebhookHealthApp(t)
 

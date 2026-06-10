@@ -551,7 +551,7 @@ func TestAdminTOTPVerify_ValidTOTPCode(t *testing.T) {
 	// Sign a challenge token
 	cfg := GetTestConfig()
 	totpKey, _ := cfg.GetSessionAuthKey()
-	challengeToken := auth.SignTOTPChallenge([]byte(totpKey), acc.ID, 5*time.Minute)
+	challengeToken := auth.SignTOTPChallenge(auth.DeriveTokenSigningKey([]byte(totpKey)), acc.ID, 5*time.Minute)
 
 	req := httptest.NewRequest(http.MethodPost, "/admin/auth/totp/verify",
 		jsonBody(t, map[string]string{
@@ -597,7 +597,7 @@ func TestAdminTOTPVerify_ValidBackupCode(t *testing.T) {
 
 	cfg := GetTestConfig()
 	totpKey, _ := cfg.GetSessionAuthKey()
-	challengeToken := auth.SignTOTPChallenge([]byte(totpKey), acc.ID, 5*time.Minute)
+	challengeToken := auth.SignTOTPChallenge(auth.DeriveTokenSigningKey([]byte(totpKey)), acc.ID, 5*time.Minute)
 
 	// Use the first backup code
 	req := httptest.NewRequest(http.MethodPost, "/admin/auth/totp/verify",
@@ -650,7 +650,7 @@ func TestAdminTOTPVerify_BackupCodeConsumedOnlyOnce(t *testing.T) {
 	totpKey, _ := cfg.GetSessionAuthKey()
 
 	// First use — should succeed
-	token1 := auth.SignTOTPChallenge([]byte(totpKey), acc.ID, 5*time.Minute)
+	token1 := auth.SignTOTPChallenge(auth.DeriveTokenSigningKey([]byte(totpKey)), acc.ID, 5*time.Minute)
 	req1 := httptest.NewRequest(http.MethodPost, "/admin/auth/totp/verify",
 		jsonBody(t, map[string]string{"challengeToken": token1, "code": usedCode}))
 	req1.Header.Set("Content-Type", "application/json")
@@ -661,7 +661,7 @@ func TestAdminTOTPVerify_BackupCodeConsumedOnlyOnce(t *testing.T) {
 	}
 
 	// Second use of same code — should fail
-	token2 := auth.SignTOTPChallenge([]byte(totpKey), acc.ID, 5*time.Minute)
+	token2 := auth.SignTOTPChallenge(auth.DeriveTokenSigningKey([]byte(totpKey)), acc.ID, 5*time.Minute)
 	req2 := httptest.NewRequest(http.MethodPost, "/admin/auth/totp/verify",
 		jsonBody(t, map[string]string{"challengeToken": token2, "code": usedCode}))
 	req2.Header.Set("Content-Type", "application/json")
@@ -684,7 +684,7 @@ func TestAdminTOTPVerify_InvalidCode(t *testing.T) {
 
 	cfg := GetTestConfig()
 	totpKey, _ := cfg.GetSessionAuthKey()
-	challengeToken := auth.SignTOTPChallenge([]byte(totpKey), acc.ID, 5*time.Minute)
+	challengeToken := auth.SignTOTPChallenge(auth.DeriveTokenSigningKey([]byte(totpKey)), acc.ID, 5*time.Minute)
 
 	req := httptest.NewRequest(http.MethodPost, "/admin/auth/totp/verify",
 		jsonBody(t, map[string]string{
@@ -715,7 +715,7 @@ func TestAdminTOTPVerify_ExpiredChallenge(t *testing.T) {
 	cfg := GetTestConfig()
 	totpKey, _ := cfg.GetSessionAuthKey()
 	// Sign with already-expired TTL
-	challengeToken := auth.SignTOTPChallenge([]byte(totpKey), acc.ID, -1*time.Second)
+	challengeToken := auth.SignTOTPChallenge(auth.DeriveTokenSigningKey([]byte(totpKey)), acc.ID, -1*time.Second)
 
 	req := httptest.NewRequest(http.MethodPost, "/admin/auth/totp/verify",
 		jsonBody(t, map[string]string{

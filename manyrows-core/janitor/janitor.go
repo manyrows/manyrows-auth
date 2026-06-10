@@ -39,13 +39,19 @@ type Config struct {
 	// OAuth state rows past `expires_at` plus this grace are deleted.
 	// Default: 1 hour.
 	OAuthStateGrace time.Duration
+
+	// Retention window for terminal (success/failed) webhook_deliveries
+	// rows, whose payloads carry PII (emails, IPs, user/session IDs).
+	// Default: 30 days.
+	WebhookDeliveryRetention time.Duration
 }
 
 const (
-	DefaultInterval          = 1 * time.Hour
-	DefaultAttemptsRetention = 7 * 24 * time.Hour
-	DefaultAuthLogRetention  = 90 * 24 * time.Hour
-	DefaultOAuthStateGrace   = 1 * time.Hour
+	DefaultInterval                 = 1 * time.Hour
+	DefaultAttemptsRetention        = 7 * 24 * time.Hour
+	DefaultAuthLogRetention         = 90 * 24 * time.Hour
+	DefaultOAuthStateGrace          = 1 * time.Hour
+	DefaultWebhookDeliveryRetention = 30 * 24 * time.Hour
 )
 
 // Janitor coordinates the periodic cleanup sweep.
@@ -68,6 +74,9 @@ func New(r *repo.Repo, cfg Config) *Janitor {
 	}
 	if cfg.OAuthStateGrace <= 0 {
 		cfg.OAuthStateGrace = DefaultOAuthStateGrace
+	}
+	if cfg.WebhookDeliveryRetention <= 0 {
+		cfg.WebhookDeliveryRetention = DefaultWebhookDeliveryRetention
 	}
 	return &Janitor{repo: r, cfg: cfg}
 }
@@ -187,6 +196,12 @@ func (j *Janitor) sweep(ctx context.Context) {
 	})
 	step("client_sessions", func() (int64, error) {
 		return j.repo.DeleteAllExpiredClientSessions(ctx, now)
+	})
+
+	// Webhook deliveries — terminal rows past the retention window. Payloads
+	// carry PII, so this is data-minimization as well as table-size control.
+	step("webhook_deliveries", func() (int64, error) {
+		return j.repo.DeleteOldWebhookDeliveries(ctx, j.cfg.WebhookDeliveryRetention)
 	})
 
 	// OIDC provider tables. Sweep methods delete expired rows AND

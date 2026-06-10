@@ -28,15 +28,22 @@ type RequestHandler struct {
 	// cleanly.
 	secureSecrets     *crypto.EncryptingSystemSecretsStore
 	webhookDispatcher *webhook.Dispatcher
-	totpKey           []byte
-	dpopVerifier      *dpop.Verifier
+	// totpKey is the HMAC key for short-lived signed tokens — TOTP challenges
+	// AND OAuth state, despite the name. Derived (DeriveTokenSigningKey) from
+	// SESSION_AUTH_KEY so it doesn't share raw bytes with the cookie store.
+	totpKey      []byte
+	dpopVerifier *dpop.Verifier
 }
 
 func NewRequestHandler(repo *repo.Repo, adminAuthService *auth.Service, clientAuthService *client.AuthService, emailService *email.Service, config *config.Config, encryptor crypto.SecretEncryptor, secureSecrets *crypto.EncryptingSystemSecretsStore) *RequestHandler {
 	var totpKey []byte
 	if config != nil {
 		if key, err := config.GetSessionAuthKey(); err == nil {
-			totpKey = []byte(key)
+			// Domain-separate the token-signing key from the cookie-store auth
+			// key. Both root in SESSION_AUTH_KEY, but the gorilla securecookie
+			// store and our raw-HMAC token signers must not share key bytes
+			// across two different crypto constructions. See DeriveTokenSigningKey.
+			totpKey = auth.DeriveTokenSigningKey([]byte(key))
 		}
 	}
 	// Tests pass nil for the encryptor when they only exercise endpoints

@@ -431,6 +431,10 @@ func (handler *RequestHandler) AdminLogin(w http.ResponseWriter, r *http.Request
 	// Don't leak whether the account exists.
 	// Also: burn attempt on failures to slow brute force.
 	if acc2 == nil || passwordHash == "" {
+		// Spend a verify's worth of CPU on the no-account branch so response
+		// timing doesn't reveal whether the email is registered. The workspace
+		// login path does the same via validateAppPasswordCredentials.
+		passwordhash.DummyVerify(pw)
 		_ = handler.repo.InsertAttempt(r.Context(), attemptPurposeAdminLogin, subject, ip)
 		WriteError(w, r, "error.invalidCredentials", http.StatusUnauthorized)
 		return

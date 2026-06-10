@@ -310,6 +310,22 @@ func (handler *RequestHandler) OIDCAuthorize(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
+	// Bound oidc_pending_authorize growth: cap unauthenticated authorize
+	// starts per IP before writing a row. The signed-in branch above already
+	// returned, so this only gates the row-creating path. Spec-compliant
+	// temporarily_unavailable error redirected to the (allowlisted) redirect_uri.
+	ip := auth.ClientIP(r)
+	since := time.Now().UTC().Add(-attemptWindow)
+	if count, cerr := handler.repo.CountAttemptsByIP(ctx, attemptPurposeOIDCAuthorize, ip, since); cerr == nil && count >= maxOIDCAuthorizeStartsPerIP10Min {
+		w.Header().Set("Retry-After", strconv.Itoa(int(attemptWindow.Seconds())))
+		redirectOIDCAuthorizeError(w, r, redirectURI, params.State, oidcAuthorizeError{
+			Code:        "temporarily_unavailable",
+			Description: "too many authorize requests; slow down and retry later",
+		})
+		return
+	}
+	_ = handler.repo.InsertAttempt(ctx, attemptPurposeOIDCAuthorize, "", ip)
+
 	// Not signed in — stash request and route the browser through AppKit.
 	pendingID, err := handler.repo.CreateOIDCPendingAuthorize(ctx, app.ID, params)
 	if err != nil {
@@ -699,6 +715,19 @@ func oidcTokenError(w http.ResponseWriter, status int, code, description string)
 // endpoint. IP-keyed (subject is always ""), shared across all of an
 // install's OIDC apps.
 const attemptPurposeOIDCToken = "oidc_token"
+
+// attemptPurposeOIDCAuthorize buckets the per-IP rate limit on the
+// unauthenticated /oidc/authorize path, which writes a row to
+// oidc_pending_authorize. Without it an attacker can flood that table
+// (each row is only swept after a 10-min TTL).
+const attemptPurposeOIDCAuthorize = "oidc_authorize"
+
+// maxOIDCAuthorizeStartsPerIP10Min is deliberately higher than the
+// failure-based caps (maxAttemptsPerIP10Min): every legitimate sign-in
+// start burns one, including successes, so the ceiling must clear normal
+// shared-IP / CGNAT usage while still stopping a single-IP flood (which
+// runs at hundreds/sec, far above this).
+const maxOIDCAuthorizeStartsPerIP10Min = 60
 
 // checkOIDCTokenRateLimit enforces the per-IP attempt cap on the OIDC
 // token endpoint. It mirrors the refresh-token rotation limiter

@@ -253,6 +253,24 @@ func (r *Repo) GetActiveWebhooksForEvent(ctx context.Context, appID uuid.UUID, e
 	return out, rows.Err()
 }
 
+// DeleteOldWebhookDeliveries removes terminal (success/failed) delivery rows
+// older than olderThan. Pending/retrying rows are kept regardless of age so an
+// in-flight retry schedule is never truncated. Each delivery's `payload` holds
+// the full event body (emails, IPs, user/session IDs), so without this the
+// table both grows unbounded and retains PII indefinitely.
+func (r *Repo) DeleteOldWebhookDeliveries(ctx context.Context, olderThan time.Duration) (int64, error) {
+	const q = `
+		DELETE FROM webhook_deliveries
+		WHERE status IN ('success', 'failed')
+		  AND coalesce(completed_at, created_at) < now() - $1::interval;
+	`
+	tag, err := r.db.Pool().Exec(ctx, q, olderThan.String())
+	if err != nil {
+		return 0, err
+	}
+	return tag.RowsAffected(), nil
+}
+
 // ---- Webhook Delivery CRUD ----
 
 func (r *Repo) InsertWebhookDelivery(ctx context.Context, d core.WebhookDelivery) error {

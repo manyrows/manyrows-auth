@@ -258,13 +258,13 @@ func (handler *RequestHandler) AdminTOTPVerify(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	// Rate limit (shares counter with password login)
 	ip := auth.ClientIP(r)
 
-	if !handler.checkAttemptRateLimit(w, r, attemptPurposeAdminLogin, ip, "", "admin TOTP verify", nil) {
-		return
-	}
-
+	// Resolve the account from the (HMAC-signed, unforgeable) challenge token
+	// BEFORE rate limiting, so we can key the limit on the email subject too.
+	// Without a per-subject cap, a multi-IP attacker who already cleared the
+	// password step gets the full per-IP budget against each IP for the same
+	// account; the per-subject cap bounds the total across IPs.
 	accountID, _, err := auth.VerifyTOTPChallenge(handler.totpKey, req.ChallengeToken)
 	if err != nil {
 		if errors.Is(err, auth.ErrTOTPChallengeExpired) {
@@ -284,6 +284,11 @@ func (handler *RequestHandler) AdminTOTPVerify(w http.ResponseWriter, r *http.Re
 
 	if !acc.HasTOTP() {
 		WriteError(w, r, "error.invalidCredentials", http.StatusUnauthorized)
+		return
+	}
+
+	// Rate limit by IP AND subject (shares counter with password login).
+	if !handler.checkAttemptRateLimit(w, r, attemptPurposeAdminLogin, ip, strings.ToLower(acc.Email), "admin TOTP verify", nil) {
 		return
 	}
 

@@ -167,6 +167,15 @@ func (conf *Config) GetAuthLogRetentionDays() int {
 	return envIntOrZero(conf.envPrefix + "AUTH_LOG_RETENTION_DAYS")
 }
 
+// GetWebhookDeliveryRetentionDays returns the operator's preferred
+// retention for terminal `webhook_deliveries` rows. Zero / unset =
+// janitor default (30 days). Delivery payloads carry PII (emails, IPs,
+// user/session IDs), so this is a data-minimization control as well as
+// table-size management.
+func (conf *Config) GetWebhookDeliveryRetentionDays() int {
+	return envIntOrZero(conf.envPrefix + "WEBHOOK_DELIVERY_RETENTION_DAYS")
+}
+
 // GetAPIRateLimitPerMinute returns the per-key request budget for the
 // server-to-server API. Zero / unset = limiter default (1200/min). Raise
 // it for high-throughput integrations; lower it to tighten the blast
