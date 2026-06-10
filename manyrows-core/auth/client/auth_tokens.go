@@ -71,6 +71,7 @@ func (a *AuthService) issueAccessToken(s *core.ClientSession, ttl time.Duration,
 		SessionID: s.ID.String(),
 		Scope:     strings.TrimSpace(scope),
 		RegisteredClaims: jwt.RegisteredClaims{
+			ID:        uuid.Must(uuid.NewV4()).String(), // jti — unique per issuance
 			Issuer:    iss,
 			Subject:   s.UserID.String(),
 			IssuedAt:  jwt.NewNumericDate(now),

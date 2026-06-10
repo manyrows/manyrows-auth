@@ -129,6 +129,7 @@ func (a *AuthService) IssueIDToken(claims IDTokenClaimSet) (string, time.Time, e
 		AtHash:            claims.AtHash,
 		AuthorizedParty:   claims.AuthorizedParty,
 		RegisteredClaims: jwt.RegisteredClaims{
+			ID:        uuid.Must(uuid.NewV4()).String(), // jti — unique per issuance
 			Issuer:    iss,
 			Subject:   claims.Subject.String(),
 			Audience:  jwt.ClaimStrings{claims.Audience},
