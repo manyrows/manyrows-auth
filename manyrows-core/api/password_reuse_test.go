@@ -14,6 +14,7 @@ import (
 	"manyrows-core/crypto/passwordhash"
 	"manyrows-core/utils"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/gofrs/uuid/v5"
 )
 
@@ -363,6 +364,125 @@ func TestResetPassword_ReuseBlocked(t *testing.T) {
 	}
 	if !strings.Contains(rr.Body.String(), "passwordRecentlyUsed") {
 		t.Errorf("step 5: expected error.passwordRecentlyUsed in body, got: %s", rr.Body.String())
+	}
+}
+
+// setupPasswordPolicyRouter builds the minimal admin router that exposes
+// PUT /admin/workspace/{workspaceId}/projects/{projectId}/apps/{appId}/password-policy.
+func setupPasswordPolicyRouter(t *testing.T) *chi.Mux {
+	t.Helper()
+	svc := NewTestServices(t)
+	r, wsRouter := NewAdminWorkspaceRouter(t, svc)
+	wsRouter.Put("/projects/{projectId}/apps/{appId}/password-policy", svc.Handler.HandleUpdateAppPasswordPolicy)
+	return r
+}
+
+// putPasswordPolicy is a test helper that hits the password-policy endpoint.
+func putPasswordPolicy(t *testing.T, router *chi.Mux, ws *core.Workspace, proj *core.Project, appID uuid.UUID, claims core.TokenClaims, body any) *httptest.ResponseRecorder {
+	t.Helper()
+	bodyBytes, err := json.Marshal(body)
+	if err != nil {
+		t.Fatalf("marshal body: %v", err)
+	}
+	req := httptest.NewRequest(http.MethodPut,
+		"/admin/workspace/"+ws.ID.String()+"/projects/"+proj.ID.String()+"/apps/"+appID.String()+"/password-policy",
+		bytes.NewReader(bodyBytes))
+	req.Header.Set("Content-Type", "application/json")
+	testEnv.SetSessionCookie(t, req, claims)
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+	return rr
+}
+
+// TestUpdatePasswordPolicy_ReuseToggle verifies that the password-policy
+// endpoint correctly persists passwordReusePrevention, preserves
+// minLength/minScore when only the toggle changes, and that setting only
+// minLength preserves the current reuse value.
+func TestUpdatePasswordPolicy_ReuseToggle(t *testing.T) {
+	router := setupPasswordPolicyRouter(t)
+
+	acc := testEnv.CreateTestAccount(t, "pp-reuse-"+GenerateUniqueSlug("u")+"@example.com")
+	ws := testEnv.CreateTestWorkspace(t, acc, "PP Reuse WS", GenerateUniqueSlug("ws"))
+	proj := testEnv.CreateTestProject(t, ws, acc, "Test", GenerateUniqueSlug("proj"))
+	appID := createTestApp(t, ws.ID, proj.ID, uuid.Nil, "PP Reuse App")
+	_, claims := testEnv.CreateTestSession(t, acc)
+
+	// Seed known minLength / minScore so we can assert they are unchanged.
+	if _, err := testEnv.DB.Pool().Exec(context.Background(),
+		`UPDATE apps SET password_min_length = 10, password_min_zxcvbn_score = 2 WHERE id = $1`, appID,
+	); err != nil {
+		t.Fatalf("seed password policy: %v", err)
+	}
+
+	// --- sub-test 1: set reuse=true, expect true; minLength/minScore unchanged ---
+	rr := putPasswordPolicy(t, router, ws, proj, appID, claims, map[string]any{
+		"passwordReusePrevention": true,
+	})
+	if rr.Code != http.StatusOK {
+		t.Fatalf("enable reuse: expected 200, got %d: %s", rr.Code, rr.Body.String())
+	}
+	var resp1 struct {
+		PasswordReusePrevention bool `json:"passwordReusePrevention"`
+		PasswordMinLength       int  `json:"passwordMinLength"`
+		PasswordMinZxcvbnScore  int  `json:"passwordMinZxcvbnScore"`
+	}
+	if err := json.NewDecoder(rr.Body).Decode(&resp1); err != nil {
+		t.Fatalf("decode resp1: %v", err)
+	}
+	if !resp1.PasswordReusePrevention {
+		t.Errorf("enable reuse: expected PasswordReusePrevention=true, got false")
+	}
+	if resp1.PasswordMinLength != 10 {
+		t.Errorf("enable reuse: expected minLength=10 unchanged, got %d", resp1.PasswordMinLength)
+	}
+	if resp1.PasswordMinZxcvbnScore != 2 {
+		t.Errorf("enable reuse: expected minScore=2 unchanged, got %d", resp1.PasswordMinZxcvbnScore)
+	}
+
+	// --- sub-test 2: set reuse=false, expect false ---
+	rr = putPasswordPolicy(t, router, ws, proj, appID, claims, map[string]any{
+		"passwordReusePrevention": false,
+	})
+	if rr.Code != http.StatusOK {
+		t.Fatalf("disable reuse: expected 200, got %d: %s", rr.Code, rr.Body.String())
+	}
+	var resp2 struct {
+		PasswordReusePrevention bool `json:"passwordReusePrevention"`
+	}
+	if err := json.NewDecoder(rr.Body).Decode(&resp2); err != nil {
+		t.Fatalf("decode resp2: %v", err)
+	}
+	if resp2.PasswordReusePrevention {
+		t.Errorf("disable reuse: expected PasswordReusePrevention=false, got true")
+	}
+
+	// --- sub-test 3: set reuse=true again then update only minLength;
+	//     reuse value must survive the update. ---
+	rr = putPasswordPolicy(t, router, ws, proj, appID, claims, map[string]any{
+		"passwordReusePrevention": true,
+	})
+	if rr.Code != http.StatusOK {
+		t.Fatalf("re-enable reuse: expected 200, got %d: %s", rr.Code, rr.Body.String())
+	}
+
+	rr = putPasswordPolicy(t, router, ws, proj, appID, claims, map[string]any{
+		"passwordMinLength": 12,
+	})
+	if rr.Code != http.StatusOK {
+		t.Fatalf("update minLength only: expected 200, got %d: %s", rr.Code, rr.Body.String())
+	}
+	var resp3 struct {
+		PasswordReusePrevention bool `json:"passwordReusePrevention"`
+		PasswordMinLength       int  `json:"passwordMinLength"`
+	}
+	if err := json.NewDecoder(rr.Body).Decode(&resp3); err != nil {
+		t.Fatalf("decode resp3: %v", err)
+	}
+	if !resp3.PasswordReusePrevention {
+		t.Errorf("update minLength only: expected reuse still true, got false")
+	}
+	if resp3.PasswordMinLength != 12 {
+		t.Errorf("update minLength only: expected minLength=12, got %d", resp3.PasswordMinLength)
 	}
 }
 

@@ -153,12 +153,13 @@ type updateAppSessionCookieSameSiteRequest struct {
 	SessionCookieSameSite string `json:"sessionCookieSameSite"`
 }
 
-// Per-app password-strength policy. Both fields validated server-side
-// to the same ranges enforced by the DB CHECK constraints (1..256 for
-// length, 0..4 for the zxcvbn score).
+// Per-app password-strength policy. All fields are optional — omitted
+// fields keep their current value. MinLength/MinZxcvbnScore are
+// validated server-side against the DB CHECK ranges (1..256 and 0..4).
 type updateAppPasswordPolicyRequest struct {
-	MinLength      *int `json:"passwordMinLength,omitempty"`
-	MinZxcvbnScore *int `json:"passwordMinZxcvbnScore,omitempty"`
+	MinLength       *int  `json:"passwordMinLength,omitempty"`
+	MinZxcvbnScore  *int  `json:"passwordMinZxcvbnScore,omitempty"`
+	ReusePrevention *bool `json:"passwordReusePrevention,omitempty"`
 }
 
 func (handler *RequestHandler) HandleGetApps(w http.ResponseWriter, r *http.Request) {
@@ -1006,6 +1007,10 @@ func (handler *RequestHandler) HandleUpdateAppPasswordPolicy(w http.ResponseWrit
 	if req.MinZxcvbnScore != nil {
 		minScore = *req.MinZxcvbnScore
 	}
+	reusePrevention := curApp.PasswordReusePrevention
+	if req.ReusePrevention != nil {
+		reusePrevention = *req.ReusePrevention
+	}
 	if minLength < 1 || minLength > 256 {
 		WriteError(w, r, "error.badRequest", http.StatusBadRequest)
 		return
@@ -1015,7 +1020,7 @@ func (handler *RequestHandler) HandleUpdateAppPasswordPolicy(w http.ResponseWrit
 		return
 	}
 
-	out, err := handler.repo.UpdateAppPasswordPolicy(r.Context(), ws.ID, projectID, appID, minLength, minScore)
+	out, err := handler.repo.UpdateAppPasswordPolicy(r.Context(), ws.ID, projectID, appID, minLength, minScore, reusePrevention)
 	if err != nil {
 		if errors.Is(err, repo.ErrNotFound) {
 			WriteError(w, r, "error.appNotFound", http.StatusNotFound)

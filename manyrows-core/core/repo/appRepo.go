@@ -418,13 +418,15 @@ func (r *Repo) UpdateAppSessionCookieSameSite(ctx context.Context, workspaceID, 
 
 // UpdateAppPasswordPolicy sets the per-app password-strength policy.
 // minLength is enforced as a hard floor; minScore is the zxcvbn
-// threshold (0..4). Both are CHECK-constrained at the DB layer; the
-// API caller validates ranges before calling.
-func (r *Repo) UpdateAppPasswordPolicy(ctx context.Context, workspaceID, projectID, appID uuid.UUID, minLength, minScore int) (core.App, error) {
+// threshold (0..4); reusePrevention enables rolling-window reuse checks.
+// minLength and minScore are CHECK-constrained at the DB layer; the API
+// caller validates ranges before calling.
+func (r *Repo) UpdateAppPasswordPolicy(ctx context.Context, workspaceID, projectID, appID uuid.UUID, minLength, minScore int, reusePrevention bool) (core.App, error) {
 	q := `
 		update apps
 		set password_min_length = $4,
 		    password_min_zxcvbn_score = $5,
+		    password_reuse_prevention = $6,
 		    updated_at = now()
 		where id = $1 and workspace_id = $2 and project_id = $3
 		returning ` + appColumnsReturning
@@ -432,7 +434,7 @@ func (r *Repo) UpdateAppPasswordPolicy(ctx context.Context, workspaceID, project
 	var out core.App
 	err := scanAppFull(r.db.Pool().QueryRow(ctx, q,
 		appID, workspaceID, projectID,
-		minLength, minScore,
+		minLength, minScore, reusePrevention,
 	), &out)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
