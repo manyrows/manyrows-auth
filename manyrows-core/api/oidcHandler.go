@@ -297,6 +297,7 @@ func (handler *RequestHandler) OIDCAuthorize(w http.ResponseWriter, r *http.Requ
 	if ma := strings.TrimSpace(q.Get("max_age")); ma != "" {
 		if n, perr := strconv.Atoi(ma); perr == nil && n >= 0 {
 			maxAge = n
+			params.MaxAge = &n
 		}
 	}
 
@@ -492,8 +493,18 @@ func (handler *RequestHandler) OIDCAuthorizeResume(w http.ResponseWriter, r *htt
 	// surface as sign-in not completing (no new oracle distinguishing
 	// "stale session" from "no session"). A session created at-or-after
 	// the row passes: the forced login can complete within the same
-	// clock tick. max_age re-validation is intentionally not done here.
+	// clock tick.
 	if oidcPromptsContain(resumePrompts, "login") && ses.CreatedAt.Before(p.CreatedAt) {
+		redirectOIDCAuthorizeError(w, r, params.RedirectURI, params.State, oidcAuthorizeError{
+			Code:        "access_denied",
+			Description: "sign-in did not complete",
+		})
+		return
+	}
+	// max_age has the same shape as prompt=login: the demand was made at
+	// /authorize, so a session older than the RP allows cannot satisfy it
+	// at Resume either. Same surface as sign-in not completing.
+	if params.MaxAge != nil && time.Since(ses.CreatedAt) > time.Duration(*params.MaxAge)*time.Second {
 		redirectOIDCAuthorizeError(w, r, params.RedirectURI, params.State, oidcAuthorizeError{
 			Code:        "access_denied",
 			Description: "sign-in did not complete",

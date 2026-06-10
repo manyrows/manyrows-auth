@@ -326,6 +326,86 @@ func TestOIDCLoginShim_ResumeURLNotMangled(t *testing.T) {
 	}
 }
 
+// max_age must still be in force at /authorize/resume: the demand was
+// made at /authorize, so a session older than the RP allows cannot
+// satisfy it at Resume either (the holder skipped the login shim, e.g.
+// by hitting the resume URL directly). Error surface is identical to
+// sign-in not completing. A fresh session within max_age passes.
+func TestOIDCAuthorizeResume_MaxAge_StaleSessionRejected(t *testing.T) {
+	e := setupOIDCRouter(t)
+	redirect := "https://customer.example/callback"
+	e.enableOIDC(t, []string{redirect}, nil, "") // consent toggle off
+	staleSes, staleJWT := e.seedSessionForApp(t)
+
+	// Backdate the session 10 minutes so it is unambiguously older than
+	// the max_age=60 demanded below.
+	if _, err := testEnv.DB.Pool().Exec(context.Background(),
+		`update client_sessions set created_at = created_at - interval '10 minutes' where id = $1`,
+		staleSes.ID); err != nil {
+		t.Fatalf("backdate session: %v", err)
+	}
+
+	// Authorize with max_age=60 (no prompt) holding the stale session:
+	// the direct path forces re-auth and routes to the login shim.
+	_, challenge := makePKCE()
+	q := baseAuthorizeQuery(e, redirect, challenge)
+	q.Set("max_age", "60")
+	rr := authorizeGET(e, q, staleJWT)
+	if rr.Code != http.StatusFound {
+		t.Fatalf("authorize: expected 302, got %d (%s)", rr.Code, rr.Body.String())
+	}
+	u, _ := url.Parse(rr.Header().Get("Location"))
+	if !strings.Contains(u.Path, "/oidc/login") || u.Query().Get("req") == "" {
+		t.Fatalf("expected login redirect with req, got %s", rr.Header().Get("Location"))
+	}
+
+	// --- negative: hit the resume URL directly with the SAME stale session ---
+	staleRes := resumeGET(e, u.Query().Get("req"), staleJWT)
+	if staleRes.Code != http.StatusFound {
+		t.Fatalf("stale resume: expected 302, got %d (%s)", staleRes.Code, staleRes.Body.String())
+	}
+	staleLoc, _ := url.Parse(staleRes.Header().Get("Location"))
+	if staleLoc.Query().Get("code") != "" {
+		t.Fatalf("stale session must NOT satisfy max_age at resume, got code in %s",
+			staleRes.Header().Get("Location"))
+	}
+	if got := staleLoc.Query().Get("error"); got != "access_denied" {
+		t.Errorf("stale resume error = %q, want access_denied (Location=%s)",
+			got, staleRes.Header().Get("Location"))
+	}
+	if desc := staleLoc.Query().Get("error_description"); !strings.Contains(desc, "sign-in did not complete") {
+		t.Errorf("stale resume error_description = %q, want it to contain %q",
+			desc, "sign-in did not complete")
+	}
+
+	// --- positive: unauthenticated authorize with max_age=300, then a
+	// session minted mid-flow (fresh, well within max_age) resumes fine ---
+	_, challenge2 := makePKCE()
+	q2 := baseAuthorizeQuery(e, redirect, challenge2)
+	q2.Set("max_age", "300")
+	rr2 := authorizeGET(e, q2, "") // no session → login shim
+	if rr2.Code != http.StatusFound {
+		t.Fatalf("authorize (positive): expected 302, got %d (%s)", rr2.Code, rr2.Body.String())
+	}
+	u2, _ := url.Parse(rr2.Header().Get("Location"))
+	if !strings.Contains(u2.Path, "/oidc/login") || u2.Query().Get("req") == "" {
+		t.Fatalf("expected login redirect with req, got %s", rr2.Header().Get("Location"))
+	}
+	_, freshJWT := e.seedSessionForApp(t) // "signs in" mid-flow
+	freshRes := resumeGET(e, u2.Query().Get("req"), freshJWT)
+	if freshRes.Code != http.StatusFound {
+		t.Fatalf("fresh resume: expected 302, got %d (%s)", freshRes.Code, freshRes.Body.String())
+	}
+	freshLoc, _ := url.Parse(freshRes.Header().Get("Location"))
+	if freshLoc.Query().Get("code") == "" {
+		t.Errorf("fresh session should satisfy max_age and mint a code, got %s",
+			freshRes.Header().Get("Location"))
+	}
+	if freshLoc.Query().Get("error") != "" {
+		t.Errorf("fresh resume unexpectedly errored: %s", freshRes.Header().Get("Location"))
+	}
+}
+
 // max_age=0 forces re-auth: the existing session is always "too old".
 func TestOIDCAuthorize_MaxAgeZero_ForcesReauth(t *testing.T) {
 	e := setupOIDCRouter(t)

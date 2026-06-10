@@ -102,6 +102,11 @@ type OIDCAuthorizeParams struct {
 	// stage rows stay unbound because signing into a different account at
 	// the shim is a legitimate account switch.
 	BoundUserID *uuid.UUID `json:"bound_user_id,omitempty"`
+	// MaxAge is the RP's max_age in seconds, persisted so Resume can
+	// re-check it (the direct /authorize path checks inline). Pointer:
+	// absent is different from max_age=0, which legitimately means
+	// "always force fresh auth". Legacy blobs unmarshal to nil = no check.
+	MaxAge *int `json:"max_age,omitempty"`
 }
 
 // OIDCPendingAuthorize is the short-lived row holding an /authorize
