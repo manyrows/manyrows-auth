@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"testing"
 )
@@ -381,6 +382,120 @@ func TestOIDCRefresh_EscalationIntersected(t *testing.T) {
 	}
 	if storedScope != "openid offline_access" {
 		t.Errorf("stored oidc_scope after escalation intersect = %q, want %q", storedScope, "openid offline_access")
+	}
+}
+
+// oidcUserinfoGET performs a GET /oidc/userinfo with the given bearer token
+// and returns the response recorder.
+func oidcUserinfoGET(e *oidcTestEnv, bearerToken string) *httptest.ResponseRecorder {
+	req := httptest.NewRequest("GET", "/x/"+e.ws.Slug+"/apps/"+e.app.ID.String()+"/oidc/userinfo", nil)
+	req.Header.Set("Authorization", "Bearer "+bearerToken)
+	rr := httptest.NewRecorder()
+	e.router.ServeHTTP(rr, req)
+	return rr
+}
+
+// TestOIDCUserInfo_OpenidOnly_SubOnly verifies that an access token granted
+// with only the "openid" scope returns a userinfo body with "sub" but without
+// "email" or "preferred_username".
+func TestOIDCUserInfo_OpenidOnly_SubOnly(t *testing.T) {
+	e := setupOIDCRouter(t)
+	accessToken, _, _ := oidcFullGrant(t, e, "openid offline_access")
+
+	rr := oidcUserinfoGET(e, accessToken)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("userinfo: expected 200, got %d (body=%s)", rr.Code, rr.Body.String())
+	}
+	var resp map[string]any
+	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if sub, _ := resp["sub"].(string); sub == "" {
+		t.Errorf("expected sub claim, got body=%s", rr.Body.String())
+	}
+	if _, hasEmail := resp["email"]; hasEmail {
+		t.Errorf("email must be absent for openid-only scope, got body=%s", rr.Body.String())
+	}
+	if _, hasUN := resp["preferred_username"]; hasUN {
+		t.Errorf("preferred_username must be absent for openid-only scope, got body=%s", rr.Body.String())
+	}
+}
+
+// TestOIDCUserInfo_EmailScope verifies that an access token granted with
+// "openid email" returns sub + email (and email_verified) but not
+// preferred_username.
+func TestOIDCUserInfo_EmailScope(t *testing.T) {
+	e := setupOIDCRouter(t)
+	accessToken, _, _ := oidcFullGrant(t, e, "openid email offline_access")
+
+	rr := oidcUserinfoGET(e, accessToken)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("userinfo: expected 200, got %d (body=%s)", rr.Code, rr.Body.String())
+	}
+	var resp map[string]any
+	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if sub, _ := resp["sub"].(string); sub == "" {
+		t.Errorf("expected sub claim, got body=%s", rr.Body.String())
+	}
+	if _, hasEmail := resp["email"]; !hasEmail {
+		t.Errorf("email must be present for email scope, got body=%s", rr.Body.String())
+	}
+	if _, hasUN := resp["preferred_username"]; hasUN {
+		t.Errorf("preferred_username must be absent when profile scope not granted, got body=%s", rr.Body.String())
+	}
+}
+
+// TestOIDCUserInfo_ProfileScope verifies that an access token granted with
+// "openid profile" returns sub + preferred_username but not email.
+func TestOIDCUserInfo_ProfileScope(t *testing.T) {
+	e := setupOIDCRouter(t)
+	accessToken, _, _ := oidcFullGrant(t, e, "openid profile offline_access")
+
+	rr := oidcUserinfoGET(e, accessToken)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("userinfo: expected 200, got %d (body=%s)", rr.Code, rr.Body.String())
+	}
+	var resp map[string]any
+	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if sub, _ := resp["sub"].(string); sub == "" {
+		t.Errorf("expected sub claim, got body=%s", rr.Body.String())
+	}
+	if _, hasEmail := resp["email"]; hasEmail {
+		t.Errorf("email must be absent when email scope not granted, got body=%s", rr.Body.String())
+	}
+	if _, hasUN := resp["preferred_username"]; !hasUN {
+		t.Errorf("preferred_username must be present for profile scope, got body=%s", rr.Body.String())
+	}
+}
+
+// TestOIDCUserInfo_FirstPartyToken_FullClaims verifies that a first-party
+// (AppKit) access token — which carries no scope claim — returns the full
+// claim set (sub + email + preferred_username) for back-compat.
+func TestOIDCUserInfo_FirstPartyToken_FullClaims(t *testing.T) {
+	e := setupOIDCRouter(t)
+	e.enableOIDC(t, []string{"https://customer.example/callback"}, nil, "")
+	_, accessJWT := e.seedSessionForApp(t)
+
+	rr := oidcUserinfoGET(e, accessJWT)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("userinfo: expected 200, got %d (body=%s)", rr.Code, rr.Body.String())
+	}
+	var resp map[string]any
+	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if sub, _ := resp["sub"].(string); sub == "" {
+		t.Errorf("expected sub claim, got body=%s", rr.Body.String())
+	}
+	if _, hasEmail := resp["email"]; !hasEmail {
+		t.Errorf("first-party token: email must be present (full claims), got body=%s", rr.Body.String())
+	}
+	if _, hasUN := resp["preferred_username"]; !hasUN {
+		t.Errorf("first-party token: preferred_username must be present (full claims), got body=%s", rr.Body.String())
 	}
 }
 

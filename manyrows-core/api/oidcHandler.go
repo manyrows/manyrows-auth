@@ -1291,10 +1291,10 @@ func writeOIDCTokenResponse(w http.ResponseWriter, resp oidcTokenResponse) {
 // =====================
 
 // oidcUserInfoResponse is the JSON claim bag returned at /userinfo.
-// Fields are scope-gated; v1 returns the full set when the token is
-// valid (scope filtering at /userinfo is RECOMMENDED but not strictly
-// required by OIDC §5.3 — a v2 enhancement is to thread the granted
-// scope through the access_token claims and filter here).
+// Fields are scope-gated by the granted scope carried in the access token.
+// OIDC tokens (authorization-code grant) only receive the claims that
+// match the scopes they were issued with. First-party tokens (no scope
+// claim) retain the full historical response for back-compat.
 type oidcUserInfoResponse struct {
 	Sub               string `json:"sub"`
 	Email             string `json:"email,omitempty"`
@@ -1311,6 +1311,19 @@ func (handler *RequestHandler) OIDCUserInfo(w http.ResponseWriter, r *http.Reque
 	if !ok || app == nil {
 		writeOIDCBearerError(w, "invalid_token", "app not resolved")
 		return
+	}
+
+	// Extract the raw bearer token so we can read its scope claim below.
+	// OIDC clients always use Authorization: Bearer; the cookie path is
+	// also checked for parity with GetSession's bearer resolution.
+	rawToken := strings.TrimSpace(strings.TrimPrefix(
+		strings.TrimSpace(r.Header.Get("Authorization")), "Bearer "))
+	if rawToken == "" {
+		if app.ID != uuid.Nil {
+			if c, err := r.Cookie(client.AccessCookieName(app.ID)); err == nil && c != nil {
+				rawToken = strings.TrimSpace(c.Value)
+			}
+		}
 	}
 
 	// GetSession parses + verifies the JWT, checks aud-binding against
@@ -1334,12 +1347,21 @@ func (handler *RequestHandler) OIDCUserInfo(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	resp := oidcUserInfoResponse{Sub: user.ID.String(), Email: user.Email}
-	if user.EmailVerifiedAt != nil {
-		resp.EmailVerified = true
+	// Scope-filter per the granted scope carried in the access token.
+	// First-party tokens (no scope claim) keep the historical full
+	// response — they already see richer data via /a/me.
+	scope, _ := handler.clientAuthService.AccessTokenScope(rawToken)
+	resp := oidcUserInfoResponse{Sub: user.ID.String()}
+	if scope == "" || scopeContainsEmail(scope) {
+		resp.Email = user.Email
+		if user.EmailVerifiedAt != nil {
+			resp.EmailVerified = true
+		}
 	}
-	if i := strings.IndexByte(user.Email, '@'); i > 0 {
-		resp.PreferredUsername = user.Email[:i]
+	if scope == "" || scopeContainsProfile(scope) {
+		if i := strings.IndexByte(user.Email, '@'); i > 0 {
+			resp.PreferredUsername = user.Email[:i]
+		}
 	}
 
 	w.Header().Set("Content-Type", "application/json")
