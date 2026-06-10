@@ -120,7 +120,7 @@ export function useIdentities(): () => Promise<AppKitIdentity[]> {
 
 /**
  * Returns a function that unlinks a sign-in identity by provider name.
- * The server rejects removing the user's only way to sign in.
+ * Disconnecting always succeeds — the server keeps no last-method guard because every user can recover via the email-based flows. Add your own confirmation UX.
  *
  * ```tsx
  * const disconnectIdentity = useDisconnectIdentity();
@@ -158,9 +158,7 @@ export function useUserFields(): () => Promise<AppKitUserField[]> {
 }
 
 /**
- * Returns a function that updates the user's custom fields. Pass a plain
- * key→value map; only client-writable fields are accepted. Resolves with
- * the updated field list. Pass a flat key→value map (e.g. { plan: "team" }), not the AppKitUserField[] array returned by useUserFields().
+ * Returns a function that updates the user's custom fields. Pass a flat key→value map (e.g. { plan: "team" }), not the AppKitUserField[] array returned by useUserFields(); only client-writable fields are accepted.
  *
  * ```tsx
  * const updateFields = useUpdateUserFields();

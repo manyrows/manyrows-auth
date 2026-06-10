@@ -1,6 +1,6 @@
 # @manyrows/appkit-react API Reference
 
-Version: 0.1.9
+Version: 1.7.0
 
 ---
 
@@ -762,7 +762,7 @@ const thisMachine = sessions.find((s) => s.current);
 
 ### `useRevokeSession()`
 
-Returns a function that revokes one of the user's sessions (signs out that device). Revoking the current session signs the calling user out immediately.
+Returns a function that revokes one of the user's sessions (signs out that device). The current session (`current: true`) cannot be revoked this way — the server rejects it; use `logout()` from `useAppKit()` instead.
 
 **Returns: `(sessionId: string) => Promise<void>`**
 
@@ -903,7 +903,7 @@ const identities = await listIdentities(); // [{ provider: "google", ... }]
 
 ### `useDisconnectIdentity()`
 
-Returns a function that unlinks a sign-in identity by provider name. The server rejects the request when removing the identity would leave the user with no way to sign in.
+Returns a function that unlinks a sign-in identity by provider name. Disconnecting always succeeds — the server keeps no last-method guard because every user can recover via the email-based flows. Add your own confirmation UX.
 
 **Returns: `(provider: string) => Promise<void>`**
 
@@ -1256,6 +1256,18 @@ const PASSKEY_CANCELLED: "PasskeyRegistrationCancelled";
 
 /** Returns true when an error came from the user dismissing the passkey prompt. */
 function isPasskeyCancelled(e: unknown): boolean;
+```
+
+---
+
+### `isPasskeySupported()`
+
+`isPasskeySupported(): boolean` — returns `true` when the browser supports WebAuthn; use it to decide whether to render passkey UI at all.
+
+```tsx
+import { isPasskeySupported } from "@manyrows/appkit-react";
+
+{isPasskeySupported() && <AddPasskeyButton />}
 ```
 
 ---

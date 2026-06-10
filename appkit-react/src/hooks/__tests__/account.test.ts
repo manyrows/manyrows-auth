@@ -46,7 +46,7 @@ describe("useDisconnectIdentity", () => {
     );
   });
 
-  it("surfaces the server error (e.g. last sign-in method)", async () => {
+  it("surfaces server errors", async () => {
     stubFetch(409, { error: "error.conflict" });
     const { result } = renderHook(() => useDisconnectIdentity());
     await expect(result.current("google")).rejects.toThrow("error.conflict");

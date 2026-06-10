@@ -26,7 +26,7 @@ export function useSessions(): () => Promise<AppKitSession[]> {
 
 /**
  * Returns a function that revokes one of the user's sessions ("sign out that
- * device"). Revoking the current session signs the user out here too.
+ * device"). The current session (`current: true`) cannot be revoked this way — the server rejects it; use `logout()` from `useAppKit()` instead.
  *
  * ```tsx
  * const revokeSession = useRevokeSession();

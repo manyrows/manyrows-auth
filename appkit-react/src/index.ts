@@ -75,3 +75,4 @@ export {
   useDisableTOTP,
   useRegenerateBackupCodes,
 } from "./hooks";
+export { isPasskeySupported } from "./webauthn";
