@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { renderHook } from "@testing-library/react";
 import type { ManyRowsAppKitSnapshot } from "../../types";
 import { makeSnapshot, stubFetch } from "./testUtils";
@@ -8,7 +8,7 @@ const h = vi.hoisted(() => ({
 }));
 vi.mock("../../AppKit", () => ({ useAppKit: () => h.ctx }));
 
-import { usePasskeys, useRenamePasskey, useDeletePasskey, useRegisterPasskey } from "../passkeys";
+import { usePasskeys, useRenamePasskey, useDeletePasskey, useRegisterPasskey, isPasskeyCancelled } from "../passkeys";
 
 beforeEach(() => {
   h.ctx.snapshot = makeSnapshot();
@@ -96,6 +96,16 @@ function fakeCredential(): unknown {
   };
 }
 
+const originalCredentials = Object.getOwnPropertyDescriptor(navigator, "credentials");
+
+afterEach(() => {
+  if (originalCredentials) {
+    Object.defineProperty(navigator, "credentials", originalCredentials);
+  } else {
+    delete (navigator as unknown as Record<string, unknown>).credentials;
+  }
+});
+
 /** Make jsdom report passkey support and mock the create() ceremony. */
 function stubWebAuthn(create: (opts?: CredentialCreationOptions) => Promise<unknown>) {
   vi.stubGlobal("PublicKeyCredential", function PublicKeyCredential() { /* marker */ });
@@ -152,6 +162,17 @@ describe("useRegisterPasskey", () => {
     }));
     stubWebAuthn(vi.fn().mockRejectedValue(new DOMException("denied", "NotAllowedError")));
     const { result } = renderHook(() => useRegisterPasskey());
-    await expect(result.current()).rejects.toThrow(/cancelled/i);
+    const promise = result.current();
+    await expect(promise).rejects.toThrow(/cancelled/i);
+    await expect(promise).rejects.toSatisfy((e: unknown) => isPasskeyCancelled(e));
+  });
+
+  it("throws a clear error when the begin response is malformed", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+      ok: true, status: 200, json: async () => ({}),
+    }));
+    stubWebAuthn(vi.fn());
+    const { result } = renderHook(() => useRegisterPasskey());
+    await expect(result.current()).rejects.toThrow("Invalid passkey registration response");
   });
 });

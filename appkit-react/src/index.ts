@@ -68,4 +68,6 @@ export {
   useRenamePasskey,
   useDeletePasskey,
   useRegisterPasskey,
+  isPasskeyCancelled,
+  PASSKEY_CANCELLED,
 } from "./hooks";

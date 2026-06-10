@@ -70,15 +70,31 @@ export function useDeletePasskey(): (passkeyId: string, reauth?: AppKitReauthPar
   }, [token, baseURL]);
 }
 
+/** Name carried by the error useRegisterPasskey throws on user cancellation. */
+export const PASSKEY_CANCELLED = "PasskeyRegistrationCancelled";
+
+function passkeyCancelledError(): Error {
+  const err = new Error("Passkey registration was cancelled");
+  err.name = PASSKEY_CANCELLED;
+  return err;
+}
+
+/** True when an error came from the user dismissing the passkey prompt. */
+export function isPasskeyCancelled(e: unknown): boolean {
+  return e instanceof Error && e.name === PASSKEY_CANCELLED;
+}
+
 /**
  * Returns a function that registers a new passkey for the signed-in user by
  * running the full WebAuthn ceremony: fetch a challenge, prompt the browser
  * (`navigator.credentials.create`), and store the credential. Resolves with
  * the new passkey.
  *
- * Throws `"Passkeys are not supported in this browser"` when WebAuthn is
- * unavailable, and `"Passkey registration was cancelled"` when the user
- * dismisses the browser prompt.
+ * Throws "Passkeys are not supported in this browser" when WebAuthn is
+ * unavailable. On user cancellation (or prompt timeout) the thrown error has
+ * name PASSKEY_CANCELLED — detect it with isPasskeyCancelled(err). Only one
+ * ceremony can run at a time; disable the triggering button while the returned
+ * promise is pending.
  *
  * ```tsx
  * const registerPasskey = useRegisterPasskey();
@@ -96,17 +112,22 @@ export function useRegisterPasskey(): (params?: { name?: string }) => Promise<Ap
     const begin = (await authedJson(token, baseURL, `/a/passkey/register/begin`, { method: "POST" },
       "Failed to start passkey registration")) as { challengeId: string; publicKeyOptions: CreationOptionsJSON };
 
+    if (!begin?.challengeId || !begin?.publicKeyOptions) {
+      throw new Error("Invalid passkey registration response");
+    }
+
     let cred: Credential | null;
     try {
       cred = await navigator.credentials.create({ publicKey: decodeCreationOptions(begin.publicKeyOptions) });
     } catch (e) {
-      if (e instanceof DOMException && e.name === "NotAllowedError") {
-        throw new Error("Passkey registration was cancelled");
+      const name = (e as { name?: string } | null)?.name;
+      if (name === "NotAllowedError" || name === "AbortError") {
+        throw passkeyCancelledError();
       }
       throw e;
     }
     if (!cred) {
-      throw new Error("Passkey registration was cancelled");
+      throw passkeyCancelledError();
     }
 
     const finish = (await authedJson(token, baseURL, `/a/passkey/register/finish`, {
