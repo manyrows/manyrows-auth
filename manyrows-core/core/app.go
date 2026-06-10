@@ -276,7 +276,7 @@ type App struct {
 	// MinZxcvbnScore is the 0..4 threshold from the zxcvbn library
 	// (anything below "safe-ish" is rejected). Defaults are 8 / 2;
 	// admins can tighten or loosen on the Security → Passwords tab.
-	PasswordMinLength      int `json:"passwordMinLength"`
+	PasswordMinLength       int  `json:"passwordMinLength"`
 	PasswordMinZxcvbnScore  int  `json:"passwordMinZxcvbnScore"`
 	PasswordReusePrevention bool `json:"passwordReusePrevention"`
 
