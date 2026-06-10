@@ -201,6 +201,7 @@ func setupClientAPIRouter(t *testing.T) *chi.Mux {
 			authed.Post("/profile/display-name", requestHandler.WorkspaceUpdateDisplayName)
 			authed.Post("/set-password", requestHandler.WorkspaceSetPassword)
 			authed.Get("/me/sessions", requestHandler.GetMySessions)
+			authed.Delete("/me/sessions", requestHandler.DeleteMyOtherSessions)
 			authed.Delete("/me/sessions/{sessionId}", requestHandler.DeleteMySession)
 			authed.Post("/me/request-email-change", requestHandler.ClientRequestEmailChange)
 			authed.Post("/me/verify-email-change", requestHandler.ClientVerifyEmailChange)

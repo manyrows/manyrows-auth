@@ -792,6 +792,32 @@ func (handler *RequestHandler) DeleteMySession(w http.ResponseWriter, r *http.Re
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// DeleteMyOtherSessions revokes every session of the calling user EXCEPT
+// the one making the request ("log out everywhere else"). The current
+// session is deliberately kept alive — the UI confirms success on it; a
+// full logout is the existing /logout. Follows the password-change
+// convention: bulk row delete; session.revoked fired once with no
+// sessionId (bulk semantics, matching the admin bulk revoke).
+func (handler *RequestHandler) DeleteMyOtherSessions(w http.ResponseWriter, r *http.Request) {
+	ses, identity, _, ok := handler.requireActiveClientSession(w, r)
+	if !ok {
+		return
+	}
+
+	n, err := handler.repo.DeleteClientSessionsByUser(r.Context(), identity.User.ID, &ses.ID)
+	if err != nil {
+		log.Err(err).Msg("DeleteMyOtherSessions: failed")
+		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
+		return
+	}
+
+	if n > 0 && ses.AppID != nil {
+		handler.dispatchSessionRevoked(*ses.AppID, identity.User.ID, nil)
+	}
+
+	utils.WriteJsonWithStatusCode(w, map[string]any{"revoked": n}, http.StatusOK)
+}
+
 // GetMyIdentities returns the social/OAuth identities currently linked
 // to the signed-in user (Google, Apple, Microsoft, GitHub).
 // GET /x/{workspaceSlug}/a/me/identities
