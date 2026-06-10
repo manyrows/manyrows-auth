@@ -41,6 +41,16 @@ tags:
     description: Manage the endpoints ManyRows POSTs auth events to.
   - name: Organizations
     description: Provision multi-tenant organizations, their members, and invites.
+  - name: OIDC provider
+    description: >
+      The per-app OpenID Connect provider (authorization code + PKCE). Unlike
+      the rest of this spec, these endpoints do NOT live under the server-API
+      base: each path carries its own `servers` entry pointing at the app's
+      issuer base — `https://{host}/x/{workspaceSlug}/apps/{appId}`, or simply
+      `https://<authDomain>` when the app has a custom auth domain. They
+      authenticate per OAuth/OIDC (client credentials, bearer tokens, or
+      nothing), not with an API key. All return 404 until OIDC is enabled on
+      the app.
 
 paths:
   /apps/{appId}:
@@ -1566,12 +1576,509 @@ paths:
         "204": { description: Revoked. }
         "404": { $ref: "#/components/responses/NotFound" }
 
+  # ---------------------------------------------------------------------
+  # OIDC provider — app-scoped, NOT under the server-API base above.
+  # Each path declares its own `servers` entry (the app's issuer base).
+  # The interactive pages of the flow — /oidc/login, /oidc/consent and
+  # /oidc/authorize/resume — are browser-internal redirect targets of
+  # /oidc/authorize, not machine endpoints, so they are not listed here.
+  # ---------------------------------------------------------------------
+
+  /.well-known/openid-configuration:
+    servers:
+      - url: https://{host}/x/{workspaceSlug}/apps/{appId}
+        description: The app's OIDC issuer base (just `https://<authDomain>` when the app has a custom auth domain).
+        variables:
+          host: { default: auth.example.com, description: Your ManyRows host. }
+          workspaceSlug: { default: your-workspace, description: The workspace slug. }
+          appId: { default: 00000000-0000-0000-0000-000000000000, description: The app ID (also the OIDC `client_id`). }
+    get:
+      tags: [OIDC provider]
+      summary: OIDC discovery document
+      description: >
+        The app's OpenID Connect issuer metadata. Each app is its own issuer.
+        Public and unauthenticated (any RP must be able to fetch it before
+        establishing trust; CORS `*`), cacheable for 5 minutes. Returns 404
+        when OIDC is not enabled on the app — the document's presence is
+        itself the signal that the IdP exists here.
+      operationId: oidcDiscovery
+      security: []
+      responses:
+        "200":
+          description: The issuer metadata.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OIDCDiscoveryDocument" }
+        "404":
+          description: OIDC is not enabled for this app.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /.well-known/jwks.json:
+    servers:
+      - url: https://{host}
+        description: The install root (or the app's custom auth domain). JWKS is install-wide — one key set shared by every app.
+        variables:
+          host: { default: auth.example.com, description: Your ManyRows host. }
+    get:
+      tags: [OIDC provider]
+      summary: JWKS signing keys
+      description: >
+        The public keys that verify ManyRows-issued JWTs (ES256), including
+        OIDC id_tokens and access tokens. This is the `jwks_uri` advertised in
+        the discovery document. Public and unauthenticated; cacheable for
+        5 minutes.
+      operationId: getJwks
+      security: []
+      responses:
+        "200":
+          description: The JSON Web Key Set.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/JWKSDocument" }
+
+  /oidc/authorize:
+    servers:
+      - url: https://{host}/x/{workspaceSlug}/apps/{appId}
+        description: The app's OIDC issuer base (just `https://<authDomain>` when the app has a custom auth domain).
+        variables:
+          host: { default: auth.example.com, description: Your ManyRows host. }
+          workspaceSlug: { default: your-workspace, description: The workspace slug. }
+          appId: { default: 00000000-0000-0000-0000-000000000000, description: The app ID (also the OIDC `client_id`). }
+    get:
+      tags: [OIDC provider]
+      summary: Start the authorization-code flow
+      description: >
+        Browser entry point of the code flow (the only supported flow; PKCE
+        S256 is mandatory). Everything is a `302`: with a usable session and
+        no consent needed, straight back to `redirect_uri` with `?code=`
+        (+ `state`); otherwise via the hosted login page (no session, or
+        `prompt=login` / an expired `max_age`) and/or the hosted consent page
+        (`prompt=consent`, or the app's require-consent setting without a
+        remembered grant covering the requested scope), which land back on
+        `redirect_uri` once done.
+
+        Errors follow OIDC §3.1.2.6: an invalid `client_id` or unregistered
+        `redirect_uri` renders a 400 HTML error page (never a redirect);
+        every other failure is a `302` back to `redirect_uri` with
+        `?error=&error_description=` (+ `state`). Error codes the flow can
+        emit: `unsupported_response_type`, `invalid_scope`, `invalid_request`,
+        `login_required` (no usable session and `prompt=none`),
+        `consent_required` (consent needed and `prompt=none`), `access_denied`
+        (user denied consent, or sign-in did not complete),
+        `temporarily_unavailable` (per-IP rate limit), `server_error`.
+
+        Authorization codes are single-use and expire after 60 seconds;
+        replaying a consumed code at the token endpoint revokes every token
+        minted from it.
+      operationId: oidcAuthorize
+      security: []
+      parameters:
+        - name: client_id
+          in: query
+          required: true
+          description: The app ID. Must match the app in the path.
+          schema: { type: string, format: uuid }
+        - name: redirect_uri
+          in: query
+          required: true
+          description: Must exactly match one of the app's registered redirect URIs (no prefix/wildcard matching).
+          schema: { type: string, format: uri }
+        - name: response_type
+          in: query
+          required: true
+          description: Only `code` is supported.
+          schema: { type: string, enum: [code] }
+        - name: scope
+          in: query
+          required: true
+          description: >
+            Space-delimited; must include `openid` (else `invalid_scope`).
+            Supported: `openid`, `email`, `profile`, `offline_access`
+            (grants a refresh token).
+          schema: { type: string }
+        - name: state
+          in: query
+          description: Opaque RP value, echoed back on the redirect (success and error).
+          schema: { type: string }
+        - name: nonce
+          in: query
+          description: Echoed as the `nonce` claim in the id_token minted by the code grant.
+          schema: { type: string }
+        - name: code_challenge
+          in: query
+          required: true
+          description: PKCE challenge — the 43-character base64url SHA-256 of the verifier. Required (also for confidential clients).
+          schema: { type: string, minLength: 43, maxLength: 43 }
+        - name: code_challenge_method
+          in: query
+          required: true
+          description: Only `S256` is supported.
+          schema: { type: string, enum: [S256] }
+        - name: prompt
+          in: query
+          description: >
+            Space-delimited subset of `none`, `login`, `consent`. `none` must
+            be alone (else `invalid_request`) and forbids interaction — the
+            request errors with `login_required` / `consent_required` instead
+            of showing a page. `login` forces re-authentication; `consent`
+            forces the consent screen.
+          schema: { type: string }
+        - name: max_age
+          in: query
+          description: >
+            Maximum acceptable age of the session's authentication, in
+            seconds; an older session forces re-authentication. Non-numeric
+            or negative values are ignored.
+          schema: { type: integer, minimum: 0 }
+        - name: login_hint
+          in: query
+          description: >
+            Prefill-only email hint for the hosted login page (max 254
+            characters; longer values are silently dropped, never an error).
+          schema: { type: string, maxLength: 254 }
+      responses:
+        "302":
+          description: >
+            Redirect — to `redirect_uri` with `?code=` (+ `state`) on success,
+            to the hosted login/consent page when interaction is needed, or to
+            `redirect_uri` with `?error=` on failure.
+        "400":
+          description: >
+            HTML error page — `client_id` does not match the app, or
+            `redirect_uri` is not registered (per OIDC §3.1.2.6 these must
+            never be redirected).
+          content:
+            text/html:
+              schema: { type: string }
+        "404":
+          description: OIDC is not enabled for this app.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /oidc/token:
+    servers:
+      - url: https://{host}/x/{workspaceSlug}/apps/{appId}
+        description: The app's OIDC issuer base (just `https://<authDomain>` when the app has a custom auth domain).
+        variables:
+          host: { default: auth.example.com, description: Your ManyRows host. }
+          workspaceSlug: { default: your-workspace, description: The workspace slug. }
+          appId: { default: 00000000-0000-0000-0000-000000000000, description: The app ID (also the OIDC `client_id`). }
+    post:
+      tags: [OIDC provider]
+      summary: Exchange a code or refresh token for tokens
+      description: >
+        The token endpoint. Two grants: `authorization_code` (with mandatory
+        PKCE `code_verifier`; the `redirect_uri` must equal the one used at
+        `/oidc/authorize`) and `refresh_token` (rotates the refresh token and
+        re-issues an id_token; an optional `scope` may narrow — never widen —
+        the original grant for this response only). Client authentication is
+        HTTP Basic (`client_secret_basic`) or form fields
+        (`client_secret_post`); public clients (no secret configured) must
+        omit the secret entirely. A refresh token is returned on the code
+        grant only when `offline_access` was granted, and on every refresh
+        (rotation). DPoP-bound refresh tokens (RFC 9449) require a matching
+        `DPoP` proof header to rotate.
+
+        Errors use the RFC 6749 §5.2 shape. Codes emitted: `invalid_request`
+        (400; also 404 when OIDC is not enabled), `invalid_client` (401),
+        `invalid_grant` (400 — bad/expired/replayed code, PKCE failure,
+        mismatched `redirect_uri`, dead session, or invalid refresh token),
+        `invalid_scope` (400 — requested narrowing has no overlap with the
+        grant), `unsupported_grant_type` (400), `invalid_dpop_proof` (400),
+        `temporarily_unavailable` (429 + `Retry-After`; only failed attempts
+        count toward the per-IP limit), `server_error` (500).
+      operationId: oidcToken
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema: { $ref: "#/components/schemas/OIDCTokenRequest" }
+      responses:
+        "200":
+          description: The minted token set.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OIDCTokenResponse" }
+        "400":
+          description: "`invalid_request`, `invalid_grant`, `invalid_scope`, `unsupported_grant_type`, or `invalid_dpop_proof`."
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OAuthError" }
+        "401":
+          description: "`invalid_client` — client authentication failed."
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OAuthError" }
+        "404":
+          description: OIDC is not enabled for this app (`invalid_request`).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OAuthError" }
+        "429":
+          description: "`temporarily_unavailable` — per-IP rate limit exceeded."
+          headers:
+            Retry-After:
+              schema: { type: integer }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OAuthError" }
+
+  /oidc/userinfo:
+    servers:
+      - url: https://{host}/x/{workspaceSlug}/apps/{appId}
+        description: The app's OIDC issuer base (just `https://<authDomain>` when the app has a custom auth domain).
+        variables:
+          host: { default: auth.example.com, description: Your ManyRows host. }
+          workspaceSlug: { default: your-workspace, description: The workspace slug. }
+          appId: { default: 00000000-0000-0000-0000-000000000000, description: The app ID (also the OIDC `client_id`). }
+    get:
+      tags: [OIDC provider]
+      summary: UserInfo
+      description: >
+        The user's claims, authenticated with the access token as a bearer
+        token. Claims are filtered by the scope the token was granted: `sub`
+        always; `email` + `email_verified` with the `email` scope;
+        `preferred_username` (the email local part) with the `profile` scope.
+        Failures are a 401 with a `WWW-Authenticate: Bearer
+        error="invalid_token"` header per RFC 6750. Also accepts POST.
+      operationId: oidcUserInfo
+      security:
+        - OIDCBearer: []
+      responses:
+        "200":
+          description: The scope-filtered claims.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OIDCUserInfoResponse" }
+        "401":
+          description: Missing, invalid, or expired access token (`WWW-Authenticate` header carries the error; empty body).
+          headers:
+            WWW-Authenticate:
+              schema: { type: string }
+    post:
+      tags: [OIDC provider]
+      summary: UserInfo (POST)
+      description: Identical to the GET form — OIDC §5.3.1 allows either verb.
+      operationId: oidcUserInfoPost
+      security:
+        - OIDCBearer: []
+      responses:
+        "200":
+          description: The scope-filtered claims.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OIDCUserInfoResponse" }
+        "401":
+          description: Missing, invalid, or expired access token (`WWW-Authenticate` header carries the error; empty body).
+          headers:
+            WWW-Authenticate:
+              schema: { type: string }
+
+  /oidc/revoke:
+    servers:
+      - url: https://{host}/x/{workspaceSlug}/apps/{appId}
+        description: The app's OIDC issuer base (just `https://<authDomain>` when the app has a custom auth domain).
+        variables:
+          host: { default: auth.example.com, description: Your ManyRows host. }
+          workspaceSlug: { default: your-workspace, description: The workspace slug. }
+          appId: { default: 00000000-0000-0000-0000-000000000000, description: The app ID (also the OIDC `client_id`). }
+    post:
+      tags: [OIDC provider]
+      summary: Revoke a token
+      description: >
+        RFC 7009 revocation. Client-authenticated like the token endpoint
+        (HTTP Basic or form `client_id`/`client_secret`). Accepts either a
+        refresh token or an access-token JWT; revoking either kills the
+        underlying session, so both stop working. Per the RFC, an unknown or
+        already-revoked token still returns 200 (no probing oracle) — only
+        bad client credentials produce an error.
+      operationId: oidcRevoke
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              required: [token]
+              properties:
+                token: { type: string, description: The refresh token or access token to revoke. }
+                client_id: { type: string, description: The app ID. May be sent here or via HTTP Basic. }
+                client_secret: { type: string, description: Required for confidential clients; omit for public clients. }
+      responses:
+        "200": { description: Revoked (or the token was unknown — indistinguishable by design). }
+        "400":
+          description: "`invalid_request` — unparseable form body."
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OAuthError" }
+        "401":
+          description: "`invalid_client` — client authentication failed."
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OAuthError" }
+        "404":
+          description: OIDC is not enabled for this app (`invalid_request`).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OAuthError" }
+
+  /oidc/introspect:
+    servers:
+      - url: https://{host}/x/{workspaceSlug}/apps/{appId}
+        description: The app's OIDC issuer base (just `https://<authDomain>` when the app has a custom auth domain).
+        variables:
+          host: { default: auth.example.com, description: Your ManyRows host. }
+          workspaceSlug: { default: your-workspace, description: The workspace slug. }
+          appId: { default: 00000000-0000-0000-0000-000000000000, description: The app ID (also the OIDC `client_id`). }
+    post:
+      tags: [OIDC provider]
+      summary: Introspect a token
+      description: >
+        RFC 7662 introspection. Client-authenticated like the token endpoint
+        (prevents token scanning). Accepts either a refresh token or an
+        access-token JWT. Unknown, expired, revoked, or cross-app tokens are
+        reported as `{"active": false}` — not an error.
+      operationId: oidcIntrospect
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              required: [token]
+              properties:
+                token: { type: string, description: The refresh token or access token to introspect. }
+                client_id: { type: string, description: The app ID. May be sent here or via HTTP Basic. }
+                client_secret: { type: string, description: Required for confidential clients; omit for public clients. }
+      responses:
+        "200":
+          description: The token's state (active or not).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OIDCIntrospectionResponse" }
+        "400":
+          description: "`invalid_request` — unparseable form body."
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OAuthError" }
+        "401":
+          description: "`invalid_client` — client authentication failed."
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OAuthError" }
+        "404":
+          description: OIDC is not enabled for this app (`invalid_request`).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OAuthError" }
+
+  /oidc/end-session:
+    servers:
+      - url: https://{host}/x/{workspaceSlug}/apps/{appId}
+        description: The app's OIDC issuer base (just `https://<authDomain>` when the app has a custom auth domain).
+        variables:
+          host: { default: auth.example.com, description: Your ManyRows host. }
+          workspaceSlug: { default: your-workspace, description: The workspace slug. }
+          appId: { default: 00000000-0000-0000-0000-000000000000, description: The app ID (also the OIDC `client_id`). }
+    get:
+      tags: [OIDC provider]
+      summary: RP-initiated logout
+      description: >
+        OIDC RP-Initiated Logout. Revokes the browser's session at the IdP (if
+        any — already-signed-out is a no-op) and clears its cookies, then
+        302-redirects to `post_logout_redirect_uri` (+ `state`) when supplied,
+        or renders a minimal "signed out" page. `post_logout_redirect_uri`
+        must exactly match the app's registered post-logout list; an
+        unregistered value renders a 400 HTML error page. `id_token_hint` is
+        accepted per spec but advisory only — the cookie-bound session is the
+        authoritative revocation target. Also accepts POST (parameters stay in
+        the query string).
+      operationId: oidcEndSession
+      security: []
+      parameters:
+        - name: post_logout_redirect_uri
+          in: query
+          description: Where to send the browser afterwards; must exactly match a registered post-logout redirect URI.
+          schema: { type: string, format: uri }
+        - name: state
+          in: query
+          description: Opaque RP value, echoed on the post-logout redirect.
+          schema: { type: string }
+        - name: id_token_hint
+          in: query
+          description: Accepted per spec; advisory only.
+          schema: { type: string }
+      responses:
+        "302": { description: Redirect to `post_logout_redirect_uri` (+ `state`). }
+        "200":
+          description: A minimal "signed out" HTML page (no `post_logout_redirect_uri` supplied).
+          content:
+            text/html:
+              schema: { type: string }
+        "400":
+          description: HTML error page — `post_logout_redirect_uri` is not registered (or malformed).
+          content:
+            text/html:
+              schema: { type: string }
+        "404":
+          description: OIDC is not enabled for this app.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+    post:
+      tags: [OIDC provider]
+      summary: RP-initiated logout (POST)
+      description: Identical to the GET form; parameters are still read from the query string.
+      operationId: oidcEndSessionPost
+      security: []
+      parameters:
+        - name: post_logout_redirect_uri
+          in: query
+          description: Where to send the browser afterwards; must exactly match a registered post-logout redirect URI.
+          schema: { type: string, format: uri }
+        - name: state
+          in: query
+          description: Opaque RP value, echoed on the post-logout redirect.
+          schema: { type: string }
+        - name: id_token_hint
+          in: query
+          description: Accepted per spec; advisory only.
+          schema: { type: string }
+      responses:
+        "302": { description: Redirect to `post_logout_redirect_uri` (+ `state`). }
+        "200":
+          description: A minimal "signed out" HTML page (no `post_logout_redirect_uri` supplied).
+          content:
+            text/html:
+              schema: { type: string }
+        "400":
+          description: HTML error page — `post_logout_redirect_uri` is not registered (or malformed).
+          content:
+            text/html:
+              schema: { type: string }
+        "404":
+          description: OIDC is not enabled for this app.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
 components:
   securitySchemes:
     ApiKeyAuth:
       type: apiKey
       in: header
       name: X-API-Key
+    OIDCBearer:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: An access token minted by the OIDC token endpoint.
 
   parameters:
     AppId:
@@ -2262,6 +2769,87 @@ components:
         email: { type: string, format: email }
         orgRole: { $ref: "#/components/schemas/OrgRole" }
         roleIds: { type: array, items: { type: string, format: uuid } }
+
+    OIDCDiscoveryDocument:
+      type: object
+      description: OpenID Connect issuer metadata (OIDC Discovery 1.0).
+      properties:
+        issuer: { type: string, format: uri, description: "The app's issuer URL — its auth domain, or the install base URL plus the per-app path." }
+        authorization_endpoint: { type: string, format: uri }
+        token_endpoint: { type: string, format: uri }
+        userinfo_endpoint: { type: string, format: uri }
+        jwks_uri: { type: string, format: uri, description: "Install-wide JWKS at the host root, shared by every app." }
+        end_session_endpoint: { type: string, format: uri }
+        revocation_endpoint: { type: string, format: uri }
+        introspection_endpoint: { type: string, format: uri }
+        response_types_supported: { type: array, items: { type: string }, description: "Always [\"code\"]." }
+        subject_types_supported: { type: array, items: { type: string }, description: "Always [\"public\"]." }
+        id_token_signing_alg_values_supported: { type: array, items: { type: string }, description: "Always [\"ES256\"]." }
+        scopes_supported: { type: array, items: { type: string }, description: "openid, email, profile, offline_access." }
+        token_endpoint_auth_methods_supported: { type: array, items: { type: string }, description: "client_secret_basic, client_secret_post, none." }
+        code_challenge_methods_supported: { type: array, items: { type: string }, description: "Always [\"S256\"]." }
+        grant_types_supported: { type: array, items: { type: string }, description: "authorization_code, refresh_token." }
+        claims_supported: { type: array, items: { type: string } }
+
+    JWKSDocument:
+      type: object
+      properties:
+        keys:
+          type: array
+          description: JSON Web Keys (RFC 7517) — ES256 public keys (`kty` EC, `crv` P-256) with `kid`, `alg`, and `use`.
+          items: { type: object }
+
+    OAuthError:
+      type: object
+      description: The RFC 6749 §5.2 error shape used by the OIDC token, revocation, and introspection endpoints.
+      required: [error]
+      properties:
+        error: { type: string, description: "OAuth error code, e.g. invalid_grant." }
+        error_description: { type: string }
+
+    OIDCTokenRequest:
+      type: object
+      required: [grant_type]
+      properties:
+        grant_type: { type: string, enum: [authorization_code, refresh_token] }
+        code: { type: string, description: The authorization code (authorization_code grant). }
+        redirect_uri: { type: string, format: uri, description: Must equal the redirect_uri used at /oidc/authorize (authorization_code grant). }
+        code_verifier: { type: string, minLength: 43, maxLength: 128, description: PKCE verifier whose S256 hash matches the code_challenge (authorization_code grant). }
+        refresh_token: { type: string, description: The refresh token to rotate (refresh_token grant). }
+        scope: { type: string, description: "Optional on the refresh_token grant: space-delimited subset of the original grant to narrow this response to. No overlap at all is invalid_scope; the stored grant itself is never narrowed." }
+        client_id: { type: string, description: The app ID. May be sent here or via HTTP Basic. }
+        client_secret: { type: string, description: Required for confidential clients; MUST be omitted by public clients. }
+
+    OIDCTokenResponse:
+      type: object
+      required: [access_token, id_token, token_type, expires_in]
+      properties:
+        access_token: { type: string, description: ES256-signed JWT, verifiable against the JWKS. }
+        id_token: { type: string, description: "ES256-signed id_token; `iss` matches the discovery document. Carries `nonce` (code grant only), `auth_time`, `at_hash`, and the scope-gated claims." }
+        refresh_token: { type: string, description: Present when offline_access was granted (code grant) and on every refresh (rotation). }
+        token_type: { type: string, description: Always `Bearer`. }
+        expires_in: { type: integer, description: Access-token lifetime in seconds. }
+        scope: { type: string, description: The effective granted scope (space-delimited). On the refresh grant this reflects any requested narrowing. }
+
+    OIDCUserInfoResponse:
+      type: object
+      required: [sub]
+      properties:
+        sub: { type: string, format: uuid, description: The user ID. }
+        email: { type: string, format: email, description: Present with the `email` scope. }
+        email_verified: { type: boolean, description: Present (and true) with the `email` scope when the address is verified. }
+        preferred_username: { type: string, description: The email local part; present with the `profile` scope. }
+
+    OIDCIntrospectionResponse:
+      type: object
+      required: [active]
+      properties:
+        active: { type: boolean }
+        sub: { type: string, format: uuid, description: The user ID (active tokens only). }
+        client_id: { type: string, format: uuid, description: The app ID (active tokens only). }
+        token_type: { type: string, description: "`Bearer` for access tokens, `refresh_token` for refresh tokens (active tokens only)." }
+        exp: { type: integer, description: Expiry as a Unix timestamp (active tokens only). }
+        scope: { type: string, description: The granted scope, space-delimited (active tokens only). }
 
     WebhookEventName:
       type: string
