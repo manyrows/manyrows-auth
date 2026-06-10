@@ -18,6 +18,12 @@ export type {
   AppKitOrgListParams,
   AppKitOrganizationMemberPage,
   AppKitOrganizationInvitePage,
+  AppKitSession,
+  AppKitPasskey,
+  AppKitIdentity,
+  AppKitUserField,
+  AppKitReauthParams,
+  AppKitTOTPSetup,
 } from "./types";
 
 // Convenience hooks

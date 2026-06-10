@@ -114,6 +114,64 @@ export type AppKitOrganizationInvitePage = {
   pageSize: number;
 };
 
+/** An active device session, as returned by the sessions endpoint. */
+export type AppKitSession = {
+  id: string;
+  createdAt: string;
+  lastSeenAt: string;
+  userAgent?: string;
+  ip?: string;
+  /** True for the session making the request. */
+  current: boolean;
+};
+
+/** A registered passkey (WebAuthn credential). */
+export type AppKitPasskey = {
+  id: string;
+  name?: string;
+  transports: string[];
+  aaguid?: string;
+  authenticatorName?: string;
+  backupEligible: boolean;
+  backupState: boolean;
+  createdAt: string;
+  lastUsedAt?: string;
+};
+
+/** A linked sign-in identity (OAuth provider or external IdP). */
+export type AppKitIdentity = {
+  provider: string;
+  providerEmail?: string;
+  createdAt: string;
+  lastLoginAt: string;
+};
+
+/** A client-visible custom user field with its current value. */
+export type AppKitUserField = {
+  key: string;
+  type: string;
+  label: string;
+  value?: unknown;
+};
+
+/**
+ * Proof of identity for sensitive operations (TOTP setup/disable, passkey
+ * delete). Pass `password`, or for passwordless users request an email code
+ * via `useRequestReauthCode()` and pass `code`.
+ */
+export type AppKitReauthParams = {
+  password?: string;
+  code?: string;
+};
+
+/** The TOTP enrollment material returned by useStartTOTPSetup. */
+export type AppKitTOTPSetup = {
+  /** Base32 secret for manual entry. */
+  secret: string;
+  /** otpauth:// URL — render as a QR code. */
+  uri: string;
+};
+
 export type AppKitAppData = {
   account?: AppKitAccount;
   workspaceSlug: string;
