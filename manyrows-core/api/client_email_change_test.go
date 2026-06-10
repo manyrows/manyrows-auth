@@ -230,8 +230,11 @@ func TestClientVerifyEmailChange_Success(t *testing.T) {
 	ctx := context.Background()
 	newEmail := "verified-" + GenerateUniqueSlug("ec") + "@example.com"
 	knownCode := "123456"
+	knownOldCode := "222333"
 	otpID := utils.NewUUID()
 	codeHash := testHashOTP(otpID, knownCode, testOTPPepper)
+	// "old:" domain-separates the two hash slots so equal codes can't produce equal hashes.
+	oldCodeHash := testHashOTP(otpID, "old:"+knownOldCode, testOTPPepper)
 
 	// Insert an email change request directly via the repo
 	err := testEnv.Repo.UpsertEmailChangeRequest(
@@ -241,14 +244,14 @@ func TestClientVerifyEmailChange_Success(t *testing.T) {
 		app.ID,
 		newEmail,
 		codeHash,
-		"",
+		oldCodeHash,
 		time.Now().UTC().Add(15*time.Minute),
 	)
 	if err != nil {
 		t.Fatalf("failed to insert email change request: %v", err)
 	}
 
-	body, _ := json.Marshal(map[string]string{"code": knownCode})
+	body, _ := json.Marshal(map[string]string{"oldCode": knownOldCode, "newCode": knownCode})
 	req := httptest.NewRequest(http.MethodPost, verifyEmailChangePath(ws, app), bytes.NewReader(body))
 	req.Header.Set("Authorization", "Bearer "+accessToken)
 	req.Header.Set("Content-Type", "application/json")
@@ -282,15 +285,18 @@ func TestClientVerifyEmailChange_Success(t *testing.T) {
 	}
 }
 
-func TestClientVerifyEmailChange_WrongCode(t *testing.T) {
+func TestClientVerifyEmailChange_WrongNewCode(t *testing.T) {
 	router, ws, app, _, userID, accessToken, cleanup := emailChangeTestSetup(t)
 	defer cleanup()
 
 	ctx := context.Background()
 	newEmail := "wrong-code-" + GenerateUniqueSlug("ec") + "@example.com"
 	correctCode := "123456"
+	knownOldCode := "222333"
 	otpID := utils.NewUUID()
 	codeHash := testHashOTP(otpID, correctCode, testOTPPepper)
+	// "old:" domain-separates the two hash slots so equal codes can't produce equal hashes.
+	oldCodeHash := testHashOTP(otpID, "old:"+knownOldCode, testOTPPepper)
 
 	err := testEnv.Repo.UpsertEmailChangeRequest(
 		ctx,
@@ -299,15 +305,15 @@ func TestClientVerifyEmailChange_WrongCode(t *testing.T) {
 		app.ID,
 		newEmail,
 		codeHash,
-		"",
+		oldCodeHash,
 		time.Now().UTC().Add(15*time.Minute),
 	)
 	if err != nil {
 		t.Fatalf("failed to insert email change request: %v", err)
 	}
 
-	// Send wrong code
-	body, _ := json.Marshal(map[string]string{"code": "999999"})
+	// Send correct OLD code but wrong NEW code
+	body, _ := json.Marshal(map[string]string{"oldCode": knownOldCode, "newCode": "999999"})
 	req := httptest.NewRequest(http.MethodPost, verifyEmailChangePath(ws, app), bytes.NewReader(body))
 	req.Header.Set("Authorization", "Bearer "+accessToken)
 	req.Header.Set("Content-Type", "application/json")
@@ -318,6 +324,130 @@ func TestClientVerifyEmailChange_WrongCode(t *testing.T) {
 	if rr.Code != http.StatusUnauthorized {
 		t.Fatalf("expected 401, got %d: %s", rr.Code, rr.Body.String())
 	}
+
+	// Email must not have changed
+	var dbEmail string
+	if err := testEnv.DB.Pool().QueryRow(ctx, "SELECT email FROM users WHERE id = $1", userID).Scan(&dbEmail); err != nil {
+		t.Fatalf("failed to query user email: %v", err)
+	}
+	// The email should still be the original (not newEmail)
+	if dbEmail == newEmail {
+		t.Errorf("email was changed despite wrong code")
+	}
+}
+
+// TestClientVerifyEmailChange_WrongOldCode: correct new code, wrong old code →
+// 401 error.invalidCode, email unchanged, attempts incremented.
+func TestClientVerifyEmailChange_WrongOldCode(t *testing.T) {
+	router, ws, app, _, userID, accessToken, cleanup := emailChangeTestSetup(t)
+	defer cleanup()
+
+	ctx := context.Background()
+	newEmail := "wrong-old-" + GenerateUniqueSlug("ec") + "@example.com"
+	knownCode := "123456"
+	knownOldCode := "222333"
+	otpID := utils.NewUUID()
+	codeHash := testHashOTP(otpID, knownCode, testOTPPepper)
+	// "old:" domain-separates the two hash slots so equal codes can't produce equal hashes.
+	oldCodeHash := testHashOTP(otpID, "old:"+knownOldCode, testOTPPepper)
+
+	err := testEnv.Repo.UpsertEmailChangeRequest(
+		ctx,
+		otpID,
+		userID,
+		app.ID,
+		newEmail,
+		codeHash,
+		oldCodeHash,
+		time.Now().UTC().Add(15*time.Minute),
+	)
+	if err != nil {
+		t.Fatalf("failed to insert email change request: %v", err)
+	}
+
+	// Send correct NEW code but wrong OLD code
+	body, _ := json.Marshal(map[string]string{"oldCode": "888777", "newCode": knownCode})
+	req := httptest.NewRequest(http.MethodPost, verifyEmailChangePath(ws, app), bytes.NewReader(body))
+	req.Header.Set("Authorization", "Bearer "+accessToken)
+	req.Header.Set("Content-Type", "application/json")
+
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401, got %d: %s", rr.Code, rr.Body.String())
+	}
+
+	// Email must not have changed
+	var dbEmail string
+	if err := testEnv.DB.Pool().QueryRow(ctx, "SELECT email FROM users WHERE id = $1", userID).Scan(&dbEmail); err != nil {
+		t.Fatalf("failed to query user email: %v", err)
+	}
+	if dbEmail == newEmail {
+		t.Errorf("email was changed despite wrong old code")
+	}
+
+	// Attempts must be incremented to 1
+	var attempts int
+	if err := testEnv.DB.Pool().QueryRow(ctx,
+		"SELECT attempts FROM email_change_requests WHERE user_id = $1", userID,
+	).Scan(&attempts); err != nil {
+		t.Fatalf("failed to query attempts: %v", err)
+	}
+	if attempts != 1 {
+		t.Errorf("expected attempts=1, got %d", attempts)
+	}
+}
+
+// TestClientVerifyEmailChange_LegacyRowFailsClosed: a row inserted with an
+// empty old_code_hash (pre-deploy shape) must be rejected even with a correct
+// new code. Legacy rows fail closed; callers must re-initiate the request.
+func TestClientVerifyEmailChange_LegacyRowFailsClosed(t *testing.T) {
+	router, ws, app, _, userID, accessToken, cleanup := emailChangeTestSetup(t)
+	defer cleanup()
+
+	ctx := context.Background()
+	newEmail := "legacy-" + GenerateUniqueSlug("ec") + "@example.com"
+	knownCode := "123456"
+	otpID := utils.NewUUID()
+	codeHash := testHashOTP(otpID, knownCode, testOTPPepper)
+
+	// Insert with empty old_code_hash (legacy row)
+	err := testEnv.Repo.UpsertEmailChangeRequest(
+		ctx,
+		otpID,
+		userID,
+		app.ID,
+		newEmail,
+		codeHash,
+		"", // pre-deploy: no old code hash
+		time.Now().UTC().Add(15*time.Minute),
+	)
+	if err != nil {
+		t.Fatalf("failed to insert legacy email change request: %v", err)
+	}
+
+	// Post correct newCode + any 6-digit oldCode → must be rejected
+	body, _ := json.Marshal(map[string]string{"oldCode": "111111", "newCode": knownCode})
+	req := httptest.NewRequest(http.MethodPost, verifyEmailChangePath(ws, app), bytes.NewReader(body))
+	req.Header.Set("Authorization", "Bearer "+accessToken)
+	req.Header.Set("Content-Type", "application/json")
+
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401 for legacy row, got %d: %s", rr.Code, rr.Body.String())
+	}
+
+	// Email must not have changed
+	var dbEmail string
+	if err := testEnv.DB.Pool().QueryRow(ctx, "SELECT email FROM users WHERE id = $1", userID).Scan(&dbEmail); err != nil {
+		t.Fatalf("failed to query user email: %v", err)
+	}
+	if dbEmail == newEmail {
+		t.Errorf("email was changed for legacy row")
+	}
 }
 
 func TestClientVerifyEmailChange_NoPendingRequest(t *testing.T) {
@@ -325,7 +455,7 @@ func TestClientVerifyEmailChange_NoPendingRequest(t *testing.T) {
 	defer cleanup()
 
 	// No email change request inserted -- go straight to verify
-	body, _ := json.Marshal(map[string]string{"code": "123456"})
+	body, _ := json.Marshal(map[string]string{"oldCode": "111111", "newCode": "123456"})
 	req := httptest.NewRequest(http.MethodPost, verifyEmailChangePath(ws, app), bytes.NewReader(body))
 	req.Header.Set("Authorization", "Bearer "+accessToken)
 	req.Header.Set("Content-Type", "application/json")

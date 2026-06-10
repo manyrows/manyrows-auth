@@ -179,7 +179,8 @@ func (handler *RequestHandler) ClientRequestEmailChange(w http.ResponseWriter, r
 		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 		return
 	}
-	oldCodeHash, err := hashOTP(otpID, oldCode, pepper)
+	// "old:" domain-separates the two hash slots so equal codes can't produce equal hashes.
+	oldCodeHash, err := hashOTP(otpID, "old:"+oldCode, pepper)
 	if err != nil {
 		log.Err(err).Msg("Could not hash old-address otp")
 		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
@@ -252,8 +253,14 @@ func (handler *RequestHandler) ClientRequestEmailChange(w http.ResponseWriter, r
 	utils.WriteJson(w, map[string]any{"ok": true})
 }
 
-// ClientVerifyEmailChange verifies the OTP and completes the email change.
+// ClientVerifyEmailChange verifies both OTP codes and completes the email change.
 // POST /x/{workspaceSlug}/apps/{appId}/a/me/verify-email-change
+//
+// Body: {"oldCode": "<6-digit>", "newCode": "<6-digit>"}
+// Both codes must be correct: newCode was emailed to the NEW address,
+// oldCode was emailed to the CURRENT (old) address. Either mismatch or a
+// legacy row (empty old_code_hash) returns 401 error.invalidCode — the
+// caller must re-initiate with ClientRequestEmailChange.
 //
 // Gated by app.AllowEmailChange — see ClientRequestEmailChange.
 func (handler *RequestHandler) ClientVerifyEmailChange(w http.ResponseWriter, r *http.Request) {
@@ -270,14 +277,16 @@ func (handler *RequestHandler) ClientVerifyEmailChange(w http.ResponseWriter, r 
 	}
 
 	var body struct {
-		Code string `json:"code"`
+		OldCode string `json:"oldCode"`
+		NewCode string `json:"newCode"`
 	}
 	if !utils.ReadJson(w, r, &body) {
 		return
 	}
 
-	code := strings.TrimSpace(body.Code)
-	if len(code) != 6 || !isDigits(code) {
+	oldCode := strings.TrimSpace(body.OldCode)
+	newCode := strings.TrimSpace(body.NewCode)
+	if len(oldCode) != 6 || !isDigits(oldCode) || len(newCode) != 6 || !isDigits(newCode) {
 		WriteError(w, r, "error.invalidCode", http.StatusBadRequest)
 		return
 	}
@@ -331,14 +340,27 @@ func (handler *RequestHandler) ClientVerifyEmailChange(w http.ResponseWriter, r 
 
 	// ClientRequestEmailChange hashes with the OTP row id (a fresh UUID
 	// per request), so verify must use the same.
-	expectedHash, err := hashOTP(req.ID, code, pepper)
+	expectedNewHash, err := hashOTP(req.ID, newCode, pepper)
 	if err != nil {
 		log.Err(err).Msg("Could not hash otp for verify")
 		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 		return
 	}
+	// "old:" domain-separates the two hash slots so equal codes can't
+	// produce equal hashes.
+	expectedOldHash, err := hashOTP(req.ID, "old:"+oldCode, pepper)
+	if err != nil {
+		log.Err(err).Msg("Could not hash old otp for verify")
+		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
+		return
+	}
 
-	if subtle.ConstantTimeCompare([]byte(req.CodeHash), []byte(expectedHash)) != 1 {
+	// Compute both comparisons before branching — no short-circuit — so
+	// timing does not reveal which code was wrong.
+	newOK := subtle.ConstantTimeCompare([]byte(req.CodeHash), []byte(expectedNewHash)) == 1
+	oldOK := req.OldCodeHash != "" &&
+		subtle.ConstantTimeCompare([]byte(req.OldCodeHash), []byte(expectedOldHash)) == 1
+	if !newOK || !oldOK {
 		// Wrong code: bump the per-request counter and, if we just
 		// hit the cap, delete the row so further attempts fall into
 		// the "no pending request" branch.
