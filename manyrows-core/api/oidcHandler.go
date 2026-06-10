@@ -1099,6 +1099,7 @@ func (handler *RequestHandler) issueOIDCTokenSet(ctx context.Context, w http.Res
 			auth.ClientIP(r),
 			ttlFromAppMinutes(app.SessionTTLMinutes),
 			dpopJKT,
+			"", // Task 2 wires real OIDC scope here
 		)
 		if err == nil {
 			resp.RefreshToken = refreshToken

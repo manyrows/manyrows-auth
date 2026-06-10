@@ -91,6 +91,8 @@ func (a *AuthService) IssueAccessToken(s *core.ClientSession, ttl time.Duration,
 // sessionTTL overrides the default refresh token TTL if > 0.
 // dpopJKT is the JWK SHA-256 thumbprint of the keypair binding this refresh
 // token to a DPoP proof; empty for clients that didn't opt into DPoP.
+// oidcScope is the space-separated OIDC scope granted for this token chain;
+// empty for first-party / non-OIDC tokens. Task 2 wires real values.
 // Returns the raw token (to send to client) and the stored record.
 func (a *AuthService) IssueRefreshToken(
 	ctx context.Context,
@@ -99,6 +101,7 @@ func (a *AuthService) IssueRefreshToken(
 	ip string,
 	sessionTTL time.Duration,
 	dpopJKT string,
+	oidcScope string,
 ) (string, *core.ClientRefreshToken, error) {
 	if sessionID == uuid.Nil {
 		return "", nil, errors.New("missing sessionID")
@@ -124,6 +127,7 @@ func (a *AuthService) IssueRefreshToken(
 		UserAgent: strings.TrimSpace(userAgent),
 		IP:        strings.TrimSpace(ip),
 		DPopJKT:   strings.TrimSpace(dpopJKT),
+		OIDCScope: oidcScope,
 	}
 
 	if err := a.repo.InsertClientRefreshToken(ctx, rt); err != nil {
@@ -139,6 +143,8 @@ func (a *AuthService) IssueRefreshToken(
 // per-app AccessTokenTTLMinutes knob.
 // dpopJKT is the verified JWK thumbprint from a DPoP proof on the inbound
 // request, or empty when the client did not opt into DPoP at this issuance.
+// oidcScope is the space-separated OIDC scope for the token chain; empty for
+// first-party / non-OIDC tokens. Task 2 wires real values.
 func (a *AuthService) IssueTokenPair(
 	ctx context.Context,
 	session *core.ClientSession,
@@ -148,6 +154,7 @@ func (a *AuthService) IssueTokenPair(
 	accessTokenTTL time.Duration,
 	dpopJKT string,
 	issuer string,
+	oidcScope string,
 ) (*TokenPair, error) {
 	if session == nil {
 		return nil, errors.New("missing session")
@@ -158,7 +165,7 @@ func (a *AuthService) IssueTokenPair(
 		return nil, err
 	}
 
-	refreshToken, rt, err := a.IssueRefreshToken(ctx, session.ID, userAgent, ip, sessionTTL, dpopJKT)
+	refreshToken, rt, err := a.IssueRefreshToken(ctx, session.ID, userAgent, ip, sessionTTL, dpopJKT, oidcScope)
 	if err != nil {
 		return nil, err
 	}
@@ -381,10 +388,11 @@ func (a *AuthService) RefreshTokenPair(
 		}
 	}
 
-	// Propagate the existing jkt to the new token. This is the *bound* jkt
-	// from the row we just rotated — never presentedJKT — so even a buggy
-	// caller cannot accidentally upgrade or change the binding mid-chain.
-	newRefreshToken, newRT, err := a.IssueRefreshToken(ctx, session.ID, userAgent, ip, effectiveTTL, boundJKT)
+	// Propagate the existing jkt and oidc_scope to the new token. The jkt
+	// comes from the row we just rotated — never presentedJKT — so a buggy
+	// caller cannot upgrade or change the binding mid-chain. OIDCScope is
+	// likewise inherited unchanged from the original grant.
+	newRefreshToken, newRT, err := a.IssueRefreshToken(ctx, session.ID, userAgent, ip, effectiveTTL, boundJKT, rt.OIDCScope)
 	if err != nil {
 		return nil, err
 	}

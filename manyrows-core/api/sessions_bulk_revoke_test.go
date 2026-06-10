@@ -56,7 +56,7 @@ func TestDeleteMyOtherSessions_RevokesOthersKeepsCurrent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create session 1: %v", err)
 	}
-	tokenPair1, err := clientAuthService.IssueTokenPair(ctx, ses1, "agent-1", "127.0.0.1", 0, 0, "", "")
+	tokenPair1, err := clientAuthService.IssueTokenPair(ctx, ses1, "agent-1", "127.0.0.1", 0, 0, "", "", "")
 	if err != nil {
 		t.Fatalf("failed to issue token pair 1: %v", err)
 	}

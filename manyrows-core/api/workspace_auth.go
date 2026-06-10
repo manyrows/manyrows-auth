@@ -845,7 +845,7 @@ func (handler *RequestHandler) WorkspaceLogin(w http.ResponseWriter, r *http.Req
 	}
 
 	// Issue token pair (access + refresh)
-	tokenPair, err := handler.clientAuthService.IssueTokenPair(r.Context(), ses, ua, ip, effectiveSessionTTL(ctxApp, req.RememberMe), ctxApp.AccessTokenTTL(), dpopJKT, handler.clientAuthService.IssuerForApp(ctxApp))
+	tokenPair, err := handler.clientAuthService.IssueTokenPair(r.Context(), ses, ua, ip, effectiveSessionTTL(ctxApp, req.RememberMe), ctxApp.AccessTokenTTL(), dpopJKT, handler.clientAuthService.IssuerForApp(ctxApp), "")
 	if err != nil {
 		log.Err(err).Msg("Could not issue token pair")
 		// best-effort: token issuance failed after we created the session
@@ -1394,7 +1394,7 @@ func (handler *RequestHandler) WorkspaceLoginPassword(w http.ResponseWriter, r *
 	}
 
 	// Issue token pair
-	tokenPair, err := handler.clientAuthService.IssueTokenPair(r.Context(), ses, ua, ip, effectiveSessionTTL(ctxApp, req.RememberMe), ctxApp.AccessTokenTTL(), dpopJKT, handler.clientAuthService.IssuerForApp(ctxApp))
+	tokenPair, err := handler.clientAuthService.IssueTokenPair(r.Context(), ses, ua, ip, effectiveSessionTTL(ctxApp, req.RememberMe), ctxApp.AccessTokenTTL(), dpopJKT, handler.clientAuthService.IssuerForApp(ctxApp), "")
 	if err != nil {
 		log.Err(err).Msg("Could not issue token pair for password login")
 		WriteError(w, r, "error.internalError", http.StatusInternalServerError)

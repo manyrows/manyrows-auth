@@ -35,6 +35,11 @@ type ClientRefreshToken struct {
 	// only refresh token. When non-empty, the refresh handler MUST require a
 	// valid DPoP proof from the matching keypair on every rotation.
 	DPopJKT string `db:"dpop_jkt" json:"-"`
+
+	// Space-separated OIDC scopes granted for this refresh-token chain.
+	// '' for first-party / pre-feature tokens. Inherited by replacement
+	// rows on rotation. Task 2 wires real values at issuance time.
+	OIDCScope string `db:"oidc_scope" json:"-"`
 }
 
 // IsActive returns true if the token can be used for refresh.

@@ -38,7 +38,7 @@ func issueClientTokenPair(t *testing.T, ws *core.Workspace, app *core.App, accEm
 	if err != nil {
 		t.Fatalf("create client session: %v", err)
 	}
-	tp, err := clientAuth.IssueTokenPair(ctx, ses, "test-agent", "127.0.0.1", 0, 0, "", "")
+	tp, err := clientAuth.IssueTokenPair(ctx, ses, "test-agent", "127.0.0.1", 0, 0, "", "", "")
 	if err != nil {
 		t.Fatalf("issue token pair: %v", err)
 	}

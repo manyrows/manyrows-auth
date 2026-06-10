@@ -578,7 +578,7 @@ func (handler *RequestHandler) completeWorkspaceTOTPLogin(
 		return
 	}
 
-	tokenPair, err := handler.clientAuthService.IssueTokenPair(r.Context(), ses, ua, ip, effectiveSessionTTL(ctxApp, rememberMe), ctxApp.AccessTokenTTL(), dpopJKT, handler.clientAuthService.IssuerForApp(ctxApp))
+	tokenPair, err := handler.clientAuthService.IssueTokenPair(r.Context(), ses, ua, ip, effectiveSessionTTL(ctxApp, rememberMe), ctxApp.AccessTokenTTL(), dpopJKT, handler.clientAuthService.IssuerForApp(ctxApp), "")
 	if err != nil {
 		log.Err(err).Msg("Could not issue token pair after TOTP verify")
 		_ = handler.clientAuthService.DeleteSession(r.Context(), ses.ID)

@@ -38,8 +38,9 @@ insert into client_refresh_tokens (
   expires_at,
   user_agent,
   ip,
-  dpop_jkt
-) values ($1,$2,$3,$4,$5,$6,$7, nullif($8, ''));
+  dpop_jkt,
+  oidc_scope
+) values ($1,$2,$3,$4,$5,$6,$7, nullif($8, ''), $9);
 `
 	_, err := r.db.Pool().Exec(
 		ctx,
@@ -52,6 +53,7 @@ insert into client_refresh_tokens (
 		rt.UserAgent,
 		rt.IP,
 		rt.DPopJKT,
+		rt.OIDCScope,
 	)
 	return err
 }
@@ -74,7 +76,8 @@ select
   replaced_by_id,
   user_agent,
   ip,
-  coalesce(dpop_jkt, '')
+  coalesce(dpop_jkt, ''),
+  oidc_scope
 from client_refresh_tokens
 where token_hash = $1
 limit 1;
@@ -93,6 +96,7 @@ limit 1;
 		&rt.UserAgent,
 		&rt.IP,
 		&rt.DPopJKT,
+		&rt.OIDCScope,
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {

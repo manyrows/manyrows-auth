@@ -453,7 +453,7 @@ func (handler *RequestHandler) finishClientSignInRedirect(
 	// JKT and write tokens into the URL fragment of the app URL.
 	// Auth-log only AFTER the token pair issues so a failure here
 	// doesn't get logged as a successful login.
-	tokenPair, err := handler.clientAuthService.IssueTokenPair(r.Context(), ses, ua, ip, effectiveSessionTTL(ctxApp, rememberMe), ctxApp.AccessTokenTTL(), "", handler.clientAuthService.IssuerForApp(ctxApp))
+	tokenPair, err := handler.clientAuthService.IssueTokenPair(r.Context(), ses, ua, ip, effectiveSessionTTL(ctxApp, rememberMe), ctxApp.AccessTokenTTL(), "", handler.clientAuthService.IssuerForApp(ctxApp), "")
 	if err != nil {
 		log.Err(err).Msg("magic-link: IssueTokenPair failed")
 		_ = handler.clientAuthService.DeleteSession(r.Context(), ses.ID)

@@ -791,7 +791,7 @@ func (handler *RequestHandler) WorkspacePasskeyLoginFinish(w http.ResponseWriter
 		_ = handler.clientAuthService.DeleteSession(r.Context(), ses.ID)
 		return
 	}
-	tokenPair, err := handler.clientAuthService.IssueTokenPair(r.Context(), ses, ua, ip, effectiveSessionTTL(app, req.RememberMe), app.AccessTokenTTL(), dpopJKT, handler.clientAuthService.IssuerForApp(app))
+	tokenPair, err := handler.clientAuthService.IssueTokenPair(r.Context(), ses, ua, ip, effectiveSessionTTL(app, req.RememberMe), app.AccessTokenTTL(), dpopJKT, handler.clientAuthService.IssuerForApp(app), "")
 	if err != nil {
 		log.Err(err).Msg("Could not issue token pair for passkey login")
 		WriteError(w, r, "error.internalError", http.StatusInternalServerError)

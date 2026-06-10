@@ -220,6 +220,7 @@ func (handler *RequestHandler) HandleAuthPairWait(w http.ResponseWriter, r *http
 		app.AccessTokenTTL(),
 		"", // DPoP not flowed through QR pairing in v1
 		handler.clientAuthService.IssuerForApp(app),
+		"",
 	)
 	if err != nil {
 		log.Err(err).Msg("HandleAuthPairWait: IssueTokenPair failed")

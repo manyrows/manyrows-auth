@@ -98,7 +98,7 @@ func issueBoundSession(t *testing.T, ws *core.Workspace, app *core.App, jkt stri
 	if err != nil {
 		t.Fatalf("create session: %v", err)
 	}
-	rawToken, _, err := clientAuthService.IssueRefreshToken(ctx, ses.ID, "test-agent", "127.0.0.1", 0, jkt)
+	rawToken, _, err := clientAuthService.IssueRefreshToken(ctx, ses.ID, "test-agent", "127.0.0.1", 0, jkt, "")
 	if err != nil {
 		t.Fatalf("issue refresh token: %v", err)
 	}

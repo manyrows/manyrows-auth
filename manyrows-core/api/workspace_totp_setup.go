@@ -321,6 +321,7 @@ func (handler *RequestHandler) HandleWorkspaceTOTPSetupComplete(w http.ResponseW
 		ctxApp.AccessTokenTTL(),
 		dpopJKT,
 		handler.clientAuthService.IssuerForApp(ctxApp),
+		"",
 	)
 	if err != nil {
 		log.Err(err).Msg("totp setup-complete (tier 1): IssueTokenPair failed")

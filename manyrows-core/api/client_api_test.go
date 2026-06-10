@@ -422,7 +422,7 @@ func createTestClientSessionForApp(t *testing.T, ws *core.Workspace, acc *core.A
 		t.Fatalf("failed to create client session: %v", err)
 	}
 
-	tokenPair, err := clientAuthService.IssueTokenPair(ctx, ses, "test-agent", "127.0.0.1", 0, 0, "", "")
+	tokenPair, err := clientAuthService.IssueTokenPair(ctx, ses, "test-agent", "127.0.0.1", 0, 0, "", "", "")
 	if err != nil {
 		t.Fatalf("failed to issue token pair: %v", err)
 	}
@@ -469,7 +469,7 @@ func TestWorkspaceRefresh_Success(t *testing.T) {
 		t.Fatalf("failed to create client session: %v", err)
 	}
 
-	tokenPair, err := clientAuthService.IssueTokenPair(ctx, ses, "test-agent", "127.0.0.1", 0, 0, "", "")
+	tokenPair, err := clientAuthService.IssueTokenPair(ctx, ses, "test-agent", "127.0.0.1", 0, 0, "", "", "")
 	if err != nil {
 		t.Fatalf("failed to issue token pair: %v", err)
 	}
@@ -5277,7 +5277,7 @@ func TestIssueRefreshToken_DefaultTTL(t *testing.T) {
 	}
 
 	before := time.Now()
-	_, rt, err := clientAuthService.IssueRefreshToken(ctx, ses.ID, "test-agent", "127.0.0.1", 0, "")
+	_, rt, err := clientAuthService.IssueRefreshToken(ctx, ses.ID, "test-agent", "127.0.0.1", 0, "", "")
 	after := time.Now()
 	if err != nil {
 		t.Fatalf("failed to issue refresh token: %v", err)
@@ -5323,7 +5323,7 @@ func TestIssueRefreshToken_CustomTTL(t *testing.T) {
 
 	customTTL := 30 * time.Minute
 	before := time.Now()
-	_, rt, err := clientAuthService.IssueRefreshToken(ctx, ses.ID, "test-agent", "127.0.0.1", customTTL, "")
+	_, rt, err := clientAuthService.IssueRefreshToken(ctx, ses.ID, "test-agent", "127.0.0.1", customTTL, "", "")
 	after := time.Now()
 	if err != nil {
 		t.Fatalf("failed to issue refresh token: %v", err)
@@ -5498,7 +5498,7 @@ func TestDeleteMySession_Success(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create first session: %v", err)
 	}
-	tokenPair1, err := clientAuthService.IssueTokenPair(ctx, ses1, "test-agent-1", "127.0.0.1", 0, 0, "", "")
+	tokenPair1, err := clientAuthService.IssueTokenPair(ctx, ses1, "test-agent-1", "127.0.0.1", 0, 0, "", "", "")
 	if err != nil {
 		t.Fatalf("failed to issue token pair for first session: %v", err)
 	}
@@ -5508,7 +5508,7 @@ func TestDeleteMySession_Success(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create second session: %v", err)
 	}
-	_, err = clientAuthService.IssueTokenPair(ctx, ses2, "test-agent-2", "127.0.0.2", 0, 0, "", "")
+	_, err = clientAuthService.IssueTokenPair(ctx, ses2, "test-agent-2", "127.0.0.2", 0, 0, "", "", "")
 	if err != nil {
 		t.Fatalf("failed to issue token pair for second session: %v", err)
 	}
@@ -5924,7 +5924,7 @@ func TestSensitiveReauth_TOTPSetup_RequiresBody(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create session: %v", err)
 	}
-	tokens, err := clientAuth.IssueTokenPair(ctx, ses, "test-agent", "127.0.0.1", 0, 0, "", "")
+	tokens, err := clientAuth.IssueTokenPair(ctx, ses, "test-agent", "127.0.0.1", 0, 0, "", "", "")
 	if err != nil {
 		t.Fatalf("issue tokens: %v", err)
 	}
@@ -6017,7 +6017,7 @@ func TestSensitiveReauth_PasskeyDelete_RequiresBody(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create session: %v", err)
 	}
-	tokens, err := clientAuth.IssueTokenPair(ctx, ses, "test-agent", "127.0.0.1", 0, 0, "", "")
+	tokens, err := clientAuth.IssueTokenPair(ctx, ses, "test-agent", "127.0.0.1", 0, 0, "", "", "")
 	if err != nil {
 		t.Fatalf("issue tokens: %v", err)
 	}

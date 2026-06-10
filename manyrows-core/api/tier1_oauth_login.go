@@ -294,7 +294,7 @@ func (handler *RequestHandler) completeTier1OAuthLogin(
 		rememberMe = ses.RememberMe
 	}
 
-	tokenPair, err := handler.clientAuthService.IssueTokenPair(r.Context(), ses, ua, ip, effectiveSessionTTL(ctxApp, rememberMe), ctxApp.AccessTokenTTL(), dpopJKT, handler.clientAuthService.IssuerForApp(ctxApp))
+	tokenPair, err := handler.clientAuthService.IssueTokenPair(r.Context(), ses, ua, ip, effectiveSessionTTL(ctxApp, rememberMe), ctxApp.AccessTokenTTL(), dpopJKT, handler.clientAuthService.IssuerForApp(ctxApp), "")
 	if err != nil {
 		log.Err(err).Msgf("Could not issue token pair for %s login", opts.WebhookMethod)
 		// Only tear down a session we just created — never the caller's
