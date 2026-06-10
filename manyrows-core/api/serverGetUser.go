@@ -1,10 +1,12 @@
 package api
 
 import (
+	"encoding/json"
 	"errors"
 	"net/http"
 	"strings"
 
+	"manyrows-core/auth"
 	"manyrows-core/core"
 	"manyrows-core/core/repo"
 	"manyrows-core/utils"
@@ -113,5 +115,105 @@ func (handler *RequestHandler) respondServerUser(w http.ResponseWriter, r *http.
 		resp.Fields = []core.UserFieldValue{}
 	}
 
+	utils.WriteJsonWithStatusCode(w, resp, http.StatusOK)
+}
+
+// ---------------------------------------------------------------------------
+// Bulk email lookup
+// ---------------------------------------------------------------------------
+
+const maxLookupUsers = 1000 // reads are one indexed query; deliberately larger than maxBatchUsers
+
+// ServerUsersLookupRequest is the request body for the :lookup custom method.
+type ServerUsersLookupRequest struct {
+	Emails []string `json:"emails"`
+}
+
+// ServerUsersLookupResponse is the response body for the :lookup custom method.
+type ServerUsersLookupResponse struct {
+	Users   []*core.UserResource `json:"users"`
+	Missing []string             `json:"missing"`
+}
+
+// ServerUsersLookup resolves up to maxLookupUsers emails to user resources
+// in one call. Read-only despite the POST verb (Google-style custom method
+// — the body carries the email list; see the :lookup exception in the API
+// key scope gate). Duplicate emails dedupe silently; unknown emails are
+// reported in "missing" (normalized form).
+// POST /x/{workspaceSlug}/api/v1/apps/{appId}/users:lookup
+func (handler *RequestHandler) ServerUsersLookup(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	project, ok := core.ProjectFromContext(ctx)
+	if !ok || project == nil {
+		WriteError(w, r, "error.projectNotFound", http.StatusNotFound)
+		return
+	}
+	app, ok := core.AppFromContext(ctx)
+	if !ok || app == nil {
+		WriteError(w, r, "error.appNotFound", http.StatusNotFound)
+		return
+	}
+
+	var req ServerUsersLookupRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		WriteError(w, r, "error.invalidJson", http.StatusBadRequest)
+		return
+	}
+	if len(req.Emails) == 0 {
+		WriteError(w, r, "error.badRequest", http.StatusBadRequest)
+		return
+	}
+	if len(req.Emails) > maxLookupUsers {
+		WriteErrorf(w, r, "error.batchTooLarge", http.StatusBadRequest, maxLookupUsers)
+		return
+	}
+
+	// Normalize and dedupe (preserve first-seen order).
+	seen := make(map[string]struct{}, len(req.Emails))
+	normalized := make([]string, 0, len(req.Emails))
+	for _, raw := range req.Emails {
+		email, vr := auth.ValidateEmail(raw)
+		if !vr.Ok() {
+			// Invalid emails are treated as unknown (they can never match).
+			email = strings.TrimSpace(strings.ToLower(raw))
+		}
+		if _, dup := seen[email]; dup {
+			continue
+		}
+		seen[email] = struct{}{}
+		normalized = append(normalized, email)
+	}
+
+	users, err := handler.repo.GetUsersByEmails(ctx, app, normalized)
+	if err != nil {
+		log.Err(err).Msg("ServerUsersLookup: GetUsersByEmails failed")
+		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
+		return
+	}
+
+	// Build found set and resources slice.
+	foundSet := make(map[string]struct{}, len(users))
+	resources := make([]*core.UserResource, 0, len(users))
+	for _, u := range users {
+		foundSet[strings.ToLower(u.Email)] = struct{}{}
+		resources = append(resources, core.ToUserResource(u))
+	}
+
+	// Missing = normalized emails not in found set.
+	missing := make([]string, 0)
+	for _, e := range normalized {
+		if _, found := foundSet[e]; !found {
+			missing = append(missing, e)
+		}
+	}
+
+	resp := ServerUsersLookupResponse{
+		Users:   resources,
+		Missing: missing,
+	}
+	if resp.Users == nil {
+		resp.Users = []*core.UserResource{}
+	}
 	utils.WriteJsonWithStatusCode(w, resp, http.StatusOK)
 }

@@ -223,6 +223,7 @@ func (a *AppService) serverAPIRouter(h *api.RequestHandler) *chi.Mux {
 	appRouter.Get("/users/{userId}", h.ServerGetUserByID)
 	appRouter.Post("/users", h.ServerCreateUser)
 	appRouter.Post("/users:batch", h.ServerBatchCreateUsers)
+	appRouter.Post("/users:lookup", h.ServerUsersLookup)
 	// Suspend / re-enable a user in this app (per-app membership status).
 	appRouter.Patch("/users/{userId}", h.ServerSetUserStatus)
 	// Generate a one-time passwordless sign-in link for a member.
@@ -364,7 +365,9 @@ func apiKeyMiddleware(rpo *repo.Repo, touch *lastUsedThrottle) func(next http.Ha
 
 			// Enforce read-only scope: a "read" key may only perform safe
 			// (GET/HEAD) requests; any mutating method is forbidden.
-			if !key.AllowsWrite() && r.Method != http.MethodGet && r.Method != http.MethodHead {
+			// Exception: Google-style custom read methods (e.g. :lookup) use
+			// POST purely for body transport and are explicitly allowlisted.
+			if !key.AllowsWrite() && r.Method != http.MethodGet && r.Method != http.MethodHead && !isReadOnlyCustomMethod(r.URL.Path) {
 				api.WriteError(w, r, "error.forbidden", http.StatusForbidden)
 				return
 			}
@@ -394,6 +397,13 @@ func apiKeyMiddleware(rpo *repo.Repo, touch *lastUsedThrottle) func(next http.Ha
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}
+}
+
+// isReadOnlyCustomMethod allowlists Google-style custom read methods that
+// use POST purely for body transport (URL-length limits). Keep this list
+// tight: every suffix here is reachable by read-scoped API keys.
+func isReadOnlyCustomMethod(path string) bool {
+	return strings.HasSuffix(path, ":lookup")
 }
 
 func parseAPIKeyPrefix(fullKey string) (string, bool) {

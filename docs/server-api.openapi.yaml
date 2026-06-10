@@ -599,6 +599,33 @@ paths:
               schema: { $ref: "#/components/schemas/BatchCreateUsersResponse" }
         "400": { $ref: "#/components/responses/BadRequest" }
 
+  /apps/{appId}/users:lookup:
+    parameters:
+      - $ref: "#/components/parameters/AppId"
+    post:
+      tags: [Users]
+      summary: Bulk email lookup
+      description: >
+        Resolve up to 1000 emails to user resources in a single call.
+        Read-only despite the POST verb — POST is used for body transport
+        (Google-style custom method). Accessible with read-scoped API keys.
+        Duplicate emails are deduplicated silently; unknown emails are
+        reported in `missing` (normalized form). Invalid emails are treated
+        as unknown and appear in `missing`.
+      operationId: lookupUsersByEmail
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UsersLookupRequest" }
+      responses:
+        "200":
+          description: Found users and list of unresolved emails.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/UsersLookupResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+
   /apps/{appId}/users/{userId}:
     parameters:
       - $ref: "#/components/parameters/AppId"
@@ -1844,6 +1871,30 @@ components:
       type: object
       properties:
         results: { type: array, items: { $ref: "#/components/schemas/BatchUserResult" } }
+
+    UsersLookupRequest:
+      type: object
+      required: [emails]
+      properties:
+        emails:
+          type: array
+          items: { type: string, format: email }
+          maxItems: 1000
+          description: Email addresses to resolve. Duplicates are silently deduplicated.
+
+    UsersLookupResponse:
+      type: object
+      properties:
+        users:
+          type: array
+          items: { $ref: "#/components/schemas/UserResource" }
+          description: Users found for the requested emails.
+        missing:
+          type: array
+          items: { type: string }
+          description: >
+            Normalized (lowercased) emails from the request that did not match
+            any member of this app. Empty array when all emails were resolved.
 
     SetUserStatusRequest:
       type: object

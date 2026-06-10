@@ -90,6 +90,32 @@ func (r *Repo) GetUserByEmail(ctx context.Context, email string, app *core.App) 
 	return u, nil
 }
 
+// GetUsersByEmails returns the app's users matching any of the normalized
+// emails in one query. Missing emails are simply absent from the result.
+// The caller is responsible for normalizing (lower-casing / trimming) the
+// input before passing it here.
+func (r *Repo) GetUsersByEmails(ctx context.Context, app *core.App, emails []string) ([]*core.User, error) {
+	if len(emails) == 0 {
+		return nil, nil
+	}
+	q := `SELECT` + userCols + `FROM users u WHERE u.user_pool_id = $1 AND LOWER(u.email) = ANY($2)`
+	rows, err := r.db.Pool().Query(ctx, q, app.UserPoolID, emails)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var users []*core.User
+	for rows.Next() {
+		u, err := scanUser(rows)
+		if err != nil {
+			return nil, err
+		}
+		users = append(users, u)
+	}
+	return users, rows.Err()
+}
+
 // GetUserByEmailInPool returns a user by email in a pool (no app needed).
 // Returns nil,nil if not found.
 func (r *Repo) GetUserByEmailInPool(ctx context.Context, email string, poolID uuid.UUID) (*core.User, error) {
