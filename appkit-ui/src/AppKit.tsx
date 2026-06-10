@@ -13,10 +13,9 @@ import Profile from "./Profile";
 import { useReauthGate, ReauthGateFields } from "./reauthGate";
 import Auth, { type TokenPairResponse } from "./Auth";
 import { UserButton } from "./UserButton";
-import { ToastProvider } from "./Toast";
+import { ToastProvider, useToast } from "./Toast";
 import { withDPoPHeader } from "./dpop";
 import { extractInviteError, inviteErrorMessage } from "./inviteError";
-import { useToast } from "./Toast";
 
 // Shape-validate a BroadcastChannel token-pair message before treating it
 // as auth tokens. Same-origin scripts can post arbitrary objects on the
