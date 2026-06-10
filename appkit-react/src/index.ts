@@ -70,4 +70,8 @@ export {
   useRegisterPasskey,
   isPasskeyCancelled,
   PASSKEY_CANCELLED,
+  useStartTOTPSetup,
+  useEnableTOTP,
+  useDisableTOTP,
+  useRegenerateBackupCodes,
 } from "./hooks";
