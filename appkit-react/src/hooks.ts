@@ -21,6 +21,10 @@ export {
   useDisconnectIdentity,
   useUserFields,
   useUpdateUserFields,
+  useDeleteAccount,
+  useRequestEmailChange,
+  useVerifyEmailChange,
+  useRequestReauthCode,
 } from "./hooks/account";
 export {
   useOrganization,

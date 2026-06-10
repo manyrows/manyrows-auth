@@ -179,3 +179,105 @@ export function useUpdateUserFields(): (values: Record<string, unknown>) => Prom
     return body?.fields ?? [];
   }, [token, baseURL]);
 }
+
+/**
+ * Returns a function that permanently deletes the signed-in user's account
+ * at this app, then signs them out. Requires the account password — users
+ * without one (OAuth/passkey-only) must set a password first. Rejects with
+ * `error.forbidden` when the app has account deletion disabled.
+ *
+ * ```tsx
+ * const deleteAccount = useDeleteAccount();
+ * await deleteAccount({ password });
+ * ```
+ */
+export function useDeleteAccount(): (params: { password: string }) => Promise<void> {
+  const { snapshot, logout } = useAppKit();
+  const token = snapshot?.jwtToken;
+  const baseURL = snapshot?.appBaseURL;
+  return useCallback(async (params: { password: string }) => {
+    await authedJson(token, baseURL, `/a/me/delete`, {
+      method: "POST",
+      body: JSON.stringify({ password: params.password }),
+    }, "Failed to delete account");
+    await logout();
+  }, [token, baseURL, logout]);
+}
+
+/**
+ * Returns a function that starts an email change. The server sends a 6-digit
+ * code to the NEW address; complete the change with `useVerifyEmailChange`.
+ * Requires the current password.
+ *
+ * ```tsx
+ * const requestEmailChange = useRequestEmailChange();
+ * await requestEmailChange({ newEmail, password });
+ * ```
+ */
+export function useRequestEmailChange(): (params: { newEmail: string; password: string }) => Promise<void> {
+  const { snapshot } = useAppKit();
+  const token = snapshot?.jwtToken;
+  const baseURL = snapshot?.appBaseURL;
+  return useCallback(async (params: { newEmail: string; password: string }) => {
+    await authedJson(token, baseURL, `/a/me/request-email-change`, {
+      method: "POST",
+      body: JSON.stringify({ newEmail: params.newEmail, password: params.password }),
+    }, "Failed to request email change");
+  }, [token, baseURL]);
+}
+
+/**
+ * Returns a function that completes a pending email change with the 6-digit
+ * code sent to the new address, then refreshes the snapshot so `useUser()`
+ * reflects the new email.
+ *
+ * ```tsx
+ * const verifyEmailChange = useVerifyEmailChange();
+ * await verifyEmailChange({ code });
+ * ```
+ */
+export function useVerifyEmailChange(): (params: { code: string }) => Promise<void> {
+  const { snapshot, refresh } = useAppKit();
+  const token = snapshot?.jwtToken;
+  const baseURL = snapshot?.appBaseURL;
+  return useCallback(async (params: { code: string }) => {
+    await authedJson(token, baseURL, `/a/me/verify-email-change`, {
+      method: "POST",
+      body: JSON.stringify({ code: params.code }),
+    }, "Failed to verify email change");
+    refresh();
+  }, [token, baseURL, refresh]);
+}
+
+/**
+ * Returns a function that emails the signed-in user a 6-digit verification
+ * code. Use it before the sensitive hooks (`useStartTOTPSetup`,
+ * `useDisableTOTP`, `useDeletePasskey`) for users without a password —
+ * pass the received code as `{ code }` in `AppKitReauthParams`.
+ *
+ * ```tsx
+ * const requestReauthCode = useRequestReauthCode();
+ * await requestReauthCode();              // user receives email
+ * await disableTOTP({ code: "123456" }); // user types the code
+ * ```
+ */
+export function useRequestReauthCode(): () => Promise<void> {
+  const { snapshot } = useAppKit();
+  const baseURL = snapshot?.appBaseURL;
+  const email = snapshot?.appData?.account?.email;
+  return useCallback(async () => {
+    if (!baseURL || !email) {
+      throw new Error("Not authenticated");
+    }
+    const res = await fetch(`${baseURL}/auth/forgot-password`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email }),
+    });
+    if (!res.ok) {
+      const errBody = await res.json().catch(() => ({}));
+      throw new Error((errBody as { issues?: { message?: string }[] })?.issues?.[0]?.message
+        || (errBody as { error?: string })?.error || "Failed to request verification code");
+    }
+  }, [baseURL, email]);
+}

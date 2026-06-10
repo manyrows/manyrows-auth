@@ -8,7 +8,7 @@ const h = vi.hoisted(() => ({
 }));
 vi.mock("../../AppKit", () => ({ useAppKit: () => h.ctx }));
 
-import { useIdentities, useDisconnectIdentity, useUserFields, useUpdateUserFields } from "../account";
+import { useIdentities, useDisconnectIdentity, useUserFields, useUpdateUserFields, useDeleteAccount, useRequestEmailChange, useVerifyEmailChange, useRequestReauthCode } from "../account";
 
 beforeEach(() => {
   h.ctx.snapshot = makeSnapshot();
@@ -77,5 +77,73 @@ describe("useUpdateUserFields", () => {
     const init = fetchMock.mock.calls[0][1] as RequestInit;
     expect(init.method).toBe("PATCH");
     expect(JSON.parse(init.body as string)).toEqual({ plan: "team" });
+  });
+});
+
+describe("useDeleteAccount", () => {
+  it("POSTs the password to /a/me/delete and then logs out", async () => {
+    const fetchMock = stubFetch(200, {});
+    const { result } = renderHook(() => useDeleteAccount());
+    await result.current({ password: "hunter2hunter2" });
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://api.test/x/acme/apps/app1/a/me/delete",
+      expect.objectContaining({ method: "POST" }),
+    );
+    expect(JSON.parse((fetchMock.mock.calls[0][1] as RequestInit).body as string))
+      .toEqual({ password: "hunter2hunter2" });
+    expect(h.ctx.logout).toHaveBeenCalledOnce();
+  });
+
+  it("does NOT log out when deletion fails", async () => {
+    stubFetch(403, { error: "error.forbidden" });
+    const { result } = renderHook(() => useDeleteAccount());
+    await expect(result.current({ password: "x".repeat(12) })).rejects.toThrow("error.forbidden");
+    expect(h.ctx.logout).not.toHaveBeenCalled();
+  });
+});
+
+describe("useRequestEmailChange / useVerifyEmailChange", () => {
+  it("POSTs newEmail+password to request-email-change", async () => {
+    const fetchMock = stubFetch(200, {});
+    const { result } = renderHook(() => useRequestEmailChange());
+    await result.current({ newEmail: "new@example.com", password: "hunter2hunter2" });
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://api.test/x/acme/apps/app1/a/me/request-email-change",
+      expect.objectContaining({ method: "POST" }),
+    );
+    expect(JSON.parse((fetchMock.mock.calls[0][1] as RequestInit).body as string))
+      .toEqual({ newEmail: "new@example.com", password: "hunter2hunter2" });
+  });
+
+  it("POSTs the code to verify-email-change and refreshes the snapshot", async () => {
+    const fetchMock = stubFetch(200, {});
+    const { result } = renderHook(() => useVerifyEmailChange());
+    await result.current({ code: "123456" });
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://api.test/x/acme/apps/app1/a/me/verify-email-change",
+      expect.objectContaining({ method: "POST" }),
+    );
+    expect(h.ctx.refresh).toHaveBeenCalledOnce();
+  });
+});
+
+describe("useRequestReauthCode", () => {
+  it("POSTs the account email to the public forgot-password endpoint without a bearer header", async () => {
+    const fetchMock = stubFetch(200, {});
+    const { result } = renderHook(() => useRequestReauthCode());
+    await result.current();
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://api.test/x/acme/apps/app1/auth/forgot-password",
+      expect.objectContaining({ method: "POST" }),
+    );
+    const init = fetchMock.mock.calls[0][1] as RequestInit;
+    expect(JSON.parse(init.body as string)).toEqual({ email: "u@example.com" });
+    expect((init.headers as Record<string, string>).Authorization).toBeUndefined();
+  });
+
+  it("throws when there is no signed-in account email", async () => {
+    h.ctx.snapshot = makeSnapshot({ appData: null });
+    const { result } = renderHook(() => useRequestReauthCode());
+    await expect(result.current()).rejects.toThrow("Not authenticated");
   });
 });
