@@ -349,3 +349,13 @@ func (a *AuthService) ParseAccessToken(raw string) (sessionID, userID uuid.UUID,
 	}
 	return sid, uid, exp, strings.TrimSpace(c.AppID), true
 }
+
+// AccessTokenScope returns the scope claim of a signature-verified access
+// token. "" for first-party tokens (no claim). ok=false on parse failure.
+func (a *AuthService) AccessTokenScope(raw string) (string, bool) {
+	c, valid := a.parseJWT(raw)
+	if !valid || c == nil {
+		return "", false
+	}
+	return c.Scope, true
+}

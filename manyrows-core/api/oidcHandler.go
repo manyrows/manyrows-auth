@@ -1052,7 +1052,7 @@ func (handler *RequestHandler) handleOIDCRefreshTokenGrant(w http.ResponseWriter
 // access token (host-only, SDK-compatible); idIssuer is the iss for
 // the id_token (per-app path, matches discovery).
 func (handler *RequestHandler) issueOIDCTokenSet(ctx context.Context, w http.ResponseWriter, r *http.Request, app *core.App, ses *core.ClientSession, user *core.User, atIssuer, idIssuer, scope, nonce string, mayIssueRefresh bool) {
-	accessToken, expiresAt, err := handler.clientAuthService.IssueAccessToken(ses, ttlFromAppMinutes(app.AccessTokenTTLMinutes), atIssuer)
+	accessToken, expiresAt, err := handler.clientAuthService.IssueAccessTokenWithScope(ses, ttlFromAppMinutes(app.AccessTokenTTLMinutes), atIssuer, scope)
 	if err != nil {
 		oidcTokenError(w, http.StatusInternalServerError, "server_error", "access_token issuance failed")
 		return
@@ -1099,7 +1099,7 @@ func (handler *RequestHandler) issueOIDCTokenSet(ctx context.Context, w http.Res
 			auth.ClientIP(r),
 			ttlFromAppMinutes(app.SessionTTLMinutes),
 			dpopJKT,
-			"", // Task 2 wires real OIDC scope here
+			scope,
 		)
 		if err == nil {
 			resp.RefreshToken = refreshToken

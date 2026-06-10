@@ -277,5 +277,6 @@ type mrClientJWTClaims struct {
 	SessionID string `json:"sid"`
 	AppID     string `json:"app,omitempty"`
 	OrgID     string `json:"org,omitempty"`
+	Scope     string `json:"scope,omitempty"`
 	jwt.RegisteredClaims
 }

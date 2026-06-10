@@ -27,7 +27,21 @@ import (
 // overrides AccessTokenTTL when > 0 — typically supplied via the
 // per-app AccessTokenTTLMinutes knob; pass 0 to use the default.
 // Expiry is also capped at the session's own ExpiresAt regardless.
+// No scope claim is added — use IssueAccessTokenWithScope for OIDC tokens.
 func (a *AuthService) IssueAccessToken(s *core.ClientSession, ttl time.Duration, issuer string) (string, time.Time, error) {
+	return a.issueAccessToken(s, ttl, issuer, "")
+}
+
+// IssueAccessTokenWithScope is like IssueAccessToken but includes the supplied
+// scope as a "scope" claim in the JWT. Used by the OIDC token endpoint to
+// carry the granted scope through to resource servers.
+func (a *AuthService) IssueAccessTokenWithScope(s *core.ClientSession, ttl time.Duration, issuer string, scope string) (string, time.Time, error) {
+	return a.issueAccessToken(s, ttl, issuer, scope)
+}
+
+// issueAccessToken is the internal implementation shared by IssueAccessToken
+// and IssueTokenPair. scope is included in the JWT when non-empty.
+func (a *AuthService) issueAccessToken(s *core.ClientSession, ttl time.Duration, issuer string, scope string) (string, time.Time, error) {
 	if s == nil || s.ID == uuid.Nil || s.UserID == uuid.Nil {
 		return "", time.Time{}, errors.New("invalid client session")
 	}
@@ -55,6 +69,7 @@ func (a *AuthService) IssueAccessToken(s *core.ClientSession, ttl time.Duration,
 
 	claims := mrClientJWTClaims{
 		SessionID: s.ID.String(),
+		Scope:     strings.TrimSpace(scope),
 		RegisteredClaims: jwt.RegisteredClaims{
 			Issuer:    iss,
 			Subject:   s.UserID.String(),
@@ -160,7 +175,7 @@ func (a *AuthService) IssueTokenPair(
 		return nil, errors.New("missing session")
 	}
 
-	accessToken, expiresAt, err := a.IssueAccessToken(session, accessTokenTTL, issuer)
+	accessToken, expiresAt, err := a.issueAccessToken(session, accessTokenTTL, issuer, oidcScope)
 	if err != nil {
 		return nil, err
 	}
@@ -365,8 +380,9 @@ func (a *AuthService) RefreshTokenPair(
 		}
 	}
 
-	// Issue new token pair
-	newAccessToken, expiresAt, err := a.IssueAccessToken(session, accessTokenTTL, issuer)
+	// Issue new token pair — inherit the stored OIDC scope so the
+	// rotated access token carries the same scope claim as the original.
+	newAccessToken, expiresAt, err := a.issueAccessToken(session, accessTokenTTL, issuer, rt.OIDCScope)
 	if err != nil {
 		return nil, err
 	}
