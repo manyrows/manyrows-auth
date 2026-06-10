@@ -58,5 +58,7 @@ describe("useRevokeSession", () => {
       "https://api.test/x/acme/apps/app1/a/me/sessions/s2",
       expect.objectContaining({ method: "DELETE" }),
     );
+    const init = fetchMock.mock.calls[0][1] as RequestInit;
+    expect((init.headers as Record<string, string>).Authorization).toBe("Bearer tok-123");
   });
 });
