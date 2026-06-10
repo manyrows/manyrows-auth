@@ -84,6 +84,20 @@ export function isPasskeyCancelled(e: unknown): boolean {
   return e instanceof Error && e.name === PASSKEY_CANCELLED;
 }
 
+/** Error name when the authenticator already holds a passkey for this account. */
+export const PASSKEY_ALREADY_REGISTERED = "PasskeyAlreadyRegistered";
+
+function passkeyAlreadyRegisteredError(): Error {
+  const err = new Error("This device already has a passkey for this account");
+  err.name = PASSKEY_ALREADY_REGISTERED;
+  return err;
+}
+
+/** True when registration failed because the authenticator is already enrolled. */
+export function isPasskeyAlreadyRegistered(e: unknown): boolean {
+  return e instanceof Error && e.name === PASSKEY_ALREADY_REGISTERED;
+}
+
 /**
  * Returns a function that registers a new passkey for the signed-in user by
  * running the full WebAuthn ceremony: fetch a challenge, prompt the browser
@@ -92,9 +106,11 @@ export function isPasskeyCancelled(e: unknown): boolean {
  *
  * Throws "Passkeys are not supported in this browser" when WebAuthn is
  * unavailable. On user cancellation (or prompt timeout) the thrown error has
- * name PASSKEY_CANCELLED — detect it with isPasskeyCancelled(err). Only one
- * ceremony can run at a time; disable the triggering button while the returned
- * promise is pending.
+ * name PASSKEY_CANCELLED — detect it with isPasskeyCancelled(err). When the
+ * authenticator already holds a passkey for this account the thrown error has
+ * name PASSKEY_ALREADY_REGISTERED — detect it with isPasskeyAlreadyRegistered(err).
+ * Only one ceremony can run at a time; disable the triggering button while
+ * the returned promise is pending.
  *
  * ```tsx
  * const registerPasskey = useRegisterPasskey();
@@ -121,6 +137,9 @@ export function useRegisterPasskey(): (params?: { name?: string }) => Promise<Ap
       cred = await navigator.credentials.create({ publicKey: decodeCreationOptions(begin.publicKeyOptions) });
     } catch (e) {
       const name = (e as { name?: string } | null)?.name;
+      if (name === "InvalidStateError") {
+        throw passkeyAlreadyRegisteredError();
+      }
       if (name === "NotAllowedError" || name === "AbortError") {
         throw passkeyCancelledError();
       }

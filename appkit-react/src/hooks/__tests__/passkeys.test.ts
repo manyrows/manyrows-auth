@@ -8,7 +8,7 @@ const h = vi.hoisted(() => ({
 }));
 vi.mock("../../AppKit", () => ({ useAppKit: () => h.ctx }));
 
-import { usePasskeys, useRenamePasskey, useDeletePasskey, useRegisterPasskey, isPasskeyCancelled } from "../passkeys";
+import { usePasskeys, useRenamePasskey, useDeletePasskey, useRegisterPasskey, isPasskeyCancelled, isPasskeyAlreadyRegistered } from "../passkeys";
 
 beforeEach(() => {
   h.ctx.snapshot = makeSnapshot();
@@ -174,5 +174,17 @@ describe("useRegisterPasskey", () => {
     stubWebAuthn(vi.fn());
     const { result } = renderHook(() => useRegisterPasskey());
     await expect(result.current()).rejects.toThrow("Invalid passkey registration response");
+  });
+
+  it("maps InvalidStateError to the already-registered discriminator", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+      ok: true, status: 200,
+      json: async () => ({ challengeId: "ch-1", publicKeyOptions: CREATION_OPTIONS_JSON }),
+    }));
+    stubWebAuthn(vi.fn().mockRejectedValue(new DOMException("dup", "InvalidStateError")));
+    const { result } = renderHook(() => useRegisterPasskey());
+    const p = result.current();
+    await expect(p).rejects.toThrow(/already has a passkey/i);
+    await expect(p).rejects.toSatisfy((e: unknown) => isPasskeyAlreadyRegistered(e));
   });
 });

@@ -350,17 +350,29 @@ func (handler *RequestHandler) WorkspacePasskeyRegisterBegin(w http.ResponseWrit
 	}
 	pkUser := newPasskeyUser(user, existing)
 
+	// Exclude already-registered credentials so the same authenticator
+	// can't enroll twice — the browser surfaces InvalidStateError, which
+	// the SDK maps to a friendly "already registered" error.
+	creds := pkUser.WebAuthnCredentials()
+	exclusions := make([]protocol.CredentialDescriptor, 0, len(creds))
+	for i := range creds {
+		exclusions = append(exclusions, creds[i].Descriptor())
+	}
+
 	// Require user verification (PIN, biometric, etc) so a credential
 	// without UV — e.g. a hardware key configured without a PIN — can't
 	// be registered. Combined with the matching policy on login, this
 	// keeps passkeys as a true two-factor (something you have + something
 	// you are/know).
-	creation, sessionData, err := wa.BeginRegistration(
-		pkUser,
+	opts := []webauthn.RegistrationOption{
 		webauthn.WithAuthenticatorSelection(protocol.AuthenticatorSelection{
 			UserVerification: protocol.VerificationRequired,
 		}),
-	)
+	}
+	if len(exclusions) > 0 {
+		opts = append(opts, webauthn.WithExclusions(exclusions))
+	}
+	creation, sessionData, err := wa.BeginRegistration(pkUser, opts...)
 	if err != nil {
 		log.Err(err).Msg("BeginRegistration failed")
 		WriteError(w, r, "error.passkeyBeginFailed", http.StatusBadRequest)

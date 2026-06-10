@@ -589,7 +589,7 @@ await deletePasskey(passkey.id, { password });
 
 Returns a function that registers a new passkey for the signed-in user by running the full WebAuthn ceremony: fetches a challenge, prompts the browser (`navigator.credentials.create`), and stores the credential. Resolves with the new `AppKitPasskey`.
 
-Throws `"Passkeys are not supported in this browser"` when WebAuthn is unavailable. On user cancellation or prompt timeout the thrown error has `name === PASSKEY_CANCELLED` — detect it with `isPasskeyCancelled(err)`. Only one ceremony can run at a time; disable the trigger element while the returned promise is pending.
+Throws `"Passkeys are not supported in this browser"` when WebAuthn is unavailable. On user cancellation or prompt timeout the thrown error has `name === PASSKEY_CANCELLED` — detect it with `isPasskeyCancelled(err)`. When the authenticator already holds a passkey for this account (the server sends `excludeCredentials` and the browser raises `InvalidStateError`) the thrown error has `name === PASSKEY_ALREADY_REGISTERED` — detect it with `isPasskeyAlreadyRegistered(err)`. Only one ceremony can run at a time; disable the trigger element while the returned promise is pending.
 
 **Returns: `(params?: { name?: string }) => Promise<AppKitPasskey>`**
 
@@ -1035,6 +1035,16 @@ const PASSKEY_CANCELLED: "PasskeyRegistrationCancelled";
 
 /** Returns true when an error came from the user dismissing the passkey prompt. */
 function isPasskeyCancelled(e: unknown): boolean;
+```
+
+### `PASSKEY_ALREADY_REGISTERED` / `isPasskeyAlreadyRegistered`
+
+```typescript
+/** Error name when the authenticator already holds a passkey for this account. */
+const PASSKEY_ALREADY_REGISTERED: "PasskeyAlreadyRegistered";
+
+/** Returns true when registration failed because the authenticator is already enrolled. */
+function isPasskeyAlreadyRegistered(e: unknown): boolean;
 ```
 
 ---

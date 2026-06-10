@@ -71,6 +71,8 @@ export {
   useRegisterPasskey,
   isPasskeyCancelled,
   PASSKEY_CANCELLED,
+  isPasskeyAlreadyRegistered,
+  PASSKEY_ALREADY_REGISTERED,
   useStartTOTPSetup,
   useEnableTOTP,
   useDisableTOTP,
