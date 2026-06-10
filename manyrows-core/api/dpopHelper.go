@@ -52,6 +52,24 @@ func (handler *RequestHandler) extractDPoPJKT(w http.ResponseWriter, r *http.Req
 	return proof.JKT, nil
 }
 
+// oidcExtractDPoPJKT is the OIDC-token-endpoint counterpart of extractDPoPJKT.
+// It verifies a DPoP proof (if the RP presented one) and returns its JWK
+// thumbprint, or ("", nil) when there is no proof — the Bearer flow. Unlike
+// extractDPoPJKT it does NOT write a response: the OIDC token endpoint formats
+// its own OAuth-shaped errors (oidcTokenError), so callers inspect the returned
+// error and respond with invalid_dpop_proof.
+func (handler *RequestHandler) oidcExtractDPoPJKT(r *http.Request) (string, error) {
+	header := strings.TrimSpace(r.Header.Get("DPoP"))
+	if header == "" || handler.dpopVerifier == nil {
+		return "", nil
+	}
+	proof, err := handler.dpopVerifier.Verify(r.Context(), header, r.Method, handler.requestURIForDPoP(r))
+	if err != nil {
+		return "", err
+	}
+	return proof.JKT, nil
+}
+
 // requestURIForDPoP reconstructs the htu value the client should have signed,
 // per RFC 9449 §4.3: scheme://host/path with no query or fragment.
 //

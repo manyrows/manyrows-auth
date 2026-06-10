@@ -7,6 +7,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"html/template"
 	"net/http"
@@ -995,6 +996,15 @@ func (handler *RequestHandler) handleOIDCRefreshTokenGrant(w http.ResponseWriter
 		return
 	}
 
+	// Flow any DPoP proof through: a DPoP-bound refresh token requires a
+	// matching proof to rotate (RFC 9449); an unbound token is unaffected.
+	// A malformed proof is rejected rather than downgraded to Bearer.
+	dpopJKT, derr := handler.oidcExtractDPoPJKT(r)
+	if derr != nil {
+		oidcTokenError(w, http.StatusBadRequest, "invalid_dpop_proof", "DPoP proof is invalid")
+		return
+	}
+
 	// Now do the actual rotation via the existing pair-issuance path.
 	// Access token uses host-only iss for SDK compatibility.
 	pair, err := handler.clientAuthService.RefreshTokenPair(
@@ -1004,11 +1014,16 @@ func (handler *RequestHandler) handleOIDCRefreshTokenGrant(w http.ResponseWriter
 		ttlFromAppMinutes(app.AccessTokenTTLMinutes),
 		ttlFromAppMinutes(app.IdleTimeoutMinutes),
 		ttlFromAppMinutes(app.RememberMeTTLMinutes),
-		"", // DPoP not currently flowed through OIDC
+		dpopJKT,
 		atIssuer,
 	)
 	if err != nil {
-		oidcTokenError(w, http.StatusBadRequest, "invalid_grant", "refresh failed")
+		switch {
+		case errors.Is(err, client.ErrDPoPRequired), errors.Is(err, client.ErrDPoPBindingMismatch):
+			oidcTokenError(w, http.StatusBadRequest, "invalid_dpop_proof", "a valid DPoP proof matching the bound key is required")
+		default:
+			oidcTokenError(w, http.StatusBadRequest, "invalid_grant", "refresh failed")
+		}
 		return
 	}
 
@@ -1067,13 +1082,23 @@ func (handler *RequestHandler) issueOIDCTokenSet(ctx context.Context, w http.Res
 	}
 
 	if mayIssueRefresh && scopeContainsOfflineAccess(scope) {
+		// If the RP presented a DPoP proof on the token request, bind the
+		// refresh token to that key (RFC 9449) so it's sender-constrained like
+		// AppKit-issued ones — and refresh will require a matching proof. An
+		// absent proof yields "" (unbound Bearer refresh token). A malformed
+		// proof is rejected rather than silently downgraded to Bearer.
+		dpopJKT, derr := handler.oidcExtractDPoPJKT(r)
+		if derr != nil {
+			oidcTokenError(w, http.StatusBadRequest, "invalid_dpop_proof", "DPoP proof is invalid")
+			return
+		}
 		refreshToken, _, err := handler.clientAuthService.IssueRefreshToken(
 			ctx,
 			ses.ID,
 			r.UserAgent(),
 			auth.ClientIP(r),
 			ttlFromAppMinutes(app.SessionTTLMinutes),
-			"",
+			dpopJKT,
 		)
 		if err == nil {
 			resp.RefreshToken = refreshToken

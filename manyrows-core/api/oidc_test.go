@@ -439,6 +439,134 @@ func TestOIDCToken_AuthCodeGrant_PublicClient(t *testing.T) {
 	}
 }
 
+// TestOIDCToken_DPoPBoundRefresh pins that a DPoP proof presented at the OIDC
+// token endpoint binds the issued refresh token, and that rotating a bound
+// token then requires a matching proof (RFC 9449) — while Bearer RPs that never
+// present a proof are unaffected.
+func TestOIDCToken_DPoPBoundRefresh(t *testing.T) {
+	e := setupOIDCRouter(t)
+	redirect := "https://customer.example/callback"
+	e.enableOIDC(t, []string{redirect}, nil, "")
+
+	tokenPath := "/x/" + e.ws.Slug + "/apps/" + e.app.ID.String() + "/oidc/token"
+	// htu must match the server's requestURIForDPoP (BASE_URL host + path).
+	tokenURL := dpopTestBaseURL + tokenPath
+
+	// getRefreshToken runs authorize -> code -> token with offline_access,
+	// optionally presenting a DPoP proof on the token request.
+	getRefreshToken := func(t *testing.T, dpopHeader string) string {
+		t.Helper()
+		_, accessJWT := e.seedSessionForApp(t)
+		verifier, challenge := makePKCE()
+		q := url.Values{
+			"response_type":         {"code"},
+			"client_id":             {e.app.ID.String()},
+			"redirect_uri":          {redirect},
+			"scope":                 {"openid email offline_access"},
+			"state":                 {"st"},
+			"code_challenge":        {challenge},
+			"code_challenge_method": {"S256"},
+		}
+		req := httptest.NewRequest("GET", "/x/"+e.ws.Slug+"/apps/"+e.app.ID.String()+"/oidc/authorize?"+q.Encode(), nil)
+		req.Header.Set("Authorization", "Bearer "+accessJWT)
+		rr := httptest.NewRecorder()
+		e.router.ServeHTTP(rr, req)
+		if rr.Code != http.StatusFound {
+			t.Fatalf("authorize: expected 302, got %d (%s)", rr.Code, rr.Body.String())
+		}
+		loc, _ := url.Parse(rr.Header().Get("Location"))
+		code := loc.Query().Get("code")
+		if code == "" {
+			t.Fatalf("no code in redirect: %s", loc.String())
+		}
+		form := url.Values{
+			"grant_type":    {"authorization_code"},
+			"code":          {code},
+			"redirect_uri":  {redirect},
+			"code_verifier": {verifier},
+			"client_id":     {e.app.ID.String()},
+		}
+		tokReq := httptest.NewRequest("POST", tokenPath, strings.NewReader(form.Encode()))
+		tokReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		if dpopHeader != "" {
+			tokReq.Header.Set("DPoP", dpopHeader)
+		}
+		tokRR := httptest.NewRecorder()
+		e.router.ServeHTTP(tokRR, tokReq)
+		if tokRR.Code != http.StatusOK {
+			t.Fatalf("token exchange: expected 200, got %d (%s)", tokRR.Code, tokRR.Body.String())
+		}
+		var resp struct {
+			RefreshToken string `json:"refresh_token"`
+		}
+		if err := json.Unmarshal(tokRR.Body.Bytes(), &resp); err != nil {
+			t.Fatalf("unmarshal token response: %v", err)
+		}
+		if resp.RefreshToken == "" {
+			t.Fatal("offline_access did not yield a refresh_token")
+		}
+		return resp.RefreshToken
+	}
+
+	refresh := func(refreshToken, dpopHeader string) *httptest.ResponseRecorder {
+		form := url.Values{
+			"grant_type":    {"refresh_token"},
+			"refresh_token": {refreshToken},
+			"client_id":     {e.app.ID.String()},
+		}
+		req := httptest.NewRequest("POST", tokenPath, strings.NewReader(form.Encode()))
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		if dpopHeader != "" {
+			req.Header.Set("DPoP", dpopHeader)
+		}
+		rr := httptest.NewRecorder()
+		e.router.ServeHTTP(rr, req)
+		return rr
+	}
+
+	errCode := func(rr *httptest.ResponseRecorder) string {
+		var b struct {
+			Error string `json:"error"`
+		}
+		_ = json.Unmarshal(rr.Body.Bytes(), &b)
+		return b.Error
+	}
+
+	t.Run("bound refresh requires a matching proof", func(t *testing.T) {
+		key := newDPoPKey(t)
+		rt := getRefreshToken(t, signDPoPHeader(t, key, "POST", tokenURL, "jti-code-"+GenerateUniqueSlug("x")))
+
+		// No proof on a bound token → rejected (proves it was bound).
+		rr := refresh(rt, "")
+		if rr.Code != http.StatusBadRequest || errCode(rr) != "invalid_dpop_proof" {
+			t.Fatalf("bound refresh without proof: want 400/invalid_dpop_proof, got %d/%s (%s)", rr.Code, errCode(rr), rr.Body.String())
+		}
+		// The failed attempt must not have rotated the token; matching proof now works.
+		rr2 := refresh(rt, signDPoPHeader(t, key, "POST", tokenURL, "jti-refresh-"+GenerateUniqueSlug("x")))
+		if rr2.Code != http.StatusOK {
+			t.Fatalf("bound refresh with matching proof: want 200, got %d (%s)", rr2.Code, rr2.Body.String())
+		}
+	})
+
+	t.Run("wrong key is rejected", func(t *testing.T) {
+		key := newDPoPKey(t)
+		rt := getRefreshToken(t, signDPoPHeader(t, key, "POST", tokenURL, "jti-code2-"+GenerateUniqueSlug("x")))
+		other := newDPoPKey(t)
+		rr := refresh(rt, signDPoPHeader(t, other, "POST", tokenURL, "jti-wrong-"+GenerateUniqueSlug("x")))
+		if rr.Code != http.StatusBadRequest || errCode(rr) != "invalid_dpop_proof" {
+			t.Fatalf("bound refresh with wrong key: want 400/invalid_dpop_proof, got %d/%s (%s)", rr.Code, errCode(rr), rr.Body.String())
+		}
+	})
+
+	t.Run("unbound refresh works without a proof (Bearer RP unaffected)", func(t *testing.T) {
+		rt := getRefreshToken(t, "") // no proof at code exchange → unbound
+		rr := refresh(rt, "")
+		if rr.Code != http.StatusOK {
+			t.Fatalf("unbound refresh without proof: want 200, got %d (%s)", rr.Code, rr.Body.String())
+		}
+	})
+}
+
 func TestOIDCToken_PKCEMismatch(t *testing.T) {
 	e := setupOIDCRouter(t)
 	redirect := "https://customer.example/callback"
