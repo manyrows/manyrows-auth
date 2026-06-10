@@ -3,7 +3,6 @@ package api
 import (
 	"context"
 	"crypto/subtle"
-	"encoding/json"
 	"errors"
 	"net/http"
 	"strings"
@@ -157,7 +156,11 @@ func (handler *RequestHandler) HandleWorkspaceTOTPEnable(w http.ResponseWriter, 
 		return
 	}
 
-	if !totp.Validate(code, string(secret)) {
+	// Shared verify primitive (see admin enroll): learn the matched step so we
+	// can burn it after enable and stop the enrollment code being replayed at
+	// the first login verify.
+	enrollStep, ok := auth.VerifyTOTPCode(code, string(secret))
+	if !ok {
 		WriteError(w, r, "error.invalidTOTPCode", http.StatusUnauthorized)
 		return
 	}
@@ -169,22 +172,23 @@ func (handler *RequestHandler) HandleWorkspaceTOTPEnable(w http.ResponseWriter, 
 		return
 	}
 
-	encryptedCodes, err := encryptBackupCodes(
-		handler,
-		backupCodes,
-		crypto.AAD("users", "totp_backup_codes_encrypted", userWithTOTP.ID),
-	)
+	storedCodes, err := handler.hashBackupCodes(backupCodes, userWithTOTP.ID)
 	if err != nil {
-		log.Err(err).Msg("failed to encrypt backup codes")
+		log.Err(err).Msg("failed to hash backup codes")
 		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 		return
 	}
 
 	now := time.Now().UTC()
-	if err := handler.repo.EnableUserTOTP(r.Context(), userWithTOTP.ID, now, encryptedCodes); err != nil {
+	if err := handler.repo.EnableUserTOTP(r.Context(), userWithTOTP.ID, now, storedCodes); err != nil {
 		log.Err(err).Msg("failed to enable user TOTP")
 		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 		return
+	}
+	// Burn the enrollment step so the same code can't be replayed at the first
+	// login verify. Non-fatal: enrollment already committed.
+	if _, err := handler.repo.AdvanceUserTOTPStep(r.Context(), userWithTOTP.ID, enrollStep); err != nil {
+		log.Err(err).Msg("AdvanceUserTOTPStep after enroll failed (non-fatal)")
 	}
 
 	utils.WriteJson(w, map[string]any{
@@ -362,18 +366,14 @@ func (handler *RequestHandler) HandleWorkspaceTOTPRegenerateBackupCodes(w http.R
 		return
 	}
 
-	encryptedCodes, err := encryptBackupCodes(
-		handler,
-		backupCodes,
-		crypto.AAD("users", "totp_backup_codes_encrypted", userWithTOTP.ID),
-	)
+	storedCodes, err := handler.hashBackupCodes(backupCodes, userWithTOTP.ID)
 	if err != nil {
-		log.Err(err).Msg("failed to encrypt backup codes")
+		log.Err(err).Msg("failed to hash backup codes")
 		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 		return
 	}
 
-	if err := handler.repo.UpdateUserTOTPBackupCodes(r.Context(), userWithTOTP.ID, encryptedCodes); err != nil {
+	if err := handler.repo.UpdateUserTOTPBackupCodes(r.Context(), userWithTOTP.ID, storedCodes); err != nil {
 		log.Err(err).Msg("failed to update user backup codes")
 		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 		return
@@ -616,58 +616,17 @@ func (handler *RequestHandler) completeWorkspaceTOTPLogin(
 	})
 }
 
-// tryWorkspaceBackupCode checks if the code matches any remaining backup code for a user.
+// tryWorkspaceBackupCode checks if the code matches any remaining backup code
+// for a user and, if so, consumes it. Read-compatible with legacy encrypted
+// codes (migrated to hashes on first use) via consumeBackupCode.
 func (handler *RequestHandler) tryWorkspaceBackupCode(r *http.Request, user *core.User, code string) bool {
-	if len(user.TOTPBackupCodesEncrypted) == 0 {
-		return false
-	}
-
-	decrypted, err := handler.encryptor.DecryptFromBytesWithAAD(
-		user.TOTPBackupCodesEncrypted,
+	return handler.consumeBackupCode(
+		r.Context(), user.TOTPBackupCodesEncrypted, code, user.ID,
 		crypto.AAD("users", "totp_backup_codes_encrypted", user.ID),
+		func(ctx context.Context, ownerID uuid.UUID, newBlob []byte) error {
+			return handler.repo.UpdateUserTOTPBackupCodes(ctx, ownerID, newBlob)
+		},
 	)
-	if err != nil {
-		log.Err(err).Msg("failed to decrypt user backup codes")
-		return false
-	}
-
-	var codes []string
-	if err := json.Unmarshal(decrypted, &codes); err != nil {
-		log.Err(err).Msg("failed to unmarshal user backup codes")
-		return false
-	}
-
-	codeNorm := strings.ToLower(strings.TrimSpace(code))
-	matchIdx := -1
-	for i, c := range codes {
-		if subtle.ConstantTimeCompare([]byte(strings.ToLower(c)), []byte(codeNorm)) == 1 {
-			matchIdx = i
-			break
-		}
-	}
-	if matchIdx < 0 {
-		return false
-	}
-
-	// Remove the matched code
-	codes = append(codes[:matchIdx], codes[matchIdx+1:]...)
-
-	encryptedCodes, err := encryptBackupCodes(
-		handler,
-		codes,
-		crypto.AAD("users", "totp_backup_codes_encrypted", user.ID),
-	)
-	if err != nil {
-		log.Err(err).Msg("failed to re-encrypt user backup codes after consumption")
-		return false
-	}
-
-	if err := handler.repo.UpdateUserTOTPBackupCodes(r.Context(), user.ID, encryptedCodes); err != nil {
-		log.Err(err).Msg("failed to update user backup codes after consumption")
-		return false
-	}
-
-	return true
 }
 
 // requireSensitivePasswordOrCodeReauth gates a sensitive operation

@@ -201,7 +201,11 @@ func (handler *RequestHandler) runTOTPSetupCompletion(
 		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 		return nil, false
 	}
-	if !totp.Validate(code, string(secret)) {
+	// Shared verify primitive (see admin enroll): capture the matched step so
+	// we can burn it after enable — this path logs the user straight in, so an
+	// un-burned enrollment code would be replayable at the next verify.
+	enrollStep, ok := auth.VerifyTOTPCode(code, string(secret))
+	if !ok {
 		_ = handler.repo.InsertAttempt(r.Context(), attemptPurposeWorkspaceLoginPassword, subject, ip)
 		WriteError(w, r, "error.invalidTOTPCode", http.StatusUnauthorized)
 		return nil, false
@@ -213,18 +217,23 @@ func (handler *RequestHandler) runTOTPSetupCompletion(
 		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 		return nil, false
 	}
-	encryptedCodes, err := encryptBackupCodes(handler, backupCodes, crypto.AAD("users", "totp_backup_codes_encrypted", user.ID))
+	storedCodes, err := handler.hashBackupCodes(backupCodes, user.ID)
 	if err != nil {
-		log.Err(err).Msg("totp setup-complete: backup-codes encrypt failed")
+		log.Err(err).Msg("totp setup-complete: backup-codes hash failed")
 		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 		return nil, false
 	}
 
 	now := time.Now().UTC()
-	if err := handler.repo.EnableUserTOTP(r.Context(), user.ID, now, encryptedCodes); err != nil {
+	if err := handler.repo.EnableUserTOTP(r.Context(), user.ID, now, storedCodes); err != nil {
 		log.Err(err).Msg("totp setup-complete: EnableUserTOTP failed")
 		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 		return nil, false
+	}
+	// Burn the enrollment step so the same code can't be replayed at the next
+	// verify (this path mints a session immediately). Non-fatal.
+	if _, err := handler.repo.AdvanceUserTOTPStep(r.Context(), user.ID, enrollStep); err != nil {
+		log.Err(err).Msg("totp setup-complete: AdvanceUserTOTPStep failed (non-fatal)")
 	}
 	handler.dispatchMFAEvent(whMFAEnabled, ctxApp.ID, user.ID)
 	handler.writeAuthLogFromRequest(r, AuthLogInput{

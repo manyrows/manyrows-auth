@@ -2,7 +2,10 @@ package api
 
 import (
 	"encoding/hex"
+	"strings"
 	"testing"
+
+	"github.com/gofrs/uuid/v5"
 )
 
 // TestGenerateBackupCodes_Entropy verifies backup codes are 64-bit (16 hex
@@ -28,5 +31,33 @@ func TestGenerateBackupCodes_Entropy(t *testing.T) {
 			t.Errorf("duplicate backup code %q", c)
 		}
 		seen[c] = true
+	}
+}
+
+// TestHashBackupCode pins the one-way storage properties: backup codes are
+// HMAC-SHA256 hashed (not reversibly encrypted), normalized, and bound to both
+// the owner id and the OTP pepper — so a DB (and even DB+key) compromise yields
+// nothing usable.
+func TestHashBackupCode(t *testing.T) {
+	owner := uuid.Must(uuid.NewV4())
+	pepper := "test-pepper-value"
+	code := "aabbccdd11223344"
+
+	h := hashBackupCode(code, owner, pepper)
+
+	if len(h) != 64 { // 32-byte HMAC-SHA256 → 64 hex chars
+		t.Fatalf("hash length = %d, want 64", len(h))
+	}
+	if strings.Contains(strings.ToLower(h), strings.ToLower(code)) {
+		t.Fatal("hash must not contain the plaintext code")
+	}
+	if hashBackupCode("  AABBCCDD11223344 ", owner, pepper) != h {
+		t.Fatal("hash must normalize case and surrounding whitespace")
+	}
+	if hashBackupCode(code, uuid.Must(uuid.NewV4()), pepper) == h {
+		t.Fatal("hash must be bound to the owner id")
+	}
+	if hashBackupCode(code, owner, "different-pepper") == h {
+		t.Fatal("hash must depend on the pepper")
 	}
 }

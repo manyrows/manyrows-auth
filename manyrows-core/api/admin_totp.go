@@ -2,7 +2,9 @@ package api
 
 import (
 	"context"
+	"crypto/hmac"
 	"crypto/rand"
+	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/hex"
 	"encoding/json"
@@ -118,7 +120,12 @@ func (handler *RequestHandler) AdminTOTPEnable(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	if !totp.Validate(code, string(secret)) {
+	// Use the shared verify primitive (not pquerna's totp.Validate) so we learn
+	// which step matched and can record it below — the live-verify path's
+	// replay guard. Without recording it, the code used to enroll could be
+	// replayed at the very next login within its 30s window.
+	enrollStep, ok := auth.VerifyTOTPCode(code, string(secret))
+	if !ok {
 		WriteError(w, r, "error.invalidTOTPCode", http.StatusUnauthorized)
 		return
 	}
@@ -131,22 +138,23 @@ func (handler *RequestHandler) AdminTOTPEnable(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	encryptedCodes, err := encryptBackupCodes(
-		handler,
-		backupCodes,
-		crypto.AAD("accounts", "totp_backup_codes_encrypted", acc.ID),
-	)
+	storedCodes, err := handler.hashBackupCodes(backupCodes, acc.ID)
 	if err != nil {
-		log.Err(err).Msg("failed to encrypt backup codes")
+		log.Err(err).Msg("failed to hash backup codes")
 		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 		return
 	}
 
 	now := time.Now().UTC()
-	if err := handler.repo.EnableTOTP(r.Context(), acc.ID, now, encryptedCodes); err != nil {
+	if err := handler.repo.EnableTOTP(r.Context(), acc.ID, now, storedCodes); err != nil {
 		log.Err(err).Msg("failed to enable TOTP")
 		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 		return
+	}
+	// Burn the enrollment step so the same code can't be replayed at the first
+	// login verify. Non-fatal: enrollment already committed.
+	if _, err := handler.repo.AdvanceAccountTOTPStep(r.Context(), acc.ID, enrollStep); err != nil {
+		log.Err(err).Msg("AdvanceAccountTOTPStep after enroll failed (non-fatal)")
 	}
 
 	utils.WriteJson(w, map[string]any{
@@ -220,18 +228,14 @@ func (handler *RequestHandler) AdminTOTPRegenerateBackupCodes(w http.ResponseWri
 		return
 	}
 
-	encryptedCodes, err := encryptBackupCodes(
-		handler,
-		backupCodes,
-		crypto.AAD("accounts", "totp_backup_codes_encrypted", acc.ID),
-	)
+	storedCodes, err := handler.hashBackupCodes(backupCodes, acc.ID)
 	if err != nil {
-		log.Err(err).Msg("failed to encrypt backup codes")
+		log.Err(err).Msg("failed to hash backup codes")
 		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 		return
 	}
 
-	if err := handler.repo.UpdateTOTPBackupCodes(r.Context(), acc.ID, encryptedCodes); err != nil {
+	if err := handler.repo.UpdateTOTPBackupCodes(r.Context(), acc.ID, storedCodes); err != nil {
 		log.Err(err).Msg("failed to update backup codes")
 		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 		return
@@ -360,59 +364,17 @@ func (handler *RequestHandler) AdminTOTPVerify(w http.ResponseWriter, r *http.Re
 	WriteError(w, r, "error.invalidTOTPCode", http.StatusUnauthorized)
 }
 
-// tryBackupCode checks if the code matches any remaining backup code.
-// If matched, consumes it (removes from the stored list).
+// tryBackupCode checks if the code matches any remaining backup code for an
+// admin account and, if so, consumes it. Read-compatible with legacy encrypted
+// codes (migrated to hashes on first use) via consumeBackupCode.
 func (handler *RequestHandler) tryBackupCode(r *http.Request, acc *core.Account, code string) bool {
-	if len(acc.TOTPBackupCodesEncrypted) == 0 {
-		return false
-	}
-
-	decrypted, err := handler.encryptor.DecryptFromBytesWithAAD(
-		acc.TOTPBackupCodesEncrypted,
+	return handler.consumeBackupCode(
+		r.Context(), acc.TOTPBackupCodesEncrypted, code, acc.ID,
 		crypto.AAD("accounts", "totp_backup_codes_encrypted", acc.ID),
+		func(ctx context.Context, ownerID uuid.UUID, newBlob []byte) error {
+			return handler.repo.UpdateTOTPBackupCodes(ctx, ownerID, newBlob)
+		},
 	)
-	if err != nil {
-		log.Err(err).Msg("failed to decrypt backup codes")
-		return false
-	}
-
-	var codes []string
-	if err := json.Unmarshal(decrypted, &codes); err != nil {
-		log.Err(err).Msg("failed to unmarshal backup codes")
-		return false
-	}
-
-	codeNorm := strings.ToLower(strings.TrimSpace(code))
-	matchIdx := -1
-	for i, c := range codes {
-		if subtle.ConstantTimeCompare([]byte(strings.ToLower(c)), []byte(codeNorm)) == 1 {
-			matchIdx = i
-			break
-		}
-	}
-	if matchIdx < 0 {
-		return false
-	}
-
-	// Remove the matched code
-	codes = append(codes[:matchIdx], codes[matchIdx+1:]...)
-
-	encryptedCodes, err := encryptBackupCodes(
-		handler,
-		codes,
-		crypto.AAD("accounts", "totp_backup_codes_encrypted", acc.ID),
-	)
-	if err != nil {
-		log.Err(err).Msg("failed to re-encrypt backup codes after consumption")
-		return false
-	}
-
-	if err := handler.repo.UpdateTOTPBackupCodes(r.Context(), acc.ID, encryptedCodes); err != nil {
-		log.Err(err).Msg("failed to update backup codes after consumption")
-		return false
-	}
-
-	return true
 }
 
 // verifyAccountPassword fetches the password hash and compares it
@@ -452,13 +414,118 @@ func generateBackupCodes(n int) ([]string, error) {
 	return codes, nil
 }
 
-// encryptBackupCodes marshals codes to JSON and encrypts with AAD-bound
-// GCM. aad should be crypto.AAD(table, column, ownerID) for whichever
-// table holds the codes (accounts for admin, users for workspace).
-func encryptBackupCodes(handler *RequestHandler, codes []string, aad []byte) ([]byte, error) {
-	data, err := json.Marshal(codes)
+// normalizeBackupCode canonicalizes a backup code for hashing / comparison.
+func normalizeBackupCode(code string) string {
+	return strings.ToLower(strings.TrimSpace(code))
+}
+
+// hashBackupCode returns the hex HMAC-SHA256 of a normalized backup code,
+// keyed by the OTP pepper and bound to the owner id. Backup codes are 64-bit
+// random, so a one-way hash (vs. the prior reversible AES-GCM encryption) means
+// a DB+key compromise yields nothing usable — matching how OTPs are stored. The
+// owner binding stops the same code hashing identically across two accounts.
+func hashBackupCode(code string, ownerID uuid.UUID, pepper string) string {
+	m := hmac.New(sha256.New, []byte(pepper))
+	m.Write([]byte(ownerID.String()))
+	m.Write([]byte(":"))
+	m.Write([]byte(normalizeBackupCode(code)))
+	return hex.EncodeToString(m.Sum(nil))
+}
+
+// hashBackupCodes hashes each plaintext code and marshals the hashes to JSON
+// for at-rest storage. The plaintext codes are shown to the user once at
+// generation; the stored form is one-way and needs no encryption. Replaces the
+// old encrypt-at-rest path for new / regenerated codes.
+func (handler *RequestHandler) hashBackupCodes(codes []string, ownerID uuid.UUID) ([]byte, error) {
+	pepper, err := handler.getOTPPepper()
 	if err != nil {
 		return nil, err
 	}
-	return handler.encryptor.EncryptToBytesWithAAD(data, aad)
+	hashes := make([]string, len(codes))
+	for i, c := range codes {
+		hashes[i] = hashBackupCode(c, ownerID, pepper)
+	}
+	return json.Marshal(hashes)
+}
+
+// consumeBackupCode verifies a presented code against the stored set and, on a
+// match, removes it and rewrites the remaining set in the hashed format. It is
+// read-compatible with legacy AES-GCM-encrypted-plaintext blobs: those decrypt
+// to the plaintext codes, are matched there, then migrated forward to hashes on
+// first use (a new hashed blob is plain JSON and won't decrypt, so a decrypt
+// error simply routes to the hashed branch). store persists the new blob.
+func (handler *RequestHandler) consumeBackupCode(
+	ctx context.Context,
+	blob []byte,
+	code string,
+	ownerID uuid.UUID,
+	legacyAAD []byte,
+	store func(ctx context.Context, ownerID uuid.UUID, newBlob []byte) error,
+) bool {
+	if len(blob) == 0 {
+		return false
+	}
+
+	// Legacy format: blob decrypts to a JSON array of plaintext codes.
+	if dec, derr := handler.encryptor.DecryptFromBytesWithAAD(blob, legacyAAD); derr == nil {
+		var codes []string
+		if json.Unmarshal(dec, &codes) != nil {
+			return false
+		}
+		want := normalizeBackupCode(code)
+		idx := -1
+		for i, c := range codes {
+			if subtle.ConstantTimeCompare([]byte(normalizeBackupCode(c)), []byte(want)) == 1 {
+				idx = i
+				break
+			}
+		}
+		if idx < 0 {
+			return false
+		}
+		remaining := append(codes[:idx:idx], codes[idx+1:]...)
+		newBlob, herr := handler.hashBackupCodes(remaining, ownerID) // migrate forward
+		if herr != nil {
+			log.Err(herr).Msg("backup code: rehash of legacy remaining failed")
+			return false
+		}
+		if err := store(ctx, ownerID, newBlob); err != nil {
+			log.Err(err).Msg("backup code: store after legacy consume failed")
+			return false
+		}
+		return true
+	}
+
+	// New format: JSON array of HMAC hashes.
+	pepper, err := handler.getOTPPepper()
+	if err != nil {
+		log.Err(err).Msg("backup code: missing OTP pepper")
+		return false
+	}
+	var hashes []string
+	if json.Unmarshal(blob, &hashes) != nil {
+		return false
+	}
+	want := hashBackupCode(code, ownerID, pepper)
+	idx := -1
+	for i, h := range hashes {
+		if subtle.ConstantTimeCompare([]byte(h), []byte(want)) == 1 {
+			idx = i
+			break
+		}
+	}
+	if idx < 0 {
+		return false
+	}
+	remaining := append(hashes[:idx:idx], hashes[idx+1:]...)
+	newBlob, merr := json.Marshal(remaining)
+	if merr != nil {
+		log.Err(merr).Msg("backup code: marshal remaining hashes failed")
+		return false
+	}
+	if err := store(ctx, ownerID, newBlob); err != nil {
+		log.Err(err).Msg("backup code: store after consume failed")
+		return false
+	}
+	return true
 }

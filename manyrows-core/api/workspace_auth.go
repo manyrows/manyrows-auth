@@ -1111,6 +1111,10 @@ const (
 	workspacePasswordAuthWindow          = 10 * time.Minute
 	attemptPurposeWorkspaceLoginPassword = "workspace_login_pw"
 	attemptPurposeWorkspaceResetPassword = "workspace_reset_pw"
+	// attemptPurposeWorkspaceResetPWVerify buckets the reset *verify* step
+	// (code + new password), separate from the send step above so the two
+	// don't share a budget. Mirrors the admin split (forgot vs reset-verify).
+	attemptPurposeWorkspaceResetPWVerify = "workspace_reset_pw_verify"
 
 	// passwordSetAfterRegisterWindow gates the initial-set escape hatch
 	// in WorkspaceSetPassword for users who recently proved email
@@ -1827,6 +1831,18 @@ func (handler *RequestHandler) WorkspaceResetPassword(w http.ResponseWriter, r *
 		}
 		return
 	}
+
+	// Rate-limit the verify step by IP + subject. The per-OTP-row cap
+	// (ClaimClientOTPAttempt) bounds guesses against a single code, but
+	// without this an attacker rotating freshly-requested OTPs — or hitting
+	// from many IPs — has no cross-OTP / cross-IP ceiling. Burn one attempt
+	// per call (success included; a real user verifies once), so a flood is
+	// counted regardless of outcome. Mirrors AdminResetPassword.
+	ip := auth.ClientIP(r)
+	if !handler.checkAttemptRateLimit(w, r, attemptPurposeWorkspaceResetPWVerify, ip, toEmail, "workspace password reset verify", nil) {
+		return
+	}
+	_ = handler.repo.InsertAttempt(r.Context(), attemptPurposeWorkspaceResetPWVerify, toEmail, ip)
 
 	pepper, err := handler.getOTPPepper()
 	if err != nil {

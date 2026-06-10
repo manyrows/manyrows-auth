@@ -13,6 +13,7 @@ import (
 	"manyrows-core/email"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -619,19 +620,28 @@ func TestAdminTOTPVerify_ValidBackupCode(t *testing.T) {
 		t.Fatalf("failed to fetch account: %v", err)
 	}
 
-	encryptor := crypto.NewMySecretEncryptor(cfg)
-	decrypted, err := encryptor.DecryptFromBytesWithAAD(
-		freshAcc.TOTPBackupCodesEncrypted,
-		crypto.AAD("accounts", "totp_backup_codes_encrypted", acc.ID),
-	)
-	if err != nil {
-		t.Fatalf("failed to decrypt backup codes: %v", err)
-	}
+	// Backup codes are stored as a JSON array of HMAC hashes (one-way), not
+	// encrypted plaintext — so count the remaining hashes directly.
 	var remainingCodes []string
-	json.Unmarshal(decrypted, &remainingCodes)
+	if err := json.Unmarshal(freshAcc.TOTPBackupCodesEncrypted, &remainingCodes); err != nil {
+		t.Fatalf("failed to parse stored backup-code hashes: %v", err)
+	}
 
 	if len(remainingCodes) != 7 {
 		t.Errorf("expected 7 remaining backup codes after consumption, got %d", len(remainingCodes))
+	}
+	// Security property: nothing at rest is the plaintext code — each entry is a
+	// 64-hex-char hash, and no stored entry equals any original plaintext.
+	rawAtRest := string(freshAcc.TOTPBackupCodesEncrypted)
+	for _, plain := range backupCodes {
+		if strings.Contains(rawAtRest, plain) {
+			t.Errorf("plaintext backup code %q must not appear at rest", plain)
+		}
+	}
+	for _, stored := range remainingCodes {
+		if len(stored) != 64 {
+			t.Errorf("stored backup code %q is not a 64-hex hash", stored)
+		}
 	}
 }
 
