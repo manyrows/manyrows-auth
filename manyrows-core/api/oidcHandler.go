@@ -259,6 +259,12 @@ func (handler *RequestHandler) OIDCAuthorize(w http.ResponseWriter, r *http.Requ
 		// Prompt is stored on the pending row so Resume + consent can
 		// re-evaluate prompt=consent / prompt=none without re-parsing the URL.
 		Prompt: strings.TrimSpace(q.Get("prompt")),
+		// LoginHint is prefill-only (login shim email field). Over-long
+		// hints are dropped, not errored — the hint is purely advisory.
+		LoginHint: strings.TrimSpace(q.Get("login_hint")),
+	}
+	if len(params.LoginHint) > 254 {
+		params.LoginHint = ""
 	}
 
 	if e := validateOIDCAuthorizeParams(params); e != nil {
@@ -592,15 +598,28 @@ func (handler *RequestHandler) OIDCLoginPage(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
+	// Prefill-only login_hint: peek (don't consume) the pending row the
+	// /authorize handler stashed and pull the capped hint out of the
+	// restored params. A dead/foreign row just means no prefill — the
+	// page still renders and Resume will reject the stale req later.
+	var loginHint string
+	if p, params, found, perr := handler.repo.PeekOIDCPendingAuthorize(ctx, reqID); perr != nil {
+		log.Err(perr).Str("app_id", app.ID.String()).Msg("OIDCLoginPage: PeekOIDCPendingAuthorize failed")
+	} else if found && params != nil && p != nil && p.AppID == app.ID && len(params.LoginHint) <= 254 {
+		loginHint = params.LoginHint
+	}
+
 	data := struct {
 		WorkspaceSlug string
 		AppID         string
 		ResumeURL     string
+		LoginHint     string
 	}{
 		WorkspaceSlug: ws.Slug,
 		AppID:         app.ID.String(),
 		ResumeURL: fmt.Sprintf("/x/%s/apps/%s/oidc/authorize/resume?req=%s",
 			url.PathEscape(ws.Slug), app.ID.String(), reqID.String()),
+		LoginHint: loginHint,
 	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -639,6 +658,7 @@ var oidcLoginTmpl = template.Must(template.New("oidc_login").Parse(`<!doctype ht
         var resumeURL = {{ .ResumeURL | js }};
         var workspace = {{ .WorkspaceSlug | js }};
         var appId = {{ .AppID | js }};
+        var loginHint = {{ .LoginHint | js }};
         function boot() {
           if (!window.ManyRows || !window.ManyRows.AppKit) {
             return setTimeout(boot, 50);
@@ -647,6 +667,7 @@ var oidcLoginTmpl = template.Must(template.New("oidc_login").Parse(`<!doctype ht
             container: document.getElementById("root"),
             workspace: workspace,
             appId: appId,
+            loginHint: loginHint,
             onLogin: function () {
               window.location.assign(resumeURL);
             },

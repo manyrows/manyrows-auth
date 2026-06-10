@@ -127,6 +127,55 @@ func TestOIDCAuthorize_PromptLogin_ForcesReauth(t *testing.T) {
 	}
 }
 
+// login_hint on /authorize threads through the pending row into the
+// AppKit login shim's init options (prefill only). Hints over 254 chars
+// are dropped entirely.
+func TestOIDCAuthorize_LoginHint_ThreadsToShim(t *testing.T) {
+	e := setupOIDCRouter(t)
+	redirect := "https://customer.example/callback"
+	e.enableOIDC(t, []string{redirect}, nil, "")
+	_, challenge := makePKCE()
+
+	loginPageFor := func(t *testing.T, hint string) string {
+		t.Helper()
+		q := baseAuthorizeQuery(e, redirect, challenge)
+		q.Set("login_hint", hint)
+		rr := authorizeGET(e, q, "") // no session → login shim
+		if rr.Code != http.StatusFound {
+			t.Fatalf("authorize: expected 302, got %d (%s)", rr.Code, rr.Body.String())
+		}
+		loc := rr.Header().Get("Location")
+		if !strings.Contains(loc, "/oidc/login?req=") {
+			t.Fatalf("expected redirect to oidc/login, got %q", loc)
+		}
+		req := httptest.NewRequest("GET", loc, nil)
+		page := httptest.NewRecorder()
+		e.router.ServeHTTP(page, req)
+		if page.Code != http.StatusOK {
+			t.Fatalf("login page: expected 200, got %d (%s)", page.Code, page.Body.String())
+		}
+		return page.Body.String()
+	}
+
+	t.Run("hint reaches AppKit init options", func(t *testing.T) {
+		body := loginPageFor(t, "hint@example.com")
+		if !strings.Contains(body, "loginHint") {
+			t.Errorf("login page missing loginHint option:\n%s", body)
+		}
+		if !strings.Contains(body, "hint@example.com") {
+			t.Errorf("login page missing hint value:\n%s", body)
+		}
+	})
+
+	t.Run("over-length hint is dropped", func(t *testing.T) {
+		long := strings.Repeat("a", 250) + "@example.com" // > 254 chars
+		body := loginPageFor(t, long)
+		if strings.Contains(body, long) || strings.Contains(body, strings.Repeat("a", 250)) {
+			t.Errorf("over-length login_hint should be dropped, but appears on page")
+		}
+	})
+}
+
 // max_age=0 forces re-auth: the existing session is always "too old".
 func TestOIDCAuthorize_MaxAgeZero_ForcesReauth(t *testing.T) {
 	e := setupOIDCRouter(t)

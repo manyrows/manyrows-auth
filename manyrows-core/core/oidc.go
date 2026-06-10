@@ -82,6 +82,11 @@ type OIDCAuthorizeParams struct {
 	// Resume and the consent handlers can re-evaluate prompt=consent and
 	// prompt=none without re-parsing the URL.
 	Prompt string `json:"prompt,omitempty"`
+	// LoginHint is the RP-supplied login_hint (typically an email).
+	// Persisted on the pending row only so the AppKit login shim can
+	// prefill the email field — never trusted for anything else, and
+	// dropped entirely at parse time when longer than 254 chars.
+	LoginHint string `json:"login_hint,omitempty"`
 }
 
 // OIDCPendingAuthorize is the short-lived row holding an /authorize

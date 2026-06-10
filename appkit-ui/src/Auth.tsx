@@ -383,6 +383,9 @@ export default function Auth(props: {
   header?: React.ReactNode;
   labels?: Partial<AuthLabels>;
   initialScreen?: "login" | "register" | "forgot-password";
+  // Prefill for the email field (e.g. an OIDC login_hint). Initial
+  // value only — the user can edit it freely.
+  loginHint?: string;
   onScreenChange?: (screen: "login" | "register" | "forgot-password") => void;
   embedded?: boolean;
 }) {
@@ -425,7 +428,9 @@ export default function Auth(props: {
   const [kakaoLoading, setKakaoLoading] = React.useState(false);
   const [naverLoading, setNaverLoading] = React.useState(false);
   const [loading, setLoading] = React.useState(false);
-  const [email, setEmail] = React.useState("");
+  // loginHint only seeds the initial value (useState initializer runs
+  // once) — the user can clear or replace it.
+  const [email, setEmail] = React.useState(props.loginHint ?? "");
   const [code, setCode] = React.useState("");
   const [password, setPassword] = React.useState("");
   const [newPassword, setNewPassword] = React.useState("");

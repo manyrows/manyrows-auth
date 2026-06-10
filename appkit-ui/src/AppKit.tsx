@@ -354,6 +354,10 @@ interface AppKitProps {
   initialScreen?: "login" | "register" | "forgot-password";
   onScreenChange?: (screen: "login" | "register" | "forgot-password") => void;
 
+  // Prefill for the email field on the auth screens (e.g. an OIDC
+  // login_hint). Initial value only — the user can edit it freely.
+  loginHint?: string;
+
   // When true, Auth renders without its full-viewport wrapper so it flows
   // inline in the parent container. Default: false (centered full-page layout).
   embedded?: boolean;
@@ -1919,10 +1923,10 @@ export default function AppKit(props: AppKitProps) {
           )
         ) : authStatus === "unauthenticated" ? (
           props.hideAuthUI ? null :
-          <Auth workspaceBaseUrl={appBaseURL} cookieMode={cookieMode} onTokenPair={onTokenPairReceived} allowRegistration={app?.allowRegistration} appId={app?.id} googleOAuthClientId={app?.googleOAuthClientId} appleEnabled={app?.appleEnabled} microsoftEnabled={app?.microsoftEnabled} githubEnabled={app?.githubEnabled} kakaoEnabled={app?.kakaoEnabled} naverEnabled={app?.naverEnabled} externalIdps={app?.externalIdps} primaryAuthMethod={app?.primaryAuthMethod} passkeyEnabled={app?.passkeyEnabled} qrSignInEnabled={app?.qrSignInEnabled && !props.suppressQRSignIn} hideBranding={app?.hideBranding} require2fa={app?.require2fa} header={props.authHeader} labels={props.labels} initialScreen={props.initialScreen} onScreenChange={props.onScreenChange} embedded={props.embedded} />
+          <Auth workspaceBaseUrl={appBaseURL} cookieMode={cookieMode} onTokenPair={onTokenPairReceived} allowRegistration={app?.allowRegistration} appId={app?.id} googleOAuthClientId={app?.googleOAuthClientId} appleEnabled={app?.appleEnabled} microsoftEnabled={app?.microsoftEnabled} githubEnabled={app?.githubEnabled} kakaoEnabled={app?.kakaoEnabled} naverEnabled={app?.naverEnabled} externalIdps={app?.externalIdps} primaryAuthMethod={app?.primaryAuthMethod} passkeyEnabled={app?.passkeyEnabled} qrSignInEnabled={app?.qrSignInEnabled && !props.suppressQRSignIn} hideBranding={app?.hideBranding} require2fa={app?.require2fa} header={props.authHeader} labels={props.labels} initialScreen={props.initialScreen} loginHint={props.loginHint} onScreenChange={props.onScreenChange} embedded={props.embedded} />
         ) : !appData ? (
           props.hideAuthUI ? null :
-          <Auth workspaceBaseUrl={appBaseURL} cookieMode={cookieMode} onTokenPair={onTokenPairReceived} allowRegistration={app?.allowRegistration} appId={app?.id} googleOAuthClientId={app?.googleOAuthClientId} appleEnabled={app?.appleEnabled} microsoftEnabled={app?.microsoftEnabled} githubEnabled={app?.githubEnabled} kakaoEnabled={app?.kakaoEnabled} naverEnabled={app?.naverEnabled} externalIdps={app?.externalIdps} primaryAuthMethod={app?.primaryAuthMethod} passkeyEnabled={app?.passkeyEnabled} qrSignInEnabled={app?.qrSignInEnabled && !props.suppressQRSignIn} hideBranding={app?.hideBranding} require2fa={app?.require2fa} header={props.authHeader} labels={props.labels} initialScreen={props.initialScreen} onScreenChange={props.onScreenChange} embedded={props.embedded} />
+          <Auth workspaceBaseUrl={appBaseURL} cookieMode={cookieMode} onTokenPair={onTokenPairReceived} allowRegistration={app?.allowRegistration} appId={app?.id} googleOAuthClientId={app?.googleOAuthClientId} appleEnabled={app?.appleEnabled} microsoftEnabled={app?.microsoftEnabled} githubEnabled={app?.githubEnabled} kakaoEnabled={app?.kakaoEnabled} naverEnabled={app?.naverEnabled} externalIdps={app?.externalIdps} primaryAuthMethod={app?.primaryAuthMethod} passkeyEnabled={app?.passkeyEnabled} qrSignInEnabled={app?.qrSignInEnabled && !props.suppressQRSignIn} hideBranding={app?.hideBranding} require2fa={app?.require2fa} header={props.authHeader} labels={props.labels} initialScreen={props.initialScreen} loginHint={props.loginHint} onScreenChange={props.onScreenChange} embedded={props.embedded} />
         ) : totpSetupNeeded ? (
           <TOTPSetupGate
             workspaceBaseURL={appBaseURL}

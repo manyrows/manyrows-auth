@@ -100,6 +100,10 @@ export interface AppKitOptions extends ManyRowsAppKitCallbacks {
   // OPTIONAL: which auth screen to show initially ("login" | "register" | "forgot-password")
   initialScreen?: "login" | "register" | "forgot-password";
 
+  // OPTIONAL: prefill for the email field on the auth screens (e.g. an
+  // OIDC login_hint). Initial value only — the user can edit it freely.
+  loginHint?: string;
+
   // OPTIONAL: called when the user navigates between auth screens (e.g. clicks "Create account")
   onScreenChange?: (screen: "login" | "register" | "forgot-password") => void;
 
@@ -494,6 +498,7 @@ export function initManyRowsAppKit(options: AppKitOptions): ManyRowsAppKitHandle
         authHeader={options.authHeader}
         labels={options.labels}
         initialScreen={options.initialScreen}
+        loginHint={options.loginHint}
         onScreenChange={options.onScreenChange}
         embedded={options.embedded}
         hideAuthUI={options.hideAuthUI}
