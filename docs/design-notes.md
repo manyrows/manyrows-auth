@@ -41,6 +41,19 @@ everyone else, while rejecting genuinely strong passphrases that happen to miss 
 class. Estimating how *guessable* a password actually is gets at the thing we care
 about, instead of a proxy for it.
 
+### Reuse blocking is a per-app opt-in, off by default
+
+An app can choose to block a user's five most recent passwords, enforced on both
+the authenticated change and the reset flow. The toggle defaults to off, and
+turning it on still brings no forced rotation, no expiry, and no composition
+rules. We rejected making reuse prevention default-on (or mandatory).
+
+Reuse history is friction with a narrow payoff; its real constituency is
+operators whose compliance regime demands it, so it's theirs to switch on. One
+detail matters for that choice: history is recorded (append, prune to five)
+even while the toggle is off, so enabling it later enforces against the user's
+actual recent passwords instead of starting from an empty ledger.
+
 ## Tokens and sessions
 
 ### Stateless JWTs for verification, stateful sessions for revocation
@@ -105,6 +118,19 @@ password login, our own) is the ownership proof that closes it. (A friendlier pa
 that lets a user *prove* an unverified email with their existing password instead
 of being rejected is on the roadmap; until it lands, refusing is the safe default.)
 
+### Changing an account's email takes a code from each address
+
+An email change completes only with two verification codes: one sent to the new
+address and one sent to the current one. We rejected the common pattern of
+confirming the new address alone.
+
+The new-address code only proves the user controls where the account is *going*;
+it says nothing about whether the change is sanctioned by whoever owns the
+account *now*. With a stolen session, "confirm the new address" lets an attacker
+silently re-point the account at an inbox they control — taking every recovery
+path with it. The old-address code keeps the current owner in the loop at
+exactly the moment the account is being re-keyed.
+
 ### Bespoke Kakao and Naver, next to a generic OIDC/OAuth2 client
 
 Google, Apple, Microsoft, GitHub, Kakao, and Naver are built as first-class
@@ -125,39 +151,65 @@ credentials" is exactly the right amount of configuration.
 ### Your data stays in your Postgres
 
 Users, sessions, audit logs, roles, config: all of it lives in an ordinary Postgres
-schema (`manyrows`) you can query, join, and export in plain SQL. There is no
-proprietary data layer or export gate between an operator and their own data. The
-hierarchy (workspace → project → app, with user *pools* that let several apps share
-one identity base) is modeled in normal relational tables, so operator reporting is
-just SQL.
+schema (`manyrowsauth` by default) you can query, join, and export in plain SQL.
+There is no proprietary data layer or export gate between an operator and their own
+data. The hierarchy (workspace → project → app, with user *pools* that let several
+apps share one identity base) is modeled in normal relational tables, so operator
+reporting is just SQL.
 
 Self-hosting is the whole point; lock-in through a proprietary store would defeat
 it.
+
+### Organizations are app-scoped tenant data, not identity
+
+Multi-tenant organizations (members, org roles, invites) are opt-in per app, with
+a per-app creation policy (self-serve, invite-only, or admin-only). An org belongs
+to exactly one app; identity stays at the pool, and an org only partitions usage
+of its app. We rejected scoping orgs to the pool, where they'd sit next to the
+users they group.
+
+A user is *who someone is*; an org is *which tenant they're acting in*. The two
+customer shapes turn out to be disjoint: B2B SaaS apps that need orgs run them in
+one app, while the customers who share a pool across several products are
+single-tenant ("everyone is implicitly one org") and never turn orgs on. So orgs
+can live at the app grain without ever being duplicated — and identity stays
+singular at the pool: one human, one login, even across apps sharing that pool.
+Orgs spanning multiple apps via a shared pool is an explicit non-goal; if a
+multi-product customer ever needs unified tenants, that's a pool-level layer
+*above* app orgs, not a reason to hoist orgs out of the app now.
 
 ### Secrets at rest are bound to where they live
 
 Secrets (TOTP seeds, OAuth client secrets, SMTP passwords) are sealed with AES-GCM.
 The GCM additional-authenticated-data is the secret's *storage location*
-(`table:column:id`), and a short key id is derived from the key so a future
-rotation can tell which key sealed each row. We rejected plain column encryption
+(`table:column:id`), and a short key id is derived from the key so a rotation
+can tell which key sealed each row. We rejected plain column encryption
 with no context binding.
 
 Binding the ciphertext to its location means a value lifted out of one row and
 pasted into another (a row-swap or confused-deputy attempt) simply fails to
-decrypt, because the authenticated location no longer matches. Encryption keys are
-generated on first boot and persisted; the operator never sees or handles key
-material.
+decrypt, because the authenticated location no longer matches. Keys are generated
+on first boot and persisted when the operator doesn't supply them, and rotation is
+deliberately explicit, shaped by what each key protects. The data-encryption key
+guards stored ciphertext, so a changed value *refuses to boot* unless the old key
+is listed in `PREVIOUS_ENCRYPTION_KEYS` alongside an explicit migration run —
+better no service than silently writing under a key that can't read the existing
+rows. Session keys and the OTP pepper only verify incoming material, so they
+rotate in place: the old value sits in a `_PREVIOUS` variable for a grace window
+during which both generations verify, then gets removed.
 
 ## Deliberately not built
 
 The omissions are decisions too. Some "standard" auth features are actively
 harmful, and leaving them out is a position, not an oversight.
 
-- **No forced password rotation, reuse history, or composition rules.** NIST
-  SP 800-63B explicitly recommends *against* periodic expiry and complexity
-  mandates: they nudge users toward predictable patterns (`Spring2026!`) and add
-  friction without buying real security. We check strength once, well, and then
-  leave good passwords alone.
+- **No forced password rotation or composition rules.** NIST SP 800-63B
+  explicitly recommends *against* periodic expiry and complexity mandates: they
+  nudge users toward predictable patterns (`Spring2026!`) and add friction
+  without buying real security. We check strength once, well, and then leave
+  good passwords alone. (Reuse *history* used to be on this list; it now exists
+  as a per-app opt-in for compliance-bound operators — see the Passwords section
+  — but stays off by default for the same reason.)
 - **No SMS one-time codes.** SMS is phishable and SIM-swappable; offering it as a
   "second factor" mostly manufactures false confidence. The investment goes into
   TOTP and passkeys, which are phishing-resistant.
@@ -178,3 +230,7 @@ Decisions not yet made, recorded so they aren't mistaken for oversights:
   with a password (or a fresh registration) instead of being refused.
 - **DPoP phase 2:** extend the binding from refresh tokens to access tokens
   (`cnf` + `ath`).
+- **Scope-gated OIDC tokens and userinfo:** the OIDC provider stores the granted
+  scope with each refresh-token chain (in progress), but access tokens don't yet
+  carry a scope claim and `/oidc/userinfo` doesn't yet filter its response by
+  what was granted.
