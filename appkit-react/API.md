@@ -746,6 +746,293 @@ Programmatic file upload with progress tracking.
 
 ---
 
+### `useSessions()`
+
+Returns a function that fetches the user's active sessions across devices. The session making the request has `current: true`.
+
+**Returns: `() => Promise<AppKitSession[]>`**
+
+```tsx
+const listSessions = useSessions();
+const sessions = await listSessions();
+const thisMachine = sessions.find((s) => s.current);
+```
+
+---
+
+### `useRevokeSession()`
+
+Returns a function that revokes one of the user's sessions (signs out that device). Revoking the current session signs the calling user out immediately.
+
+**Returns: `(sessionId: string) => Promise<void>`**
+
+```tsx
+const revokeSession = useRevokeSession();
+await revokeSession(session.id);
+```
+
+---
+
+### `usePasskeys()`
+
+Returns a function that lists the user's registered passkeys.
+
+**Returns: `() => Promise<AppKitPasskey[]>`**
+
+```tsx
+const listPasskeys = usePasskeys();
+const passkeys = await listPasskeys();
+```
+
+---
+
+### `useRenamePasskey()`
+
+Returns a function that renames a passkey.
+
+**Returns: `(passkeyId: string, params: { name: string }) => Promise<void>`**
+
+```tsx
+const renamePasskey = useRenamePasskey();
+await renamePasskey(passkey.id, { name: "Work laptop" });
+```
+
+---
+
+### `useDeletePasskey()`
+
+Returns a function that deletes a passkey. A sensitive operation — pass `{ password }` or `{ code }` (request one with `useRequestReauthCode()`). The re-auth proof travels in the DELETE request body; any proxy in front of the ManyRows server must forward DELETE bodies.
+
+**Returns: `(passkeyId: string, reauth?: AppKitReauthParams) => Promise<void>`**
+
+```tsx
+const deletePasskey = useDeletePasskey();
+await deletePasskey(passkey.id, { password });
+```
+
+---
+
+### `useRegisterPasskey()`
+
+Returns a function that registers a new passkey for the signed-in user by running the full WebAuthn ceremony: fetches a challenge, prompts the browser (`navigator.credentials.create`), and stores the credential. Resolves with the new `AppKitPasskey`.
+
+Throws `"Passkeys are not supported in this browser"` when WebAuthn is unavailable. On user cancellation or prompt timeout the thrown error has `name === PASSKEY_CANCELLED` — detect it with `isPasskeyCancelled(err)`. Only one ceremony can run at a time; disable the trigger element while the returned promise is pending.
+
+**Returns: `(params?: { name?: string }) => Promise<AppKitPasskey>`**
+
+```tsx
+import { useRegisterPasskey, isPasskeyCancelled } from "@manyrows/appkit-react";
+
+const registerPasskey = useRegisterPasskey();
+try {
+  const passkey = await registerPasskey({ name: "MacBook" });
+  console.log("Registered:", passkey.id);
+} catch (err) {
+  if (!isPasskeyCancelled(err)) throw err;
+}
+```
+
+---
+
+### `useStartTOTPSetup()`
+
+Returns a function that begins TOTP enrollment. A sensitive operation — pass `{ password }` or `{ code }` (see `useRequestReauthCode`). Resolves with `{ secret, uri }` where `secret` is the base32 key for manual entry and `uri` is an `otpauth://` URL to render as a QR code. Calling this again before enabling discards the previous pending secret (any earlier QR code stops working). Rejects with `error.totpAlreadyEnabled` when 2FA is already active.
+
+**Returns: `(reauth: AppKitReauthParams) => Promise<AppKitTOTPSetup>`**
+
+```tsx
+const startTOTPSetup = useStartTOTPSetup();
+const { secret, uri } = await startTOTPSetup({ password });
+// render uri as a QR code, show secret for manual entry
+```
+
+---
+
+### `useEnableTOTP()`
+
+Returns a function that completes TOTP enrollment by verifying a code from the authenticator app. Resolves with `{ backupCodes }` — show them to the user once; they are not retrievable later (only regenerable via `useRegenerateBackupCodes`). Refreshes the snapshot.
+
+**Returns: `(params: { code: string }) => Promise<{ backupCodes: string[] }>`**
+
+```tsx
+const enableTOTP = useEnableTOTP();
+const { backupCodes } = await enableTOTP({ code: totpCode });
+// display backupCodes to user — they will not be shown again
+```
+
+---
+
+### `useDisableTOTP()`
+
+Returns a function that disables TOTP. A sensitive operation — pass `{ password }` or `{ code }` (see `useRequestReauthCode`). Refreshes the snapshot.
+
+**Returns: `(reauth: AppKitReauthParams) => Promise<void>`**
+
+```tsx
+const disableTOTP = useDisableTOTP();
+await disableTOTP({ password });
+```
+
+---
+
+### `useRegenerateBackupCodes()`
+
+Returns a function that regenerates the user's TOTP backup codes, invalidating the old set. Unlike the other sensitive hooks, this endpoint accepts the password only — there is no email-code path.
+
+**Returns: `(params: { password: string }) => Promise<{ backupCodes: string[] }>`**
+
+```tsx
+const regenerateBackupCodes = useRegenerateBackupCodes();
+const { backupCodes } = await regenerateBackupCodes({ password });
+```
+
+---
+
+### `useIdentities()`
+
+Returns a function that lists the user's linked sign-in identities (OAuth providers / external IdPs).
+
+**Returns: `() => Promise<AppKitIdentity[]>`**
+
+```tsx
+const listIdentities = useIdentities();
+const identities = await listIdentities(); // [{ provider: "google", ... }]
+```
+
+---
+
+### `useDisconnectIdentity()`
+
+Returns a function that unlinks a sign-in identity by provider name. The server rejects the request when removing the identity would leave the user with no way to sign in.
+
+**Returns: `(provider: string) => Promise<void>`**
+
+```tsx
+const disconnectIdentity = useDisconnectIdentity();
+await disconnectIdentity("google");
+```
+
+---
+
+### `useDeleteAccount()`
+
+Returns a function that permanently deletes the signed-in user's account at this app, then signs them out. Requires the account password. Rejects with `error.forbidden` when the app has account deletion disabled.
+
+**Returns: `(params: { password: string }) => Promise<void>`**
+
+```tsx
+const deleteAccount = useDeleteAccount();
+await deleteAccount({ password });
+// user is signed out automatically on success
+```
+
+---
+
+### `useRequestEmailChange()`
+
+Returns a function that starts an email change. The server sends a 6-digit verification code to the **new** address. Complete the change with `useVerifyEmailChange`. Requires the current password.
+
+**Returns: `(params: { newEmail: string; password: string }) => Promise<void>`**
+
+```tsx
+const requestEmailChange = useRequestEmailChange();
+await requestEmailChange({ newEmail: "new@example.com", password });
+```
+
+---
+
+### `useVerifyEmailChange()`
+
+Returns a function that completes a pending email change using the 6-digit code sent to the new address. Refreshes the snapshot so `useUser()` reflects the new email.
+
+**Returns: `(params: { code: string }) => Promise<void>`**
+
+```tsx
+const verifyEmailChange = useVerifyEmailChange();
+await verifyEmailChange({ code: "123456" });
+```
+
+---
+
+### `useUserFields()`
+
+Returns a function that fetches the user's client-visible custom fields with their current values.
+
+**Returns: `() => Promise<AppKitUserField[]>`**
+
+```tsx
+const getFields = useUserFields();
+const fields = await getFields(); // [{ key, type, label, value }]
+```
+
+---
+
+### `useUpdateUserFields()`
+
+Returns a function that updates the user's custom fields. Pass a flat `key → value` map (e.g. `{ plan: "team" }`), **not** the `AppKitUserField[]` array returned by `useUserFields()`. Only client-writable fields are accepted. Resolves with the updated field list.
+
+**Returns: `(values: Record<string, unknown>) => Promise<AppKitUserField[]>`**
+
+```tsx
+const updateFields = useUpdateUserFields();
+const updated = await updateFields({ displayPronouns: "they/them" });
+```
+
+---
+
+### `useRequestReauthCode()`
+
+Returns a function that emails the signed-in user a 6-digit verification code. Use it before sensitive hooks (`useStartTOTPSetup`, `useDisableTOTP`, `useDeletePasskey`) for users who have no password (OAuth-only / passkey-only) — pass the received code as `{ code }` in `AppKitReauthParams`.
+
+**Returns: `() => Promise<void>`**
+
+**Re-authentication pattern:**
+
+```tsx
+const requestReauthCode = useRequestReauthCode();
+const disableTOTP = useDisableTOTP();
+
+// Password user:
+await disableTOTP({ password });
+
+// Passwordless (OAuth/passkey-only) user:
+await requestReauthCode();               // emails a 6-digit code
+await disableTOTP({ code: enteredCode }); // user types the code
+```
+
+---
+
+## Auth event callbacks
+
+Two props on `<AppKit>` notify the host when the user's auth state changes:
+
+| Prop | Type | Description |
+|------|------|-------------|
+| `onSignIn` | `(user: AppKitAccount) => void` | Fired when the user becomes signed in |
+| `onSignOut` | `() => void` | Fired when the signed-in user becomes signed out |
+
+**`onSignIn`** fires on a fresh login **and** when an existing session resolves after the component mounts. A remount re-fires it for the same session — if your handler has side effects (analytics, redirects) guard against duplicates with a ref. It is **not** fired while the runtime is in the transient `"checking"` state.
+
+**`onSignOut`** fires only on a real sign-out (logout, session revocation, token expiry). It is **not** fired when the initial state resolves to unauthenticated.
+
+```tsx
+<AppKit
+  workspace="acme"
+  appId="your-app-id"
+  baseURL="https://auth.yourdomain.com"
+  onSignIn={(user) => {
+    analytics.identify(user.id);
+  }}
+  onSignOut={() => {
+    analytics.reset();
+  }}
+>
+  <App />
+</AppKit>
+```
+
+---
+
 ## Types
 
 ### `ImageResource`
@@ -889,6 +1176,89 @@ Programmatic file upload with progress tracking.
   config?: AppKitConfigValue[];
 }
 ```
+
+### `AppKitSession`
+
+```typescript
+{
+  id: string;
+  createdAt: string;       // ISO 8601
+  lastSeenAt: string;      // ISO 8601
+  userAgent?: string;
+  ip?: string;
+  current: boolean;        // true for the session making the request
+}
+```
+
+### `AppKitPasskey`
+
+```typescript
+{
+  id: string;
+  name?: string;
+  transports: string[];
+  aaguid?: string;
+  authenticatorName?: string;
+  backupEligible: boolean;
+  backupState: boolean;
+  createdAt: string;       // ISO 8601
+  lastUsedAt?: string;     // ISO 8601
+}
+```
+
+### `AppKitIdentity`
+
+```typescript
+{
+  provider: string;        // e.g. "google"
+  providerEmail?: string;
+  createdAt: string;       // ISO 8601
+  lastLoginAt: string;     // ISO 8601
+}
+```
+
+### `AppKitUserField`
+
+```typescript
+{
+  key: string;
+  type: string;
+  label: string;
+  value?: unknown;
+}
+```
+
+### `AppKitReauthParams`
+
+An exclusive union — pass exactly one of `password` or `code`:
+
+```typescript
+| { password: string; code?: never }
+| { code: string; password?: never }
+```
+
+Used by `useStartTOTPSetup`, `useDisableTOTP`, and `useDeletePasskey`. For passwordless users (OAuth-only / passkey-only), request an email code with `useRequestReauthCode()` then pass `{ code }`.
+
+### `AppKitTOTPSetup`
+
+```typescript
+{
+  secret: string;   // base32 secret for manual entry
+  uri: string;      // otpauth:// URL — render as a QR code
+}
+```
+
+### `PASSKEY_CANCELLED` / `isPasskeyCancelled`
+
+```typescript
+/** Error name on the error thrown when the user dismisses the passkey prompt. */
+const PASSKEY_CANCELLED: "PasskeyRegistrationCancelled";
+
+/** Returns true when an error came from the user dismissing the passkey prompt. */
+function isPasskeyCancelled(e: unknown): boolean;
+```
+
+---
 
 ### `ManyRowsAppKitHandle`
 
