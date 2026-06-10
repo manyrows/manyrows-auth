@@ -9,12 +9,14 @@ import React, {
   useState,
 } from "react";
 import type {
+  AppKitAccount,
   ManyRowsAppKitError,
   ManyRowsAppKitReady,
   ManyRowsAppKitHandle,
   ManyRowsAppKitSnapshot,
 } from "./types";
 import { ensureScriptLoaded, getManyRowsAppKitRuntime, isSafeOrigin, sanitizeSameOriginPath } from "./runtime";
+import { useAuthTransitions } from "./hooks/authEvents";
 import { ThemeCtx, useSystemColorMode, resolveTokens, type ThemeContextValue } from "./theme";
 
 // -----------------------------
@@ -272,6 +274,17 @@ export type AppKitProps = {
    * This is the correct place to render the customer app (imperative style).
    */
   onReadyState?: (snapshot: ManyRowsAppKitSnapshot) => void;
+
+  /**
+   * Fired when the user becomes signed in: on a fresh login AND when an
+   * existing session resolves on page load. Receives the account.
+   */
+  onSignIn?: (user: AppKitAccount) => void;
+  /**
+   * Fired when the signed-in user becomes signed out (logout, revocation,
+   * expiry). NOT fired when the initial state resolves to unauthenticated.
+   */
+  onSignOut?: () => void;
 
   className?: string;
   style?: React.CSSProperties;
@@ -561,6 +574,7 @@ export function AppKit(props: AppKitProps) {
 
   const [readyInfo, setReadyInfo] = useState<ManyRowsAppKitReady | null>(null);
   const [snapshot, setSnapshot] = useState<ManyRowsAppKitSnapshot | null>(null);
+  useAuthTransitions(snapshot, props.onSignIn, props.onSignOut);
 
   // Redirect away from auth routes after authentication.
   // authRedirect is host-supplied so we validate it before navigating —
