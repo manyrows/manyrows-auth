@@ -436,6 +436,77 @@ func TestOIDCAuthorizeResume_MaxAge_StaleSessionRejected(t *testing.T) {
 	}
 }
 
+// The session-freshness guards (prompt=login, max_age) at Resume must run
+// BEFORE the consent interposition. The ordering is load-bearing: the
+// consent POST endpoint deliberately has no freshness re-check — its
+// pending row is supposed to be mintable only by a session that already
+// passed the guards. If the consent interposition ran first, a stale
+// session could get a consent-stage row minted and launder a code through
+// POST /oidc/consent. So: with consent required and a stale session
+// (max_age exceeded), Resume must reject outright — no consent hop
+// offered, and no consent-stage pending row left in the database.
+func TestOIDCAuthorizeResume_StaleSession_NoConsentRowMinted(t *testing.T) {
+	e := setupOIDCRouter(t)
+	e.enableOIDCWithConsent(t, true) // consent required → interposition is live
+	redirect := "https://customer.example/callback"
+	staleSes, staleJWT := e.seedSessionForApp(t)
+
+	// Backdate the session 10 minutes so it is unambiguously older than
+	// the max_age=60 demanded below.
+	if _, err := testEnv.DB.Pool().Exec(context.Background(),
+		`update client_sessions set created_at = created_at - interval '10 minutes' where id = $1`,
+		staleSes.ID); err != nil {
+		t.Fatalf("backdate session: %v", err)
+	}
+
+	// Authorize with max_age=60 (no prompt) holding the stale session:
+	// freshness forces re-auth, routing to the login shim.
+	_, challenge := makePKCE()
+	q := baseAuthorizeQuery(e, redirect, challenge)
+	q.Set("max_age", "60")
+	rr := authorizeGET(e, q, staleJWT)
+	if rr.Code != http.StatusFound {
+		t.Fatalf("authorize: expected 302, got %d (%s)", rr.Code, rr.Body.String())
+	}
+	u, _ := url.Parse(rr.Header().Get("Location"))
+	if !strings.Contains(u.Path, "/oidc/login") || u.Query().Get("req") == "" {
+		t.Fatalf("expected login redirect with req, got %s", rr.Header().Get("Location"))
+	}
+
+	// Hit the resume URL directly with the SAME stale session. The
+	// freshness guard must fire before the consent interposition gets a
+	// chance to mint a consent-stage row.
+	res := resumeGET(e, u.Query().Get("req"), staleJWT)
+	if res.Code != http.StatusFound {
+		t.Fatalf("stale resume: expected 302, got %d (%s)", res.Code, res.Body.String())
+	}
+	resLoc := res.Header().Get("Location")
+	loc, _ := url.Parse(resLoc)
+	if loc.Query().Get("code") != "" {
+		t.Fatalf("stale session must NOT mint a code at resume, got %s", resLoc)
+	}
+	if got := loc.Query().Get("error"); got != "access_denied" {
+		t.Errorf("stale resume error = %q, want access_denied (Location=%s)", got, resLoc)
+	}
+	if strings.Contains(resLoc, "/oidc/consent") {
+		t.Errorf("stale session must not be offered the consent hop, got %s", resLoc)
+	}
+
+	// The teeth: no consent-stage pending row may have been minted for
+	// this app. (ConsentStage serializes as `"consent_stage": true` in the
+	// request_params jsonb; login-stage rows omit the key entirely.)
+	var n int
+	if err := testEnv.DB.Pool().QueryRow(context.Background(),
+		`select count(*) from oidc_pending_authorize
+		 where app_id = $1 and request_params->>'consent_stage' = 'true'`,
+		e.app.ID).Scan(&n); err != nil {
+		t.Fatalf("count consent-stage pending rows: %v", err)
+	}
+	if n != 0 {
+		t.Errorf("stale session minted %d consent-stage pending row(s); freshness guards must run before the consent interposition", n)
+	}
+}
+
 // max_age=0 forces re-auth: the existing session is always "too old".
 func TestOIDCAuthorize_MaxAgeZero_ForcesReauth(t *testing.T) {
 	e := setupOIDCRouter(t)
