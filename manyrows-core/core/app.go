@@ -277,7 +277,8 @@ type App struct {
 	// (anything below "safe-ish" is rejected). Defaults are 8 / 2;
 	// admins can tighten or loosen on the Security → Passwords tab.
 	PasswordMinLength      int `json:"passwordMinLength"`
-	PasswordMinZxcvbnScore int `json:"passwordMinZxcvbnScore"`
+	PasswordMinZxcvbnScore  int  `json:"passwordMinZxcvbnScore"`
+	PasswordReusePrevention bool `json:"passwordReusePrevention"`
 
 	// CookieDomain overrides the workspace-level cookie domain for
 	// this specific app. Non-nil = use this value verbatim; nil =
