@@ -33,6 +33,12 @@ export type ManyRowsAppKitReady = {
 export type AppKitAccount = {
   id: string;
   email: string;
+  /** Display name (the runtime falls back to email when unset). */
+  name?: string;
+  /** Admin-managed metadata (set in the ManyRows console). */
+  metadata?: Record<string, unknown>;
+  /** App-managed metadata (set via the server API). */
+  appMetadata?: Record<string, unknown>;
 };
 
 export type AppKitFeatureFlag = {

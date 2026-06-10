@@ -23,15 +23,20 @@ Main wrapper component. Loads the AppKit runtime, renders login UI, and provides
 | `workspace` | `string` | **required** | Workspace slug |
 | `appId` | `string` | **required** | App ID |
 | `baseURL` | `string` | **required** | ManyRows install hostname (e.g. `https://auth.yourdomain.com`) |
-| `theme` | `AppKitTheme` | -- | `{ primaryColor?: string; colorMode?: "light" \| "dark" \| "auto" }` |
+| `theme` | `AppKitTheme` | -- | `{ primaryColor?: string; backgroundColor?: string; colorMode?: "light" \| "dark" \| "auto" }` |
 | `src` | `string` | `{baseURL}/appkit/assets/appkit.js` | Runtime script URL |
+| `integrity` | `string` | -- | Subresource Integrity hash (`sha384-...`) for the runtime script; browser rejects a script whose bytes don't match |
 | `timeoutMs` | `number` | `4000` | Script load timeout (ms) |
 | `silent` | `boolean` | `false` | Suppress console warnings |
 | `throwOnError` | `boolean` | `false` | Throw errors instead of catching |
+| `debug` | `boolean` | `false` | Verbose runtime logging |
 | `onReady` | `(info: ManyRowsAppKitReady) => void` | -- | Fired when runtime initializes |
 | `onError` | `(err: ManyRowsAppKitError) => void` | -- | Fired on errors |
 | `onState` | `(snapshot: ManyRowsAppKitSnapshot \| null) => void` | -- | Fired on every state change |
 | `onReadyState` | `(snapshot: ManyRowsAppKitSnapshot) => void` | -- | Fired when authenticated |
+| `onSignIn` | `(user: AppKitAccount) => void` | -- | Fired when the user becomes signed in (see [Auth event callbacks](#auth-event-callbacks)) |
+| `onSignOut` | `() => void` | -- | Fired on a real sign-out (see [Auth event callbacks](#auth-event-callbacks)) |
+| `loadAppRuntime` | `boolean` | `false` | Fetch feature flags + config on bootstrap to populate `featureFlags`/`config` on the snapshot. Leave off if you read neither — saves a round trip per page load |
 | `className` | `string` | -- | CSS class on wrapper div |
 | `style` | `CSSProperties` | -- | Inline styles on wrapper div |
 | `containerId` | `string` | auto-generated | DOM ID for runtime container |
@@ -172,6 +177,8 @@ Access the full AppKit context. Must be called inside `<AppKit>`.
   setToken(tok: string | null): void;
   destroy(): void;
   info(): ManyRowsAppKitReady | null;
+  showProfile(): void;   // open the built-in account-management dialog
+  hideProfile(): void;
 }
 ```
 
@@ -185,26 +192,11 @@ Returns the current user's account, or `null` if not authenticated.
 
 ```typescript
 {
+  id: string;
   email: string;
-  name: string;
-  metadata: Record<string, any>;      // set by workspace admins
-  appMetadata: Record<string, any>;   // set by the app
-}
-```
-
----
-
-### `useProject()`
-
-Returns the current project access info, or `null`.
-
-**Returns: `AppKitProjectAccess | null`**
-
-```typescript
-{
-  name: string;
-  roles: string[];
-  permissions: string[];
+  name?: string;                         // display name (falls back to email)
+  metadata?: Record<string, unknown>;    // admin-managed (ManyRows console)
+  appMetadata?: Record<string, unknown>; // app-managed (server API)
 }
 ```
 
@@ -212,7 +204,7 @@ Returns the current project access info, or `null`.
 
 ### `useRoles()`
 
-Returns the user's role names for the current project.
+Returns the user's role names for the current app.
 
 **Returns: `string[]`**
 
@@ -220,7 +212,7 @@ Returns the user's role names for the current project.
 
 ### `usePermissions()`
 
-Returns the user's permission keys for the current project.
+Returns the user's permission keys for the current app.
 
 **Returns: `string[]`**
 
@@ -269,7 +261,7 @@ Returns all public config values for the current environment.
 **Returns: `AppKitConfigValue[]`**
 
 ```typescript
-{ key: string; type: string; value?: any }[]
+{ key: string; type: string; value?: unknown }[]
 ```
 
 ---
@@ -312,30 +304,6 @@ await authFetch("/api/items", {
 ```
 
 The returned function is memoized and updates when the token changes.
-
----
-
-### `useMetadata()`
-
-Returns the admin-managed metadata for the current user.
-
-**Returns: `Record<string, any>`**
-
----
-
-### `useAppMetadata()`
-
-Returns the app-managed metadata for the current user.
-
-**Returns: `Record<string, any>`**
-
----
-
-### `useUpdateAppMetadata()`
-
-Returns a function to patch the user's app metadata.
-
-**Returns: `(patch: Record<string, any>) => Promise<void>`**
 
 ---
 
@@ -414,6 +382,127 @@ function MyCard({ children }) {
   );
 }
 ```
+
+---
+
+### `useOrganization()`
+
+Returns the session's active organization, or `null` when there is none (a user in no orgs, or an app without organizations enabled).
+
+**Returns: `AppKitOrganization | null`**
+
+```tsx
+const org = useOrganization();
+if (org) return <p>Acting in {org.name} ({org.orgRole})</p>;
+```
+
+---
+
+### `useOrganizationList()`
+
+Returns every organization the user belongs to (for a switcher). Empty when the user belongs to none or the app doesn't have organizations enabled.
+
+**Returns: `AppKitOrganization[]`**
+
+---
+
+### `useSetActiveOrganization()`
+
+Returns a function that switches the session's active organization. On success it refreshes the snapshot (roles/permissions/active-org re-resolve for the new org) and resolves with the new active organization. Throws if the user is not an active member of the target org.
+
+**Returns: `(orgId: string) => Promise<AppKitOrganization>`**
+
+```tsx
+const setActiveOrganization = useSetActiveOrganization();
+await setActiveOrganization(org.id);
+```
+
+---
+
+### `useCreateOrganization()`
+
+Returns a function to create an organization (self-serve). The app must have `org_creation_policy = self_serve`; otherwise the server rejects with `error.forbidden`. The creator is seeded as the owner. Refreshes the snapshot so the new org appears in `useOrganizationList()`.
+
+**Returns: `(params: { name: string; slug?: string }) => Promise<AppKitCreatedOrganization>`**
+
+```tsx
+const createOrg = useCreateOrganization();
+const org = await createOrg({ name: "Acme" });
+```
+
+---
+
+### `useRenameOrganization()`
+
+Returns a function to rename an organization (owner/admin). Refreshes the snapshot.
+
+**Returns: `(orgId: string, params: { name?: string; slug?: string }) => Promise<void>`**
+
+---
+
+### `useArchiveOrganization()`
+
+Returns a function to archive an organization (owner-only; reversible operator-side). Refreshes the snapshot.
+
+**Returns: `(orgId: string) => Promise<void>`**
+
+---
+
+### `useOrganizationMembers()`
+
+Returns a function that fetches a page of an organization's members (any active member may read), plus the total match count. Not part of the snapshot — call it on demand. `pageSize` defaults to 50 (capped at 200 server-side).
+
+**Returns: `(orgId: string, opts?: AppKitOrgListParams) => Promise<AppKitOrganizationMemberPage>`**
+
+```tsx
+const listMembers = useOrganizationMembers();
+const { members, total } = await listMembers(org.id, { page: 0, search: "jane" });
+```
+
+---
+
+### `useSetOrganizationMember()`
+
+Returns a function to change a member's tier and/or project roles (owner/admin). Pass either field. Demoting the last owner rejects with `error.conflict`.
+
+**Returns: `(orgId: string, userId: string, params: { orgRole?: string; roleIds?: string[] }) => Promise<void>`**
+
+---
+
+### `useRemoveOrganizationMember()`
+
+Returns a function to remove a member, or leave the org (pass your own user id). Removing someone else needs owner/admin; the last owner can't be removed (`error.conflict`).
+
+**Returns: `(orgId: string, userId: string) => Promise<void>`**
+
+---
+
+### `useOrganizationInvites()`
+
+Returns a function that fetches a page of an organization's pending invites (owner/admin), plus the total match count. `pageSize` defaults to 50 (capped at 200).
+
+**Returns: `(orgId: string, opts?: AppKitOrgListParams) => Promise<AppKitOrganizationInvitePage>`**
+
+---
+
+### `useCreateOrganizationInvite()`
+
+Returns a function to invite an email to the organization (owner/admin). The app must have an App URL configured for the accept link.
+
+**Returns: `(orgId: string, params: { email: string; orgRole?: string; roleIds?: string[] }) => Promise<AppKitOrganizationInvite>`**
+
+```tsx
+const invite = useCreateOrganizationInvite();
+await invite(org.id, { email: "jane@acme.com", orgRole: "member" });
+```
+
+---
+
+### `useRevokeOrganizationInvite()`
+
+Returns a function to revoke a pending invite (owner/admin).
+
+**Returns: `(orgId: string, inviteId: string) => Promise<void>`**
 
 ---
 
@@ -747,6 +836,7 @@ Two props on `<AppKit>` notify the host when the user's auth state changes:
   jwtToken: string | null;
   appData: AppKitAppData | null;
   workspaceBaseURL: string;
+  appBaseURL: string;
   appId: string;
   app: {
     id: string;
@@ -754,8 +844,10 @@ Two props on `<AppKit>` notify the host when the user's auth state changes:
     workspaceSlug: string;
     workspaceName: string;
     allowRegistration: boolean;
-    authMethodPassword?: boolean;
+    primaryAuthMethod?: "password" | "code" | "magicLink" | "none";
     googleOAuthClientId?: string;
+    hideBranding?: boolean;
+    require2fa?: boolean;
   } | null;
 }
 ```
@@ -767,11 +859,88 @@ Two props on `<AppKit>` notify the host when the user's auth state changes:
   account?: AppKitAccount;
   workspaceSlug: string;
   workspaceName: string;
-  projectAccess: boolean;
-  project?: AppKitProjectAccess;
-  featureFlags?: AppKitFeatureFlag[];
-  config?: AppKitConfigValue[];
+  hasAppAccess: boolean;
+  roles: string[];
+  permissions: string[];
+  featureFlags?: AppKitFeatureFlag[];   // populated when loadAppRuntime is set
+  config?: AppKitConfigValue[];         // populated when loadAppRuntime is set
+  // Active organization, or null when there is none. Absent (undefined)
+  // when the app doesn't have organizations enabled.
+  organization?: AppKitOrganization | null;
+  // Every organization the user belongs to. Absent when the orgs feature
+  // is off; [] when enabled but the user belongs to none.
+  organizations?: AppKitOrganization[];
 }
+```
+
+### `AppKitOrganization`
+
+```typescript
+{
+  id: string;
+  name: string;
+  slug: string;
+  orgRole: string;     // the user's tier in this org: owner | admin | member
+}
+```
+
+### `AppKitOrganizationRole`
+
+A project (app RBAC) role assigned to an organization membership.
+
+```typescript
+{ id: string; slug: string; name: string }
+```
+
+### `AppKitOrganizationMember`
+
+```typescript
+{
+  userId: string;
+  email: string;
+  orgRole: string;     // tier: owner | admin | member
+  status: string;
+  roles: AppKitOrganizationRole[];
+}
+```
+
+### `AppKitOrganizationInvite`
+
+```typescript
+{
+  id: string;
+  email: string;
+  orgRole: string;
+  status: string;
+  invitedByEmail?: string;
+  createdAt: string;   // ISO 8601
+  expiresAt: string;   // ISO 8601
+}
+```
+
+### `AppKitCreatedOrganization`
+
+```typescript
+{ id: string; name: string; slug: string; status: string }
+```
+
+### `AppKitOrgListParams`
+
+Pagination + search options for the member/invite listings.
+
+```typescript
+{
+  page?: number;       // 0-based page index
+  pageSize?: number;   // default 50, capped at 200 server-side
+  search?: string;     // case-insensitive email substring filter
+}
+```
+
+### `AppKitOrganizationMemberPage` / `AppKitOrganizationInvitePage`
+
+```typescript
+{ members: AppKitOrganizationMember[]; total: number; page: number; pageSize: number }
+{ invites: AppKitOrganizationInvite[]; total: number; page: number; pageSize: number }
 ```
 
 ### `AppKitSession`
@@ -882,6 +1051,10 @@ Imperative API for advanced control. Available via `useAppKit().handle`.
   refresh(): void;
   logout(): Promise<void>;
   setToken(tok: string | null): void;
+  // Optional — absent on older runtime versions; the useAppKit()
+  // convenience methods guard both calls.
+  showProfile?: () => void;
+  hideProfile?: () => void;
   destroy(): void;
 }
 ```
