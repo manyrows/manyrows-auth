@@ -158,8 +158,10 @@ func (a *AuthService) IssueRefreshToken(
 // per-app AccessTokenTTLMinutes knob.
 // dpopJKT is the verified JWK thumbprint from a DPoP proof on the inbound
 // request, or empty when the client did not opt into DPoP at this issuance.
-// oidcScope is the space-separated OIDC scope for the token chain; empty for
-// first-party / non-OIDC tokens. Task 2 wires real values.
+// oidcScope is the space-separated OIDC scope for the token chain; it is
+// stamped as a claim on the access token and stored on the refresh row so
+// that subsequent refresh grants can derive scope from the stored grant.
+// First-party / non-OIDC callers pass "".
 func (a *AuthService) IssueTokenPair(
 	ctx context.Context,
 	session *core.ClientSession,

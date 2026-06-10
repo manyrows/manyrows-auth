@@ -954,14 +954,6 @@ func (handler *RequestHandler) handleOIDCRefreshTokenGrant(w http.ResponseWriter
 		oidcTokenError(w, http.StatusBadRequest, "invalid_request", "refresh_token is required")
 		return
 	}
-	// scope is OPTIONAL on a refresh grant per OIDC. When absent, the
-	// original grant's scope is reused. We track scope via the session
-	// in v1 — coarse-grained — so the simplest correct behaviour is to
-	// echo the requested scope when present, defaulting to "openid email".
-	scope := strings.TrimSpace(r.PostForm.Get("scope"))
-	if scope == "" {
-		scope = core.OIDCScopeOpenID + " " + core.OIDCScopeEmail
-	}
 
 	atIssuer := handler.AppBaseURL(app)
 	idIssuer := handler.AppOIDCIssuer(ws, app)
@@ -994,6 +986,23 @@ func (handler *RequestHandler) handleOIDCRefreshTokenGrant(w http.ResponseWriter
 	if err != nil || user == nil {
 		oidcTokenError(w, http.StatusInternalServerError, "server_error", "user lookup failed")
 		return
+	}
+
+	// Effective scope comes from the STORED grant, not the client's
+	// request — the requested scope can only narrow it (RFC 6749 §6,
+	// silent intersect; the response's scope field tells the client what
+	// it got). Legacy rows (pre-scope-column) fall back to the historical
+	// "openid email" default. NOTE: downscoping one refresh does NOT
+	// narrow the stored grant — the row keeps the full scope and a later
+	// refresh can return to it (standard OAuth semantics); only this
+	// response's id_token/scope reflect the narrowed value.
+	stored := strings.TrimSpace(rt.OIDCScope)
+	if stored == "" {
+		stored = core.OIDCScopeOpenID + " " + core.OIDCScopeEmail
+	}
+	scope := stored
+	if requested := strings.TrimSpace(r.PostForm.Get("scope")); requested != "" {
+		scope = intersectScopes(stored, requested)
 	}
 
 	// Flow any DPoP proof through: a DPoP-bound refresh token requires a
@@ -1191,6 +1200,24 @@ func buildIDTokenClaimSet(issuer string, app *core.App, ses *core.ClientSession,
 		}
 	}
 	return claims
+}
+
+// intersectScopes returns the space-joined tokens of stored that also
+// appear in requested, preserving stored's order. An empty intersection
+// yields "" — returned verbatim rather than erroring (the RP asked for
+// none of its grant; the id_token gates then strip the optional claims).
+func intersectScopes(stored, requested string) string {
+	req := make(map[string]bool)
+	for _, t := range strings.Fields(requested) {
+		req[t] = true
+	}
+	var out []string
+	for _, t := range strings.Fields(stored) {
+		if req[t] {
+			out = append(out, t)
+		}
+	}
+	return strings.Join(out, " ")
 }
 
 // scopeContainsOfflineAccess is the scope-gate for issuing a refresh

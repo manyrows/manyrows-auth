@@ -8,6 +8,63 @@ import (
 	"testing"
 )
 
+// oidcFullGrant performs authorize → code → token exchange and returns the
+// access token, refresh token, and the session ID embedded in the access
+// token's "sid" claim. Callers may pass an empty scope to use the test
+// default of "openid email offline_access".
+func oidcFullGrant(t *testing.T, e *oidcTestEnv, grantScope string) (accessToken, refreshToken, sessionID string) {
+	t.Helper()
+	redirect := "https://customer.example/callback"
+	e.enableOIDC(t, []string{redirect}, nil, "")
+	_, accessJWT := e.seedSessionForApp(t)
+	verifier, challenge := makePKCE()
+	if grantScope == "" {
+		grantScope = "openid email offline_access"
+	}
+	q := url.Values{
+		"response_type":         {"code"},
+		"client_id":             {e.app.ID.String()},
+		"redirect_uri":          {redirect},
+		"scope":                 {grantScope},
+		"state":                 {"s"},
+		"nonce":                 {"n"},
+		"code_challenge":        {challenge},
+		"code_challenge_method": {"S256"},
+	}
+	rr := authorizeGET(e, q, accessJWT)
+	loc, _ := url.Parse(rr.Header().Get("Location"))
+	code := loc.Query().Get("code")
+	if code == "" {
+		t.Fatalf("no code from authorize (rr=%d %s)", rr.Code, rr.Body.String())
+	}
+	tok := oidcPostForm(e, "/oidc/token", url.Values{
+		"grant_type":    {"authorization_code"},
+		"code":          {code},
+		"redirect_uri":  {redirect},
+		"code_verifier": {verifier},
+		"client_id":     {e.app.ID.String()},
+	})
+	if tok.Code != http.StatusOK {
+		t.Fatalf("code grant: %d %s", tok.Code, tok.Body.String())
+	}
+	var resp struct {
+		AccessToken  string `json:"access_token"`
+		RefreshToken string `json:"refresh_token"`
+	}
+	if err := json.Unmarshal(tok.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal token response: %v", err)
+	}
+	if resp.RefreshToken == "" {
+		t.Fatalf("expected refresh_token (offline_access), got none: %s", tok.Body.String())
+	}
+	atPayload := decodeJWTPayload(t, resp.AccessToken)
+	sid, _ := atPayload["sid"].(string)
+	if sid == "" {
+		t.Fatalf("access token has no sid claim")
+	}
+	return resp.AccessToken, resp.RefreshToken, sid
+}
+
 // TestOIDCAccessToken_CarriesScopeClaim verifies that an access token issued
 // via the OIDC authorization-code grant carries the granted scope as a
 // "scope" JWT claim.
@@ -64,7 +121,7 @@ func TestOIDCAccessToken_CarriesScopeClaim(t *testing.T) {
 }
 
 // TestAppKitAccessToken_NoScopeClaim verifies that a first-party (AppKit)
-// access token issued via IssueTokenPair does NOT carry a "scope" claim.
+// access token issued via IssueAccessToken does NOT carry a "scope" claim.
 func TestAppKitAccessToken_NoScopeClaim(t *testing.T) {
 	e := setupOIDCRouter(t)
 	// Seed a session and obtain a first-party access token (no OIDC scope).
@@ -190,5 +247,160 @@ func TestOIDCRefreshRotation_InheritsScope(t *testing.T) {
 	newScope, _ := newPayload["scope"].(string)
 	if newScope != grantScope {
 		t.Errorf("refreshed access token scope claim = %q, want %q", newScope, grantScope)
+	}
+}
+
+// TestOIDCRefresh_NoScopeRequested_ReturnsStoredScope verifies that when the
+// client omits the optional scope parameter on a refresh grant, the response
+// scope reflects the full stored grant scope ("openid email offline_access").
+func TestOIDCRefresh_NoScopeRequested_ReturnsStoredScope(t *testing.T) {
+	e := setupOIDCRouter(t)
+	_, refreshToken, _ := oidcFullGrant(t, e, "openid email offline_access")
+
+	rr := oidcPostForm(e, "/oidc/token", url.Values{
+		"grant_type":    {"refresh_token"},
+		"refresh_token": {refreshToken},
+		"client_id":     {e.app.ID.String()},
+		// no scope field
+	})
+	if rr.Code != http.StatusOK {
+		t.Fatalf("refresh grant: %d %s", rr.Code, rr.Body.String())
+	}
+	var resp struct {
+		Scope string `json:"scope"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if resp.Scope != "openid email offline_access" {
+		t.Errorf("response scope = %q, want %q", resp.Scope, "openid email offline_access")
+	}
+}
+
+// TestOIDCRefresh_Downscope_Echoed verifies that when the client requests a
+// narrower scope on a refresh grant the response scope reflects the narrowed
+// value and the id_token omits the email claim.
+func TestOIDCRefresh_Downscope_Echoed(t *testing.T) {
+	e := setupOIDCRouter(t)
+	_, refreshToken, _ := oidcFullGrant(t, e, "openid email offline_access")
+
+	rr := oidcPostForm(e, "/oidc/token", url.Values{
+		"grant_type":    {"refresh_token"},
+		"refresh_token": {refreshToken},
+		"client_id":     {e.app.ID.String()},
+		"scope":         {"openid"},
+	})
+	if rr.Code != http.StatusOK {
+		t.Fatalf("refresh grant: %d %s", rr.Code, rr.Body.String())
+	}
+	var resp struct {
+		IDToken string `json:"id_token"`
+		Scope   string `json:"scope"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if resp.Scope != "openid" {
+		t.Errorf("response scope = %q, want %q", resp.Scope, "openid")
+	}
+	idPayload := decodeJWTPayload(t, resp.IDToken)
+	if _, hasEmail := idPayload["email"]; hasEmail {
+		t.Errorf("id_token should not have email claim after downscope to openid-only, got email=%v", idPayload["email"])
+	}
+}
+
+// TestOIDCRefresh_EscalationIntersected verifies that when the client requests
+// a scope on refresh that includes a token not in the stored grant, the extra
+// token is silently dropped (silent intersect). It also confirms that
+// downscoping this response does NOT narrow the stored grant — a later
+// refresh with the full stored scope will still see the full scope.
+func TestOIDCRefresh_EscalationIntersected(t *testing.T) {
+	e := setupOIDCRouter(t)
+	// Grant does NOT include email.
+	_, refreshToken, sessionID := oidcFullGrant(t, e, "openid offline_access")
+
+	// Request scope includes email (escalation attempt).
+	rr := oidcPostForm(e, "/oidc/token", url.Values{
+		"grant_type":    {"refresh_token"},
+		"refresh_token": {refreshToken},
+		"client_id":     {e.app.ID.String()},
+		"scope":         {"openid email"},
+	})
+	if rr.Code != http.StatusOK {
+		t.Fatalf("refresh grant: %d %s", rr.Code, rr.Body.String())
+	}
+	var resp struct {
+		AccessToken  string `json:"access_token"`
+		IDToken      string `json:"id_token"`
+		RefreshToken string `json:"refresh_token"`
+		Scope        string `json:"scope"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	// Response scope must not include email.
+	if resp.Scope != "openid" {
+		t.Errorf("response scope = %q, want %q (email must be dropped)", resp.Scope, "openid")
+	}
+	// id_token must not contain email.
+	idPayload := decodeJWTPayload(t, resp.IDToken)
+	if _, hasEmail := idPayload["email"]; hasEmail {
+		t.Errorf("id_token must not have email claim after escalation intersect, got email=%v", idPayload["email"])
+	}
+	// The new access token scope claim should equal the stored grant (not the narrowed response).
+	atPayload := decodeJWTPayload(t, resp.AccessToken)
+	atScope, _ := atPayload["scope"].(string)
+	if atScope != "openid offline_access" {
+		t.Errorf("new access token scope claim = %q, want %q (stored grant, not narrowed response)", atScope, "openid offline_access")
+	}
+	// Stored row must still carry the original full grant scope.
+	var storedScope string
+	err := testEnv.DB.Pool().QueryRow(context.Background(),
+		`SELECT oidc_scope FROM client_refresh_tokens
+		  WHERE session_id = $1 AND revoked_at IS NULL
+		  ORDER BY created_at DESC LIMIT 1`,
+		sessionID,
+	).Scan(&storedScope)
+	if err != nil {
+		t.Fatalf("query stored scope after refresh: %v", err)
+	}
+	if storedScope != "openid offline_access" {
+		t.Errorf("stored oidc_scope after escalation intersect = %q, want %q", storedScope, "openid offline_access")
+	}
+}
+
+// TestOIDCRefresh_LegacyEmptyRow_DefaultsOpenidEmail verifies that a refresh
+// token row with an empty oidc_scope (pre-migration legacy row) falls back to
+// the historical "openid email" scope in the response.
+func TestOIDCRefresh_LegacyEmptyRow_DefaultsOpenidEmail(t *testing.T) {
+	e := setupOIDCRouter(t)
+	_, refreshToken, sessionID := oidcFullGrant(t, e, "openid email offline_access")
+
+	// Simulate a legacy row by blanking out the stored scope.
+	_, err := testEnv.DB.Pool().Exec(context.Background(),
+		`UPDATE client_refresh_tokens SET oidc_scope = '' WHERE session_id = $1`,
+		sessionID,
+	)
+	if err != nil {
+		t.Fatalf("blank oidc_scope: %v", err)
+	}
+
+	rr := oidcPostForm(e, "/oidc/token", url.Values{
+		"grant_type":    {"refresh_token"},
+		"refresh_token": {refreshToken},
+		"client_id":     {e.app.ID.String()},
+		// no scope field
+	})
+	if rr.Code != http.StatusOK {
+		t.Fatalf("refresh grant: %d %s", rr.Code, rr.Body.String())
+	}
+	var resp struct {
+		Scope string `json:"scope"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if resp.Scope != "openid email" {
+		t.Errorf("legacy row response scope = %q, want %q", resp.Scope, "openid email")
 	}
 }
