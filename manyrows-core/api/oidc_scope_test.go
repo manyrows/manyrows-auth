@@ -307,6 +307,21 @@ func TestOIDCRefresh_Downscope_Echoed(t *testing.T) {
 	if _, hasEmail := idPayload["email"]; hasEmail {
 		t.Errorf("id_token should not have email claim after downscope to openid-only, got email=%v", idPayload["email"])
 	}
+
+	// Decode the refreshed access token and verify its scope claim equals the
+	// full stored grant. The AT deliberately keeps the stored grant; only the
+	// response body + id_token narrow.
+	var atResp struct {
+		AccessToken string `json:"access_token"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &atResp); err != nil {
+		t.Fatalf("unmarshal access_token from response: %v", err)
+	}
+	atPayload := decodeJWTPayload(t, atResp.AccessToken)
+	atScope, _ := atPayload["scope"].(string)
+	if atScope != "openid email offline_access" {
+		t.Errorf("refreshed access token scope claim = %q, want %q (full stored grant)", atScope, "openid email offline_access")
+	}
 }
 
 // TestOIDCRefresh_EscalationIntersected verifies that when the client requests

@@ -686,9 +686,9 @@ func hashOIDCCode(raw string) string {
 // =====================
 
 // oidcTokenResponse is the standard token-endpoint JSON shape per
-// OIDC §3.1.3.3. RefreshToken is set only when offline_access was
-// granted; omitempty drops it from the wire for the (more common)
-// non-offline case.
+// OIDC §3.1.3.3. RefreshToken: on the code grant, set only when offline_access
+// was granted; on the refresh grant, rotation always returns a replacement.
+// omitempty drops it from the wire for the (more common) non-offline case.
 type oidcTokenResponse struct {
 	AccessToken  string `json:"access_token"`
 	IDToken      string `json:"id_token"`
@@ -1016,6 +1016,7 @@ func (handler *RequestHandler) handleOIDCRefreshTokenGrant(w http.ResponseWriter
 
 	// Now do the actual rotation via the existing pair-issuance path.
 	// Access token uses host-only iss for SDK compatibility.
+	// pair.AccessToken carries the STORED grant scope (rt.OIDCScope), not the narrowed effective scope — by design, so the access-token chain stays stable across downscoped refreshes.
 	pair, err := handler.clientAuthService.RefreshTokenPair(
 		ctx, refreshTokenStr, app.ID,
 		r.UserAgent(), auth.ClientIP(r),
