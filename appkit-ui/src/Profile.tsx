@@ -1402,24 +1402,30 @@ export default function Profile({ workspaceBaseUrl, jwtToken, user, onBack, hide
                   <p style={{ fontSize: 13, color: "var(--ak-color-text-secondary, #666)", margin: 0 }}>
                     Verification codes were sent to both your current and new email addresses. Enter both codes below.
                   </p>
-                  <input
-                    style={{ ...inputStyle, textAlign: "center", letterSpacing: 4, fontSize: 18 }}
-                    type="text"
-                    placeholder="Code sent to your current email"
-                    value={emailOldCode}
-                    onChange={(e) => setEmailOldCode(e.target.value)}
-                    maxLength={6}
-                    disabled={emailLoading}
-                  />
-                  <input
-                    style={{ ...inputStyle, textAlign: "center", letterSpacing: 4, fontSize: 18 }}
-                    type="text"
-                    placeholder="Code sent to your new email"
-                    value={emailNewCode}
-                    onChange={(e) => setEmailNewCode(e.target.value)}
-                    maxLength={6}
-                    disabled={emailLoading}
-                  />
+                  <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                    <span style={{ fontSize: 12, color: "var(--ak-color-text-secondary, #666)", fontWeight: 600 }}>Code sent to your current email</span>
+                    <input
+                      style={{ ...inputStyle, textAlign: "center", letterSpacing: 4, fontSize: 18 }}
+                      type="text"
+                      placeholder="123456"
+                      value={emailOldCode}
+                      onChange={(e) => setEmailOldCode(e.target.value)}
+                      maxLength={6}
+                      disabled={emailLoading}
+                    />
+                  </div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                    <span style={{ fontSize: 12, color: "var(--ak-color-text-secondary, #666)", fontWeight: 600 }}>Code sent to your new email</span>
+                    <input
+                      style={{ ...inputStyle, textAlign: "center", letterSpacing: 4, fontSize: 18 }}
+                      type="text"
+                      placeholder="123456"
+                      value={emailNewCode}
+                      onChange={(e) => setEmailNewCode(e.target.value)}
+                      maxLength={6}
+                      disabled={emailLoading}
+                    />
+                  </div>
                   {emailError && <div style={alertError}><span>{emailError}</span></div>}
                   <div style={{ display: "flex", gap: 8 }}>
                     <button style={btnOutlinedStyle} onClick={() => { setEmailStep("form"); setEmailOldCode(""); setEmailNewCode(""); setEmailError(null); }}>Back</button>
