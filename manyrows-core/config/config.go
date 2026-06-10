@@ -443,6 +443,53 @@ func (conf *Config) GetOTPPepper() (string, error) {
 	return s, nil
 }
 
+// splitPreviousList parses a comma-separated _PREVIOUS env value into
+// trimmed, non-empty entries. Order matters: callers try entries in order.
+func splitPreviousList(raw string) []string {
+	var out []string
+	for _, p := range strings.Split(raw, ",") {
+		if v := strings.TrimSpace(p); v != "" {
+			out = append(out, v)
+		}
+	}
+	return out
+}
+
+// GetSessionAuthKeyPrevious returns prior SESSION_AUTH_KEY values (comma-
+// separated in SESSION_AUTH_KEY_PREVIOUS) for rotation overlap. Each entry
+// follows the same rules as the primary: at least 64 chars, sliced to 64.
+// Empty/unset means no previous keys.
+func (conf *Config) GetSessionAuthKeyPrevious() ([]string, error) {
+	entries := splitPreviousList(os.Getenv(conf.envPrefix + "SESSION_AUTH_KEY_PREVIOUS"))
+	out := make([]string, 0, len(entries))
+	for _, e := range entries {
+		if len(e) < 64 {
+			return nil, fmt.Errorf("previous session auth key too short")
+		}
+		out = append(out, e[:64])
+	}
+	return out, nil
+}
+
+// GetSessionSecretKeyPrevious — see GetSessionAuthKeyPrevious; 32-char rule.
+func (conf *Config) GetSessionSecretKeyPrevious() ([]string, error) {
+	entries := splitPreviousList(os.Getenv(conf.envPrefix + "SESSION_SECRET_KEY_PREVIOUS"))
+	out := make([]string, 0, len(entries))
+	for _, e := range entries {
+		if len(e) < 32 {
+			return nil, fmt.Errorf("previous session secret key too short")
+		}
+		out = append(out, e[:32])
+	}
+	return out, nil
+}
+
+// GetOTPPepperPrevious returns prior OTP peppers for rotation overlap.
+// No length rule (the primary has none); empty/unset means none.
+func (conf *Config) GetOTPPepperPrevious() ([]string, error) {
+	return splitPreviousList(os.Getenv(conf.envPrefix + "OTP_PEPPER_PREVIOUS")), nil
+}
+
 // Cloudflare Turnstile — bot-protection challenge on register.
 // Falls back to Cloudflare's documented "always passes" test keys when
 // unset so local dev works without an account.
