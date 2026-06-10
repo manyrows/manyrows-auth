@@ -1008,6 +1008,8 @@
   "passwordPolicy.minLengthHelp": "NIST는 최소 8자를 권장합니다. 12자 이상이면 더 강력하면서도 외우기 가능하고, 16자 이상은 비밀번호 관리자 사용을 전제로 합니다.",
   "passwordPolicy.minScore": "최소 강도 점수 (zxcvbn)",
   "passwordPolicy.minScoreHelp": "점수 2는 \"password123\", \"qwerty\", 단순 치환을 거부합니다. 점수 3 이상은 사람이 외우기 쉬운 비밀번호를 많이 차단하므로 비밀번호 관리자 사용자 대상에 적합합니다.",
+  "passwordPolicy.reuseToggle": "비밀번호 재사용 방지",
+  "passwordPolicy.reuseHint": "사용자가 비밀번호를 설정하거나 재설정할 때 최근 사용한 비밀번호 5개를 차단합니다.",
   "cookieDomain.overline": "세션",
   "cookieDomain.title": "쿠키 도메인",
   "cookieDomain.description": "세션 쿠키의 <code>Domain</code> 속성에 대한 앱별 재정의입니다. 설정하면 워크스페이스 값보다 우선 적용되며, 같은 설치 내에서 서로 다른 상위 도메인에 앱이 있을 때 유용합니다.",

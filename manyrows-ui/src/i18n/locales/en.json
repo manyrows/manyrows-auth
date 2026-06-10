@@ -1008,6 +1008,8 @@
   "passwordPolicy.minLengthHelp": "NIST recommends a floor of 8. 12+ is stronger and still survivable for memorisation; 16+ assumes a password manager.",
   "passwordPolicy.minScore": "Minimum strength score (zxcvbn)",
   "passwordPolicy.minScoreHelp": "Score 2 rejects \"password123\", \"qwerty\", and trivial substitutions. Score 3+ starts blocking many human-memorable passwords - pair with a password-manager-only audience.",
+  "passwordPolicy.reuseToggle": "Prevent password reuse",
+  "passwordPolicy.reuseHint": "Blocks the 5 most recently used passwords when users set or reset a password.",
   "cookieDomain.overline": "Sessions",
   "cookieDomain.title": "Cookie domain",
   "cookieDomain.description": "Per-app override for the session-cookie <code>Domain</code> attribute. When set, this takes precedence over the workspace value - useful if you have apps on different parent domains in the same install.",

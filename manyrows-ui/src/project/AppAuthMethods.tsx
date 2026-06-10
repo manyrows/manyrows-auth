@@ -89,6 +89,7 @@ export type App = {
   require2fa: boolean;
   passwordMinLength: number;
   passwordMinZxcvbnScore: number;
+  passwordReusePrevention: boolean;
   cookieDomain?: string | null;
   sessionTtlMinutes?: number | null;
   idleTimeoutMinutes?: number | null;

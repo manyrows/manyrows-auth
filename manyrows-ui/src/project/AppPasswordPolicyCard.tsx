@@ -3,9 +3,11 @@ import axios from "axios";
 import {
   Alert,
   Box,
+  FormControlLabel,
   MenuItem,
   Slider,
   Stack,
+  Switch,
   TextField,
   Typography,
 } from "@mui/material";
@@ -37,20 +39,25 @@ export default function AppPasswordPolicyCard({ app, cardURL, onSaved, onSuccess
 
   const [minLength, setMinLength] = React.useState<number>(app.passwordMinLength);
   const [minScore, setMinScore] = React.useState<number>(app.passwordMinZxcvbnScore);
+  const [reusePrevention, setReusePrevention] = React.useState<boolean>(app.passwordReusePrevention);
   const [saving, setSaving] = React.useState(false);
 
   React.useEffect(() => {
     setMinLength(app.passwordMinLength);
     setMinScore(app.passwordMinZxcvbnScore);
-  }, [app.passwordMinLength, app.passwordMinZxcvbnScore]);
+    setReusePrevention(app.passwordReusePrevention);
+  }, [app.passwordMinLength, app.passwordMinZxcvbnScore, app.passwordReusePrevention]);
 
   const dirty =
-    minLength !== app.passwordMinLength || minScore !== app.passwordMinZxcvbnScore;
+    minLength !== app.passwordMinLength ||
+    minScore !== app.passwordMinZxcvbnScore ||
+    reusePrevention !== app.passwordReusePrevention;
 
   const resetFromApp = React.useCallback(() => {
     setMinLength(app.passwordMinLength);
     setMinScore(app.passwordMinZxcvbnScore);
-  }, [app.passwordMinLength, app.passwordMinZxcvbnScore]);
+    setReusePrevention(app.passwordReusePrevention);
+  }, [app.passwordMinLength, app.passwordMinZxcvbnScore, app.passwordReusePrevention]);
 
   async function save() {
     setSaving(true);
@@ -58,6 +65,7 @@ export default function AppPasswordPolicyCard({ app, cardURL, onSaved, onSuccess
       const res = await axios.put<App>(`${cardURL}/password-policy`, {
         passwordMinLength: minLength,
         passwordMinZxcvbnScore: minScore,
+        passwordReusePrevention: reusePrevention,
       });
       onSaved(res.data);
       onSuccess();
@@ -122,6 +130,21 @@ export default function AppPasswordPolicyCard({ app, cardURL, onSaved, onSuccess
           </TextField>
           <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 1 }}>
             {t("passwordPolicy.minScoreHelp", { defaultValue: "Score 2 rejects \"password123\", \"qwerty\", and trivial substitutions. Score 3+ starts blocking many human-memorable passwords - pair with a password-manager-only audience." })}
+          </Typography>
+        </Box>
+
+        <Box>
+          <FormControlLabel
+            control={
+              <Switch
+                checked={reusePrevention}
+                onChange={(e) => setReusePrevention(e.target.checked)}
+              />
+            }
+            label={t("passwordPolicy.reuseToggle", { defaultValue: "Prevent password reuse" })}
+          />
+          <Typography variant="caption" color="text.secondary" sx={{ display: "block" }}>
+            {t("passwordPolicy.reuseHint", { defaultValue: "Blocks the 5 most recently used passwords when users set or reset a password." })}
           </Typography>
         </Box>
 
