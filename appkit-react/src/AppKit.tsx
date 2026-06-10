@@ -329,6 +329,10 @@ export type AppKitProps = {
   // Override any user-facing text in the auth UI (partial — English defaults apply for unset keys)
   labels?: Record<string, string>;
 
+  // Prefill for the sign-in email field (initial value only — the user can edit it).
+  // Used by the OIDC login shim to thread login_hint.
+  loginHint?: string;
+
   // Which auth screen to show initially
   initialScreen?: "login" | "register" | "forgot-password";
 
@@ -769,6 +773,7 @@ export function AppKit(props: AppKitProps) {
           authHeader: props.authHeader,
           labels: props.labels,
           initialScreen: resolvedInitialScreen,
+          loginHint: props.loginHint,
           onScreenChange: resolvedOnScreenChange,
           silent: props.silent,
           throwOnError: props.throwOnError,

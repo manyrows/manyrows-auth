@@ -259,6 +259,10 @@ type AppKitInitOptions = {
   // Partial overrides for user-facing strings; unset keys get English defaults.
   labels?: Record<string, string>;
 
+  // Prefill for the sign-in email field (initial value only — the user
+  // can edit it). Used by the OIDC login shim to thread login_hint.
+  loginHint?: string;
+
   // Which auth screen to show initially, and a callback when the user
   // navigates between them (e.g. clicks "Create account").
   initialScreen?: "login" | "register" | "forgot-password";

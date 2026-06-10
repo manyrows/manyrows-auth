@@ -51,6 +51,7 @@ Main wrapper component. Loads the AppKit runtime, renders login UI, and provides
 | `authRoutes` | `Partial<Record<"login" \| "register" \| "forgot-password", string>>` | -- | Map auth screens to URL paths. Auto-derives `initialScreen`, `hideAuthUI`, and `onScreenChange` from the current URL. Partial — omit screens you don't need routable. |
 | `authRedirect` | `string` | -- | When set alongside `authRoutes`, automatically navigates to this path after the user authenticates while on an auth route. |
 | `initialScreen` | `"login" \| "register" \| "forgot-password"` | -- | Which auth screen to show initially. Derived automatically when using `authRoutes`. |
+| `loginHint` | `string` | -- | Prefill for the sign-in email field (initial value only; the user can edit it). |
 | `onScreenChange` | `(screen: "login" \| "register" \| "forgot-password") => void` | -- | Called when the user navigates between auth screens (e.g. clicks "Create account"). Derived automatically when using `authRoutes`. |
 | `blockLocalhostBaseURLInProd` | `boolean` | `true` | Block localhost URLs in production builds |
 | `authHeader` | `ReactNode` | -- | Content rendered above the login/register card |
