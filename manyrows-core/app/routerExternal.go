@@ -400,10 +400,16 @@ func apiKeyMiddleware(rpo *repo.Repo, touch *lastUsedThrottle) func(next http.Ha
 }
 
 // isReadOnlyCustomMethod allowlists Google-style custom read methods that
-// use POST purely for body transport (URL-length limits). Keep this list
-// tight: every suffix here is reachable by read-scoped API keys.
+// use POST purely for body transport (URL-length limits). Matched by exact
+// segment structure — a suffix match alone could be spoofed by mutating
+// routes with unconstrained trailing params (e.g. DELETE /roles/{slug}
+// where slug ends in ":lookup"). Keep this list tight: every shape here is
+// reachable by read-scoped API keys.
 func isReadOnlyCustomMethod(path string) bool {
-	return strings.HasSuffix(path, ":lookup")
+	seg := strings.Split(strings.Trim(path, "/"), "/")
+	n := len(seg)
+	// .../apps/{appId}/users:lookup — last segment exact, "apps" two back.
+	return n >= 3 && seg[n-1] == "users:lookup" && seg[n-3] == "apps"
 }
 
 func parseAPIKeyPrefix(fullKey string) (string, bool) {

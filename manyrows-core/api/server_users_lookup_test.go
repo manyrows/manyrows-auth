@@ -14,6 +14,7 @@ import (
 	"manyrows-core/auth/client"
 	"manyrows-core/core"
 	"manyrows-core/email"
+	"manyrows-core/utils"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/gofrs/uuid/v5"
@@ -64,6 +65,13 @@ func lookupRouter(t *testing.T, rh *api.RequestHandler, ws *core.Workspace, appI
 // scopeGatedLookupRouter wraps lookupRouter with an inline scope gate, so
 // TestServerUsersLookup_ReadScopedKeyAllowed can verify that :lookup is
 // reachable with a read key while :batch is not.
+//
+// NOTE: isReadOnlyCustomMethod (in package app) is unexported and cannot be
+// imported here. The real gate function is exercised directly in
+// app/routerExternal_test.go (unit) and via the real apiKeyMiddleware in
+// app/apiKeyMiddleware_test.go (integration). This router exists solely to
+// test handler-level wiring: that :lookup returns 200 and :batch returns 403
+// when the scope gate passes/blocks.
 func scopeGatedLookupRouter(t *testing.T, rh *api.RequestHandler, ws *core.Workspace, appID uuid.UUID, keyScope string) *chi.Mux {
 	t.Helper()
 
@@ -80,8 +88,12 @@ func scopeGatedLookupRouter(t *testing.T, rh *api.RequestHandler, ws *core.Works
 		})
 	}
 
-	// Scope gate: mirrors the logic in app/routerExternal.go, including the
-	// isReadOnlyCustomMethod exception for :lookup.
+	// Scope gate: mirrors the logic in app/routerExternal.go apiKeyMiddleware,
+	// including the isReadOnlyCustomMethod exception for :lookup.
+	// The real isReadOnlyCustomMethod is tested in app/routerExternal_test.go;
+	// the real middleware integration (including this gate) is tested in
+	// app/apiKeyMiddleware_test.go. This inline copy uses the same segment
+	// structure as the production implementation.
 	scopeGate := func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			key, ok := core.APIKeyFromContext(r.Context())
@@ -299,6 +311,100 @@ func TestServerUsersLookup_NormalizesEmails(t *testing.T) {
 	}
 	if len(resp.Missing) != 0 {
 		t.Fatalf("missing: expected empty, got %v", resp.Missing)
+	}
+}
+
+// TestServerUsersLookup_SharedPoolNonMemberIsMissing: two apps share one user
+// pool; a user who joined app A only must appear in `missing` when looked up
+// via app B's API context, and must appear in `users` when looked up via app A.
+func TestServerUsersLookup_SharedPoolNonMemberIsMissing(t *testing.T) {
+	rh := newTestRequestHandler(t)
+	ctx := context.Background()
+	db := testEnv.DB.Pool()
+
+	acc := testEnv.CreateTestAccount(t, "srv-lk-sp-"+GenerateUniqueSlug("a")+"@example.com")
+	ws := testEnv.CreateTestWorkspace(t, acc, "SharedPool WS", GenerateUniqueSlug("ws"))
+	project := testEnv.CreateTestProject(t, ws, acc, "SharedPool Project", GenerateUniqueSlug("proj"))
+
+	fixtures := &TestFixtures{Account: acc, Workspace: ws, Projects: []core.Project{*project}}
+	defer testEnv.CleanupTestData(t, fixtures)
+
+	// App A — gets its own pool via createTestApp.
+	appAID := createTestApp(t, ws.ID, project.ID, uuid.Nil, "SharedPool App A")
+
+	// Retrieve the pool that app A was assigned.
+	var sharedPoolID uuid.UUID
+	if err := db.QueryRow(ctx, `SELECT user_pool_id FROM apps WHERE id = $1`, appAID).Scan(&sharedPoolID); err != nil {
+		t.Fatalf("get app A pool: %v", err)
+	}
+
+	// App B — shares app A's pool (direct SQL insert).
+	appBID := utils.NewUUID()
+	if _, err := db.Exec(ctx, `
+		INSERT INTO apps (id, workspace_id, project_id, user_pool_id, type, enabled, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, 'staging', true, NOW(), NOW())`,
+		appBID, ws.ID, project.ID, sharedPoolID); err != nil {
+		t.Fatalf("insert app B: %v", err)
+	}
+
+	defer func() {
+		_, _ = db.Exec(ctx, "DELETE FROM apps WHERE id = $1", appBID)
+		_, _ = db.Exec(ctx, "DELETE FROM apps WHERE id = $1", appAID)
+	}()
+
+	// Provision user into the shared pool via app A's :batch (creates user + app_users for A).
+	routerA := lookupRouter(t, rh, ws, appAID)
+	baseA := "/x/" + ws.Slug + "/api/v1/apps/" + appAID.String()
+
+	userEmail := "lk-sp-user-" + GenerateUniqueSlug("u") + "@example.com"
+	defer func() {
+		_, _ = db.Exec(ctx, "DELETE FROM users WHERE lower(email) = lower($1)", userEmail)
+	}()
+
+	batchBody, _ := json.Marshal(api.ServerBatchCreateUsersRequest{Emails: []string{userEmail}})
+	rr := httptest.NewRecorder()
+	routerA.ServeHTTP(rr, httptest.NewRequest(http.MethodPost, baseA+"/users:batch", bytes.NewReader(batchBody)))
+	if rr.Code != http.StatusOK {
+		t.Fatalf("provision :batch via app A: expected 200, got %d: %s", rr.Code, rr.Body.String())
+	}
+
+	// Lookup via app B → user must be in `missing` (in pool but not a member of app B).
+	routerB := lookupRouter(t, rh, ws, appBID)
+	baseB := "/x/" + ws.Slug + "/api/v1/apps/" + appBID.String()
+
+	lookupBody, _ := json.Marshal(api.ServerUsersLookupRequest{Emails: []string{userEmail}})
+	rr = httptest.NewRecorder()
+	routerB.ServeHTTP(rr, httptest.NewRequest(http.MethodPost, baseB+"/users:lookup", bytes.NewReader(lookupBody)))
+	if rr.Code != http.StatusOK {
+		t.Fatalf("lookup via app B: expected 200, got %d: %s", rr.Code, rr.Body.String())
+	}
+	var respB api.ServerUsersLookupResponse
+	if err := json.Unmarshal(rr.Body.Bytes(), &respB); err != nil {
+		t.Fatalf("parse app B response: %v", err)
+	}
+	if len(respB.Users) != 0 {
+		t.Errorf("app B lookup: expected 0 users (non-member), got %d: %+v", len(respB.Users), respB.Users)
+	}
+	if len(respB.Missing) != 1 || respB.Missing[0] != strings.ToLower(userEmail) {
+		t.Errorf("app B lookup: expected missing=[%q], got %v", strings.ToLower(userEmail), respB.Missing)
+	}
+
+	// Lookup via app A → same user must be in `users` (is a member of app A).
+	lookupBody2, _ := json.Marshal(api.ServerUsersLookupRequest{Emails: []string{userEmail}})
+	rr = httptest.NewRecorder()
+	routerA.ServeHTTP(rr, httptest.NewRequest(http.MethodPost, baseA+"/users:lookup", bytes.NewReader(lookupBody2)))
+	if rr.Code != http.StatusOK {
+		t.Fatalf("lookup via app A: expected 200, got %d: %s", rr.Code, rr.Body.String())
+	}
+	var respA api.ServerUsersLookupResponse
+	if err := json.Unmarshal(rr.Body.Bytes(), &respA); err != nil {
+		t.Fatalf("parse app A response: %v", err)
+	}
+	if len(respA.Users) != 1 {
+		t.Errorf("app A lookup: expected 1 user, got %d: %+v", len(respA.Users), respA.Users)
+	}
+	if len(respA.Missing) != 0 {
+		t.Errorf("app A lookup: expected 0 missing, got %v", respA.Missing)
 	}
 }
 

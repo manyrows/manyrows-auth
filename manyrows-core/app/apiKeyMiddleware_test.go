@@ -161,6 +161,8 @@ func TestAPIKeyMiddleware(t *testing.T) {
 		sub.Use(apiKeyMiddleware(rpo, throttle))
 		sub.Get("/probe", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
 		sub.Post("/probe", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
+		// Real :lookup custom method — read keys must reach this despite POST.
+		sub.Post("/users:lookup", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
 	})
 
 	do := func(appID, apiKey string) int {
@@ -226,4 +228,26 @@ func TestAPIKeyMiddleware(t *testing.T) {
 			}
 		})
 	}
+
+	// --- :lookup custom-method exception: read key must reach POST /users:lookup ---
+	// Tests the REAL isReadOnlyCustomMethod gate inside apiKeyMiddleware.
+	doLookup := func(appID, apiKey string) int {
+		req := httptest.NewRequest(http.MethodPost, "/x/"+ws.Slug+"/api/v1/apps/"+appID+"/users:lookup", nil)
+		req.Header.Set("X-API-Key", apiKey)
+		rr := httptest.NewRecorder()
+		r.ServeHTTP(rr, req)
+		return rr.Code
+	}
+
+	t.Run("read key allows POST users:lookup", func(t *testing.T) {
+		if got := doLookup(appB.String(), readKey); got != http.StatusOK {
+			t.Fatalf("read key + users:lookup: want 200, got %d", got)
+		}
+	})
+	t.Run("read key forbids POST non-lookup", func(t *testing.T) {
+		// /probe is not :lookup — must still be forbidden with a read key.
+		if got := doM(http.MethodPost, appB.String(), readKey); got != http.StatusForbidden {
+			t.Fatalf("read key + POST /probe: want 403, got %d", got)
+		}
+	})
 }

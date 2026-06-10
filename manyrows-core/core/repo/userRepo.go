@@ -90,16 +90,22 @@ func (r *Repo) GetUserByEmail(ctx context.Context, email string, app *core.App) 
 	return u, nil
 }
 
-// GetUsersByEmails returns the app's users matching any of the normalized
-// emails in one query. Missing emails are simply absent from the result.
+// GetUsersByEmails returns app members matching any of the normalized emails in
+// one query. Only users with an app_users membership row for the given app are
+// returned — pool users who never joined this app are absent (they appear in
+// the caller's "missing" list). This mirrors the single-user path in
+// respondServerUser → requireAppMember → GetAppUser.
+// Missing emails are simply absent from the result.
 // The caller is responsible for normalizing (lower-casing / trimming) the
 // input before passing it here.
 func (r *Repo) GetUsersByEmails(ctx context.Context, app *core.App, emails []string) ([]*core.User, error) {
 	if len(emails) == 0 {
 		return nil, nil
 	}
-	q := `SELECT` + userCols + `FROM users u WHERE u.user_pool_id = $1 AND LOWER(u.email) = ANY($2)`
-	rows, err := r.db.Pool().Query(ctx, q, app.UserPoolID, emails)
+	q := `SELECT` + userCols + `FROM users u
+JOIN app_users au ON au.user_id = u.id AND au.app_id = $2
+WHERE u.user_pool_id = $1 AND LOWER(u.email) = ANY($3)`
+	rows, err := r.db.Pool().Query(ctx, q, app.UserPoolID, app.ID, emails)
 	if err != nil {
 		return nil, err
 	}
