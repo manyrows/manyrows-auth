@@ -159,10 +159,9 @@ export type AppKitUserField = {
  * delete). Pass `password`, or for passwordless users request an email code
  * via `useRequestReauthCode()` and pass `code`.
  */
-export type AppKitReauthParams = {
-  password?: string;
-  code?: string;
-};
+export type AppKitReauthParams =
+  | { password: string; code?: never }
+  | { code: string; password?: never };
 
 /** The TOTP enrollment material returned by useStartTOTPSetup. */
 export type AppKitTOTPSetup = {
