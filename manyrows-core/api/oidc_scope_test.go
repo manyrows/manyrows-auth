@@ -571,6 +571,68 @@ func TestOIDCUserInfo_CombinedScopes(t *testing.T) {
 	}
 }
 
+// TestOIDCScope_EscalationEndToEnd is the full kill-chain regression that pins
+// the composition of all three scope-enforcement layers:
+//
+//  1. Stored grant caps the refresh (handleOIDCRefreshTokenGrant intersect).
+//  2. Response scope field reflects the cap (never includes un-granted tokens).
+//  3. The refreshed access token, when presented to /oidc/userinfo, is
+//     further filtered by OIDCUserInfo's claim gate — email never surfaces.
+//
+// This test is intentionally kept even though each piece is unit-pinned
+// individually: the composition can regress without any single unit breaking.
+func TestOIDCScope_EscalationEndToEnd(t *testing.T) {
+	e := setupOIDCRouter(t)
+
+	// Step 1: Authorize + code-exchange with scope=openid offline_access ONLY
+	// (email is deliberately absent from the original grant).
+	_, refreshToken, _ := oidcFullGrant(t, e, "openid offline_access")
+
+	// Step 2: Refresh requesting an escalated scope that includes email.
+	rr := oidcPostForm(e, "/oidc/token", url.Values{
+		"grant_type":    {"refresh_token"},
+		"refresh_token": {refreshToken},
+		"client_id":     {e.app.ID.String()},
+		"scope":         {"openid email offline_access"}, // escalation attempt
+	})
+	if rr.Code != http.StatusOK {
+		t.Fatalf("refresh grant: %d %s", rr.Code, rr.Body.String())
+	}
+	var refreshResp struct {
+		AccessToken  string `json:"access_token"`
+		RefreshToken string `json:"refresh_token"`
+		Scope        string `json:"scope"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &refreshResp); err != nil {
+		t.Fatalf("unmarshal refresh response: %v", err)
+	}
+
+	// Step 3: The response scope must not include email — stored grant caps it.
+	if refreshResp.Scope != "openid offline_access" {
+		t.Errorf("refresh response scope = %q, want %q (email must be dropped by intersect)", refreshResp.Scope, "openid offline_access")
+	}
+	if refreshResp.AccessToken == "" {
+		t.Fatalf("no access_token in refresh response: %s", rr.Body.String())
+	}
+
+	// Step 4: Use the REFRESHED access token to call /oidc/userinfo.
+	// The body must have "sub" but must NOT have "email".
+	uiRR := oidcUserinfoGET(e, refreshResp.AccessToken)
+	if uiRR.Code != http.StatusOK {
+		t.Fatalf("userinfo: expected 200, got %d (body=%s)", uiRR.Code, uiRR.Body.String())
+	}
+	var uiResp map[string]any
+	if err := json.Unmarshal(uiRR.Body.Bytes(), &uiResp); err != nil {
+		t.Fatalf("unmarshal userinfo response: %v", err)
+	}
+	if sub, _ := uiResp["sub"].(string); sub == "" {
+		t.Errorf("userinfo: expected sub claim, got body=%s", uiRR.Body.String())
+	}
+	if _, hasEmail := uiResp["email"]; hasEmail {
+		t.Errorf("userinfo: email must be absent — original grant never included email scope, got body=%s", uiRR.Body.String())
+	}
+}
+
 // TestOIDCRefresh_LegacyEmptyRow_DefaultsOpenidEmail verifies that a refresh
 // token row with an empty oidc_scope (pre-migration legacy row) falls back to
 // the historical "openid email" scope in the response.
