@@ -48,6 +48,8 @@ export function useRenamePasskey(): (passkeyId: string, params: { name: string }
  * Returns a function that deletes a passkey. A sensitive operation — the
  * server may require re-auth: pass `{password}` or `{code}` (request one
  * with `useRequestReauthCode()`).
+ * The reauth proof travels in the DELETE request body — the server (and any
+ * proxy in front of it) must forward DELETE bodies.
  *
  * ```tsx
  * const deletePasskey = useDeletePasskey();

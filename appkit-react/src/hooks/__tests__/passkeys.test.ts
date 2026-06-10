@@ -70,4 +70,10 @@ describe("useDeletePasskey", () => {
     await result.current("pk1");
     expect(JSON.parse((fetchMock.mock.calls[0][1] as RequestInit).body as string)).toEqual({});
   });
+
+  it("surfaces the server error when reauth is required", async () => {
+    stubFetch(401, { error: "error.reauthRequired" });
+    const { result } = renderHook(() => useDeletePasskey());
+    await expect(result.current("pk1")).rejects.toThrow("error.reauthRequired");
+  });
 });
