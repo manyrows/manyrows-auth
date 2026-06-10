@@ -7,6 +7,8 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"testing"
+
+	"manyrows-core/auth/client"
 )
 
 // oidcFullGrant performs authorize → code → token exchange and returns the
@@ -496,6 +498,76 @@ func TestOIDCUserInfo_FirstPartyToken_FullClaims(t *testing.T) {
 	}
 	if _, hasUN := resp["preferred_username"]; !hasUN {
 		t.Errorf("first-party token: preferred_username must be present (full claims), got body=%s", rr.Body.String())
+	}
+}
+
+// TestOIDCUserInfo_JunkAuthHeaderWithCookie_FailsSafe verifies the bearer
+// extraction guard introduced to align with bearerTokenFromRequest. When the
+// Authorization header is a non-Bearer scheme (e.g. "Basic …") the handler
+// must NOT treat that header value as an access token; instead it falls
+// through to the cookie fallback, reads the real OIDC access token, and
+// applies normal scope filtering. Because the grant is "openid" only, the
+// response is 200 with "sub" but without "email" — confirming the real token
+// was used and scope enforcement ran correctly (not the old bug path that
+// silently returned full claims).
+func TestOIDCUserInfo_JunkAuthHeaderWithCookie_FailsSafe(t *testing.T) {
+	e := setupOIDCRouter(t)
+	// Grant openid only — email must never appear in a correct response.
+	accessToken, _, _ := oidcFullGrant(t, e, "openid offline_access")
+
+	// Build the userinfo request: the real token goes in the session cookie;
+	// the Authorization header is a Basic scheme that must be ignored.
+	req := httptest.NewRequest("GET", "/x/"+e.ws.Slug+"/apps/"+e.app.ID.String()+"/oidc/userinfo", nil)
+	req.Header.Set("Authorization", "Basic anVuaw==") // base64("junk")
+	req.AddCookie(&http.Cookie{
+		Name:  client.AccessCookieName(e.app.ID),
+		Value: accessToken,
+	})
+	rr := httptest.NewRecorder()
+	e.router.ServeHTTP(rr, req)
+
+	// With the fix the cookie fallback fires, the real token is resolved, and
+	// scope enforcement returns sub-only (openid grant → no email). A 401 would
+	// also be acceptable here, but the fixed code returns 200 + sub-only
+	// because GetSession successfully authenticates via the cookie.
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200 (cookie auth succeeded), got %d body=%s", rr.Code, rr.Body.String())
+	}
+	var resp map[string]any
+	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if sub, _ := resp["sub"].(string); sub == "" {
+		t.Errorf("expected sub claim, got body=%s", rr.Body.String())
+	}
+	if _, hasEmail := resp["email"]; hasEmail {
+		// Pre-fix bug: junk header was used as rawToken → scope="" → full claims leaked.
+		t.Errorf("email must be absent: junk Basic header must not grant full claims, got body=%s", rr.Body.String())
+	}
+}
+
+// TestOIDCUserInfo_CombinedScopes verifies that an access token granted with
+// "openid email profile" returns sub + email + preferred_username all present.
+func TestOIDCUserInfo_CombinedScopes(t *testing.T) {
+	e := setupOIDCRouter(t)
+	accessToken, _, _ := oidcFullGrant(t, e, "openid email profile offline_access")
+
+	rr := oidcUserinfoGET(e, accessToken)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("userinfo: expected 200, got %d body=%s", rr.Code, rr.Body.String())
+	}
+	var resp map[string]any
+	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if sub, _ := resp["sub"].(string); sub == "" {
+		t.Errorf("expected sub claim, got body=%s", rr.Body.String())
+	}
+	if _, hasEmail := resp["email"]; !hasEmail {
+		t.Errorf("email must be present for email scope, got body=%s", rr.Body.String())
+	}
+	if _, hasUN := resp["preferred_username"]; !hasUN {
+		t.Errorf("preferred_username must be present for profile scope, got body=%s", rr.Body.String())
 	}
 }
 

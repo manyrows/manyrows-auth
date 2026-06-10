@@ -1314,10 +1314,14 @@ func (handler *RequestHandler) OIDCUserInfo(w http.ResponseWriter, r *http.Reque
 	}
 
 	// Extract the raw bearer token so we can read its scope claim below.
-	// OIDC clients always use Authorization: Bearer; the cookie path is
-	// also checked for parity with GetSession's bearer resolution.
-	rawToken := strings.TrimSpace(strings.TrimPrefix(
-		strings.TrimSpace(r.Header.Get("Authorization")), "Bearer "))
+	// Mirrors bearerTokenFromRequest (auth/client) exactly: only treat the
+	// Authorization header as a bearer source when it starts with "Bearer ";
+	// a non-Bearer scheme (e.g. "Basic …") must fall through to the cookie
+	// so extraction stays aligned with how GetSession authenticated the request.
+	rawToken := ""
+	if h := strings.TrimSpace(r.Header.Get("Authorization")); strings.HasPrefix(h, "Bearer ") {
+		rawToken = strings.TrimSpace(strings.TrimPrefix(h, "Bearer "))
+	}
 	if rawToken == "" {
 		if app.ID != uuid.Nil {
 			if c, err := r.Cookie(client.AccessCookieName(app.ID)); err == nil && c != nil {
@@ -1350,7 +1354,14 @@ func (handler *RequestHandler) OIDCUserInfo(w http.ResponseWriter, r *http.Reque
 	// Scope-filter per the granted scope carried in the access token.
 	// First-party tokens (no scope claim) keep the historical full
 	// response — they already see richer data via /a/me.
-	scope, _ := handler.clientAuthService.AccessTokenScope(rawToken)
+	scope, ok := handler.clientAuthService.AccessTokenScope(rawToken)
+	if !ok {
+		// GetSession just authenticated this request, so the token we
+		// extracted must parse; a mismatch means extraction diverged from
+		// authentication — fail safe instead of defaulting to full claims.
+		writeOIDCBearerError(w, "invalid_token", "could not read token scope")
+		return
+	}
 	resp := oidcUserInfoResponse{Sub: user.ID.String()}
 	if scope == "" || scopeContainsEmail(scope) {
 		resp.Email = user.Email
