@@ -164,14 +164,18 @@ func (handler *RequestHandler) OIDCConsentPage(w http.ResponseWriter, r *http.Re
 	// different app is treated exactly like a dead one (no oracle), and so
 	// is a login-stage row: only consent-stage reqs render here, otherwise
 	// a req lifted from the login-shim URL could reach the consent screen
-	// without the forced re-authentication it was minted for.
+	// without the forced re-authentication it was minted for. A row bound
+	// to a different user (or unbound — can't happen post-deploy) is dead
+	// too: the consent decision must come from the user the page was
+	// rendered for.
 	p, params, found, err := handler.repo.PeekOIDCPendingAuthorize(ctx, reqID)
 	if err != nil {
 		log.Err(err).Str("app_id", app.ID.String()).Msg("OIDCConsentPage: PeekOIDCPendingAuthorize failed")
 		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 		return
 	}
-	if !found || params == nil || p == nil || p.AppID != app.ID || !params.ConsentStage {
+	if !found || params == nil || p == nil || p.AppID != app.ID || !params.ConsentStage ||
+		params.BoundUserID == nil || *params.BoundUserID != ses.UserID {
 		renderOIDCAuthorizePageError(w, "invalid_request", "consent request expired or already handled")
 		return
 	}
@@ -255,13 +259,17 @@ func (handler *RequestHandler) OIDCConsentDecision(w http.ResponseWriter, r *htt
 	// login-stage row: only consent-stage reqs may be spent here —
 	// accepting a login-stage req would mint a code while bypassing the
 	// forced re-authentication (prompt=login / max_age) it was minted for.
+	// A row bound to a different user (or unbound — can't happen post-
+	// deploy) is dead too: the consent decision must come from the user
+	// the page was rendered for.
 	p, params, found, err := handler.repo.ConsumeOIDCPendingAuthorize(ctx, reqID)
 	if err != nil {
 		log.Err(err).Str("app_id", app.ID.String()).Msg("OIDCConsentDecision: ConsumeOIDCPendingAuthorize failed")
 		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 		return
 	}
-	if !found || params == nil || p == nil || p.AppID != app.ID || !params.ConsentStage {
+	if !found || params == nil || p == nil || p.AppID != app.ID || !params.ConsentStage ||
+		params.BoundUserID == nil || *params.BoundUserID != ses.UserID {
 		renderOIDCAuthorizePageError(w, "invalid_request", "consent request expired or already handled")
 		return
 	}

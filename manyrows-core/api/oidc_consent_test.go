@@ -813,6 +813,87 @@ func TestOIDCAuthorizeResume_ConsentStageReq_Rejected(t *testing.T) {
 	}
 }
 
+// =============================================================================
+// 14. User binding — consent-stage reqs are bound to the rendering user
+// =============================================================================
+
+// A CONSENT-stage pending req minted while user A was signed in must not be
+// presentable by user B's session (same app), GET or POST. Otherwise a
+// cross-site form POST riding B's cookies could approve A's pending consent
+// (CSRF defense-in-depth beyond SameSite=Lax). Both endpoints must show the
+// same expired/already-handled surface as a dead req (no oracle), the POST
+// must not mint a code, and no consent row may be written for either user.
+//
+// Note: B's POST consumes (burns) the row — an acceptable self-DoS-equivalent,
+// consistent with the wrong-app burn — so this test does NOT try to complete
+// user A's flow afterward.
+func TestOIDCConsent_BoundUser_OtherUserRejected(t *testing.T) {
+	e := setupOIDCRouter(t)
+	e.enableOIDCWithConsent(t, true)
+	sesA, accessJWTA := e.seedSessionForApp(t)
+	_, challenge := makePKCE()
+
+	// User A: authenticated authorize → 302 to consent page with req id.
+	redirect := "https://customer.example/callback"
+	rr := authorizeGET(e, baseAuthorizeQuery(e, redirect, challenge), accessJWTA)
+	if rr.Code != http.StatusFound {
+		t.Fatalf("expected 302 to consent page, got %d (%s)", rr.Code, rr.Body.String())
+	}
+	u, _ := url.Parse(rr.Header().Get("Location"))
+	reqID := u.Query().Get("req")
+	if reqID == "" || !strings.Contains(u.Path, "/oidc/consent") {
+		t.Fatalf("expected consent redirect with req, got %s", rr.Header().Get("Location"))
+	}
+
+	// User B: a second seedSessionForApp call mints a DISTINCT user with
+	// its own session in the same app.
+	sesB, accessJWTB := e.seedSessionForApp(t)
+	if sesB.UserID == sesA.UserID {
+		t.Fatal("fixture error: expected two distinct users")
+	}
+
+	// GET the consent page as user B — must hit the dead-req surface.
+	getRR := consentGET(e, reqID, accessJWTB)
+	if getRR.Code != http.StatusBadRequest {
+		t.Errorf("GET consent as other user expected 400, got %d (%s)", getRR.Code, getRR.Body.String())
+	}
+	getBody := getRR.Body.String()
+	if !strings.Contains(getBody, "expired") && !strings.Contains(getBody, "consumed") && !strings.Contains(getBody, "already") {
+		t.Errorf("other-user GET should show the expired/already-handled surface, body=%.300s", getBody)
+	}
+
+	// POST decision=allow as user B — must not mint a code.
+	postRR := consentPOST(e, reqID, "allow", accessJWTB)
+	if postRR.Code != http.StatusBadRequest {
+		t.Errorf("POST consent as other user expected 400, got %d (%s)", postRR.Code, postRR.Body.String())
+	}
+	if loc := postRR.Header().Get("Location"); loc != "" {
+		if pu, _ := url.Parse(loc); pu != nil && pu.Query().Get("code") != "" {
+			t.Errorf("other-user POST must NOT mint a code, got %s", loc)
+		}
+	}
+	postBody := postRR.Body.String()
+	if !strings.Contains(postBody, "expired") && !strings.Contains(postBody, "consumed") && !strings.Contains(postBody, "already") {
+		t.Errorf("other-user POST should show the expired/already-handled surface, body=%.300s", postBody)
+	}
+
+	// No consent row may exist for EITHER user.
+	_, foundB, err := testEnv.Repo.GetOIDCConsent(context.Background(), sesB.UserID, e.app.ID)
+	if err != nil {
+		t.Fatalf("GetOIDCConsent (user B): %v", err)
+	}
+	if foundB {
+		t.Error("consent row must NOT be written for user B")
+	}
+	_, foundA, err := testEnv.Repo.GetOIDCConsent(context.Background(), sesA.UserID, e.app.ID)
+	if err != nil {
+		t.Fatalf("GetOIDCConsent (user A): %v", err)
+	}
+	if foundA {
+		t.Error("consent row must NOT be written for user A")
+	}
+}
+
 // A pending req id minted at app A's /authorize (unauthenticated path) must
 // not be resumable at app B's /authorize/resume, even with a valid app B
 // session. Same expired/consumed surface as a dead req id.

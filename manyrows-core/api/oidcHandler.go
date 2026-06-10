@@ -353,6 +353,8 @@ func (handler *RequestHandler) OIDCAuthorize(w http.ResponseWriter, r *http.Requ
 			// (defensive — this branch returns, but don't rely on that).
 			consentParams := params
 			consentParams.ConsentStage = true
+			boundUser := ses.UserID
+			consentParams.BoundUserID = &boundUser
 			pendingID, cerr := handler.repo.CreateOIDCPendingAuthorize(ctx, app.ID, consentParams)
 			if cerr != nil {
 				log.Err(cerr).Str("app_id", app.ID.String()).Msg("OIDCAuthorize: CreateOIDCPendingAuthorize (consent) failed")
@@ -514,6 +516,8 @@ func (handler *RequestHandler) OIDCAuthorizeResume(w http.ResponseWriter, r *htt
 		ws, _ := core.WorkspaceFromContext(ctx)
 		consentParams := *params
 		consentParams.ConsentStage = true
+		boundUser := ses.UserID
+		consentParams.BoundUserID = &boundUser
 		pendingID, cerr := handler.repo.CreateOIDCPendingAuthorize(ctx, app.ID, consentParams)
 		if cerr != nil {
 			log.Err(cerr).Str("app_id", app.ID.String()).Msg("OIDCAuthorizeResume: CreateOIDCPendingAuthorize (consent) failed")

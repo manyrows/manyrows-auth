@@ -95,6 +95,13 @@ type OIDCAuthorizeParams struct {
 	// consent-stage req can never be spent at /resume to skip the consent
 	// decision.
 	ConsentStage bool `json:"consent_stage,omitempty"`
+	// BoundUserID binds a consent-stage row to the authenticated user the
+	// consent page was rendered for: the consent endpoints reject any
+	// other session (defense-in-depth beyond the SameSite=Lax cookie —
+	// see the consent handlers). Set only on consent-stage rows; login-
+	// stage rows stay unbound because signing into a different account at
+	// the shim is a legitimate account switch.
+	BoundUserID *uuid.UUID `json:"bound_user_id,omitempty"`
 }
 
 // OIDCPendingAuthorize is the short-lived row holding an /authorize
