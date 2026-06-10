@@ -42,3 +42,25 @@ export function useRevokeSession(): (sessionId: string) => Promise<void> {
       { method: "DELETE" }, "Failed to revoke session");
   }, [token, baseURL]);
 }
+
+/**
+ * Returns a function that revokes ALL of the user's other sessions in one
+ * call ("log out everywhere else"). The current session stays signed in —
+ * to end it too, call `logout()` from `useAppKit()`. Resolves with the
+ * number of sessions revoked.
+ *
+ * ```tsx
+ * const revokeOtherSessions = useRevokeOtherSessions();
+ * const { revoked } = await revokeOtherSessions();
+ * ```
+ */
+export function useRevokeOtherSessions(): () => Promise<{ revoked: number }> {
+  const { snapshot } = useAppKit();
+  const token = snapshot?.jwtToken;
+  const baseURL = snapshot?.appBaseURL;
+  return useCallback(async () => {
+    const body = (await authedJson(token, baseURL, `/a/me/sessions`, { method: "DELETE" },
+      "Failed to revoke other sessions")) as { revoked?: number };
+    return { revoked: body?.revoked ?? 0 };
+  }, [token, baseURL]);
+}

@@ -40,6 +40,6 @@ export {
   useCreateOrganizationInvite,
   useRevokeOrganizationInvite,
 } from "./hooks/organizations";
-export { useSessions, useRevokeSession } from "./hooks/sessions";
+export { useSessions, useRevokeSession, useRevokeOtherSessions } from "./hooks/sessions";
 export { usePasskeys, useRenamePasskey, useDeletePasskey, useRegisterPasskey, isPasskeyCancelled, PASSKEY_CANCELLED } from "./hooks/passkeys";
 export { useStartTOTPSetup, useEnableTOTP, useDisableTOTP, useRegenerateBackupCodes } from "./hooks/totp";

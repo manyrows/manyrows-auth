@@ -64,6 +64,7 @@ export {
   useRevokeOrganizationInvite,
   useSessions,
   useRevokeSession,
+  useRevokeOtherSessions,
   usePasskeys,
   useRenamePasskey,
   useDeletePasskey,

@@ -8,7 +8,7 @@ const h = vi.hoisted(() => ({
 }));
 vi.mock("../../AppKit", () => ({ useAppKit: () => h.ctx }));
 
-import { useSessions, useRevokeSession } from "../sessions";
+import { useSessions, useRevokeSession, useRevokeOtherSessions } from "../sessions";
 
 beforeEach(() => {
   h.ctx.snapshot = makeSnapshot();
@@ -60,5 +60,25 @@ describe("useRevokeSession", () => {
     );
     const init = fetchMock.mock.calls[0][1] as RequestInit;
     expect((init.headers as Record<string, string>).Authorization).toBe("Bearer tok-123");
+  });
+});
+
+describe("useRevokeOtherSessions", () => {
+  it("DELETEs the sessions collection and unwraps {revoked}", async () => {
+    const fetchMock = stubFetch(200, { revoked: 2 });
+    const { result } = renderHook(() => useRevokeOtherSessions());
+    await expect(result.current()).resolves.toEqual({ revoked: 2 });
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://api.test/x/acme/apps/app1/a/me/sessions",
+      expect.objectContaining({ method: "DELETE" }),
+    );
+    const init = fetchMock.mock.calls[0][1] as RequestInit;
+    expect((init.headers as Record<string, string>).Authorization).toBe("Bearer tok-123");
+  });
+
+  it("falls back to 0 when the response has no revoked count", async () => {
+    stubFetch(200, {});
+    const { result } = renderHook(() => useRevokeOtherSessions());
+    await expect(result.current()).resolves.toEqual({ revoked: 0 });
   });
 });

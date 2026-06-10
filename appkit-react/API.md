@@ -533,6 +533,19 @@ await revokeSession(session.id);
 
 ---
 
+### `useRevokeOtherSessions()`
+
+Returns a function that revokes all of the user's **other** sessions in one call ("log out everywhere else"). The current session stays signed in — call `logout()` from `useAppKit()` to end it too. Resolves with the number of sessions revoked.
+
+**Returns: `() => Promise<{ revoked: number }>`**
+
+```tsx
+const revokeOtherSessions = useRevokeOtherSessions();
+const { revoked } = await revokeOtherSessions();
+```
+
+---
+
 ### `usePasskeys()`
 
 Returns a function that lists the user's registered passkeys.
