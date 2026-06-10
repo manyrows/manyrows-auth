@@ -147,19 +147,8 @@ func (handler *RequestHandler) OIDCConsentPage(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	// Non-destructive read — the POST will consume.
-	_, params, found, err := handler.repo.PeekOIDCPendingAuthorize(ctx, reqID)
-	if err != nil {
-		log.Err(err).Str("app_id", app.ID.String()).Msg("OIDCConsentPage: PeekOIDCPendingAuthorize failed")
-		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
-		return
-	}
-	if !found || params == nil {
-		renderOIDCAuthorizePageError(w, "invalid_request", "consent request expired or already handled")
-		return
-	}
-
-	// Require a valid session — the same user must confirm.
+	// Require a valid session before touching the pending row — an
+	// unauthenticated caller must not be able to probe req-id liveness.
 	ses, err := handler.clientAuthService.GetSession(r)
 	if err != nil {
 		log.Err(err).Str("app_id", app.ID.String()).Msg("OIDCConsentPage: GetSession failed")
@@ -168,6 +157,19 @@ func (handler *RequestHandler) OIDCConsentPage(w http.ResponseWriter, r *http.Re
 	}
 	if ses == nil || ses.AppID == nil || *ses.AppID != app.ID {
 		renderOIDCAuthorizePageError(w, "login_required", "no active session for this app")
+		return
+	}
+
+	// Non-destructive read — the POST will consume. A row minted for a
+	// different app is treated exactly like a dead one (no oracle).
+	p, params, found, err := handler.repo.PeekOIDCPendingAuthorize(ctx, reqID)
+	if err != nil {
+		log.Err(err).Str("app_id", app.ID.String()).Msg("OIDCConsentPage: PeekOIDCPendingAuthorize failed")
+		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
+		return
+	}
+	if !found || params == nil || p == nil || p.AppID != app.ID {
+		renderOIDCAuthorizePageError(w, "invalid_request", "consent request expired or already handled")
 		return
 	}
 
@@ -183,7 +185,7 @@ func (handler *RequestHandler) OIDCConsentPage(w http.ResponseWriter, r *http.Re
 		AppName:     app.DisplayName(),
 		Scopes:      consentScopeDescriptions(params.Scope),
 		ConsentPath: template.URL(consentPath), // #nosec G203 — server-constructed path, no user input
-		ReqID:       reqStr,
+		ReqID:       reqID.String(),
 	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -245,14 +247,15 @@ func (handler *RequestHandler) OIDCConsentDecision(w http.ResponseWriter, r *htt
 		return
 	}
 
-	// Consume the pending row (single-use).
-	_, params, found, err := handler.repo.ConsumeOIDCPendingAuthorize(ctx, reqID)
+	// Consume the pending row (single-use). A row minted for a different
+	// app is treated exactly like a dead one (no oracle).
+	p, params, found, err := handler.repo.ConsumeOIDCPendingAuthorize(ctx, reqID)
 	if err != nil {
 		log.Err(err).Str("app_id", app.ID.String()).Msg("OIDCConsentDecision: ConsumeOIDCPendingAuthorize failed")
 		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 		return
 	}
-	if !found || params == nil {
+	if !found || params == nil || p == nil || p.AppID != app.ID {
 		renderOIDCAuthorizePageError(w, "invalid_request", "consent request expired or already handled")
 		return
 	}

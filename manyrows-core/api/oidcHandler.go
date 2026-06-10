@@ -421,13 +421,15 @@ func (handler *RequestHandler) OIDCAuthorizeResume(w http.ResponseWriter, r *htt
 		return
 	}
 
-	_, params, found, err := handler.repo.ConsumeOIDCPendingAuthorize(ctx, reqID)
+	// A row minted for a different app is treated exactly like a dead
+	// one (no oracle distinguishing wrong-app from expired).
+	p, params, found, err := handler.repo.ConsumeOIDCPendingAuthorize(ctx, reqID)
 	if err != nil {
 		log.Err(err).Str("app_id", app.ID.String()).Msg("OIDCAuthorizeResume: ConsumeOIDCPendingAuthorize failed")
 		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 		return
 	}
-	if !found || params == nil {
+	if !found || params == nil || p == nil || p.AppID != app.ID {
 		renderOIDCAuthorizePageError(w, "invalid_request", "authorize request expired or already consumed")
 		return
 	}

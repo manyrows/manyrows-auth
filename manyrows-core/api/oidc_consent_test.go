@@ -2,25 +2,19 @@ package api_test
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"strings"
 	"testing"
+	"time"
 
+	"manyrows-core/core"
 	"manyrows-core/core/repo"
+
+	"github.com/gofrs/uuid/v5"
 )
-
-// consentAuthorizeGET issues a GET /oidc/authorize carrying the access JWT.
-func consentAuthorizeGET(e *oidcTestEnv, q url.Values, accessJWT string) *httptest.ResponseRecorder {
-	return authorizeGET(e, q, accessJWT)
-}
-
-// consentBaseQuery returns the base authorize query for consent tests
-// (openid email scope, PKCE included).
-func consentBaseQuery(e *oidcTestEnv, redirect, challenge string) url.Values {
-	return baseAuthorizeQuery(e, redirect, challenge)
-}
 
 // enableOIDCWithConsent calls UpdateAppOIDCConfig with RequireConsent set.
 func (e *oidcTestEnv) enableOIDCWithConsent(t *testing.T, requireConsent bool) {
@@ -78,7 +72,7 @@ func TestOIDCConsent_ToggleOff_NoScreen(t *testing.T) {
 	_, challenge := makePKCE()
 
 	redirect := "https://customer.example/callback"
-	rr := consentAuthorizeGET(e, consentBaseQuery(e, redirect, challenge), accessJWT)
+	rr := authorizeGET(e, baseAuthorizeQuery(e, redirect, challenge), accessJWT)
 	if rr.Code != http.StatusFound {
 		t.Fatalf("expected 302, got %d (%s)", rr.Code, rr.Body.String())
 	}
@@ -104,7 +98,7 @@ func TestOIDCConsent_FirstAuthorize_ShowsScreen(t *testing.T) {
 	_, challenge := makePKCE()
 
 	redirect := "https://customer.example/callback"
-	rr := consentAuthorizeGET(e, consentBaseQuery(e, redirect, challenge), accessJWT)
+	rr := authorizeGET(e, baseAuthorizeQuery(e, redirect, challenge), accessJWT)
 	if rr.Code != http.StatusFound {
 		t.Fatalf("expected 302 to consent page, got %d (%s)", rr.Code, rr.Body.String())
 	}
@@ -150,7 +144,7 @@ func TestOIDCConsent_Allow_MintsAndRemembers(t *testing.T) {
 	_, challenge := makePKCE()
 
 	redirect := "https://customer.example/callback"
-	rr := consentAuthorizeGET(e, consentBaseQuery(e, redirect, challenge), accessJWT)
+	rr := authorizeGET(e, baseAuthorizeQuery(e, redirect, challenge), accessJWT)
 	u, _ := url.Parse(rr.Header().Get("Location"))
 	reqID := u.Query().Get("req")
 	if reqID == "" {
@@ -185,7 +179,7 @@ func TestOIDCConsent_Allow_MintsAndRemembers(t *testing.T) {
 
 	// Second authorize — should skip consent entirely.
 	_, challenge2 := makePKCE()
-	rr2 := consentAuthorizeGET(e, consentBaseQuery(e, redirect, challenge2), accessJWT)
+	rr2 := authorizeGET(e, baseAuthorizeQuery(e, redirect, challenge2), accessJWT)
 	if rr2.Code != http.StatusFound {
 		t.Fatalf("second authorize expected 302, got %d (%s)", rr2.Code, rr2.Body.String())
 	}
@@ -212,7 +206,7 @@ func TestOIDCConsent_BroaderScope_RePrompts(t *testing.T) {
 	// First: authorize openid only.
 	q1 := baseAuthorizeQuery(e, redirect, challenge)
 	q1.Set("scope", "openid")
-	rr1 := consentAuthorizeGET(e, q1, accessJWT)
+	rr1 := authorizeGET(e, q1, accessJWT)
 	u1, _ := url.Parse(rr1.Header().Get("Location"))
 	reqID1 := u1.Query().Get("req")
 	if reqID1 == "" {
@@ -234,7 +228,7 @@ func TestOIDCConsent_BroaderScope_RePrompts(t *testing.T) {
 	_, challenge2 := makePKCE()
 	q2 := baseAuthorizeQuery(e, redirect, challenge2)
 	q2.Set("scope", "openid email")
-	rr2 := consentAuthorizeGET(e, q2, accessJWT)
+	rr2 := authorizeGET(e, q2, accessJWT)
 	if rr2.Code != http.StatusFound {
 		t.Fatalf("broader scope authorize expected 302, got %d (%s)", rr2.Code, rr2.Body.String())
 	}
@@ -280,7 +274,7 @@ func TestOIDCConsent_Deny_AccessDenied(t *testing.T) {
 	_, challenge := makePKCE()
 
 	redirect := "https://customer.example/callback"
-	rr := consentAuthorizeGET(e, consentBaseQuery(e, redirect, challenge), accessJWT)
+	rr := authorizeGET(e, baseAuthorizeQuery(e, redirect, challenge), accessJWT)
 	u, _ := url.Parse(rr.Header().Get("Location"))
 	reqID := u.Query().Get("req")
 	if reqID == "" {
@@ -326,9 +320,9 @@ func TestOIDCConsent_PromptConsent_Forces(t *testing.T) {
 		_, accessJWT := e.seedSessionForApp(t)
 		_, challenge := makePKCE()
 
-		q := consentBaseQuery(e, redirect, challenge)
+		q := baseAuthorizeQuery(e, redirect, challenge)
 		q.Set("prompt", "consent")
-		rr := consentAuthorizeGET(e, q, accessJWT)
+		rr := authorizeGET(e, q, accessJWT)
 		if rr.Code != http.StatusFound {
 			t.Fatalf("expected 302, got %d (%s)", rr.Code, rr.Body.String())
 		}
@@ -349,9 +343,9 @@ func TestOIDCConsent_PromptConsent_Forces(t *testing.T) {
 		}
 
 		_, challenge := makePKCE()
-		q := consentBaseQuery(e, redirect, challenge)
+		q := baseAuthorizeQuery(e, redirect, challenge)
 		q.Set("prompt", "consent")
-		rr := consentAuthorizeGET(e, q, accessJWT)
+		rr := authorizeGET(e, q, accessJWT)
 		if rr.Code != http.StatusFound {
 			t.Fatalf("expected 302, got %d (%s)", rr.Code, rr.Body.String())
 		}
@@ -374,10 +368,10 @@ func TestOIDCConsent_PromptNone_ConsentRequired(t *testing.T) {
 	_, challenge := makePKCE()
 
 	redirect := "https://customer.example/callback"
-	q := consentBaseQuery(e, redirect, challenge)
+	q := baseAuthorizeQuery(e, redirect, challenge)
 	q.Set("prompt", "none")
 
-	rr := consentAuthorizeGET(e, q, accessJWT)
+	rr := authorizeGET(e, q, accessJWT)
 	if rr.Code != http.StatusFound {
 		t.Fatalf("expected 302, got %d (%s)", rr.Code, rr.Body.String())
 	}
@@ -399,7 +393,7 @@ func TestOIDCConsent_PendingSingleUse(t *testing.T) {
 	_, challenge := makePKCE()
 
 	redirect := "https://customer.example/callback"
-	rr := consentAuthorizeGET(e, consentBaseQuery(e, redirect, challenge), accessJWT)
+	rr := authorizeGET(e, baseAuthorizeQuery(e, redirect, challenge), accessJWT)
 	u, _ := url.Parse(rr.Header().Get("Location"))
 	reqID := u.Query().Get("req")
 	if reqID == "" {
@@ -424,5 +418,159 @@ func TestOIDCConsent_PendingSingleUse(t *testing.T) {
 	body2 := post2.Body.String()
 	if !strings.Contains(body2, "expired") && !strings.Contains(body2, "consumed") && !strings.Contains(body2, "already") {
 		t.Errorf("consumed req error surface should mention expiry/consumed, body=%.300s", body2)
+	}
+}
+
+// =============================================================================
+// 9. Wrong-app binding — pending rows must be bound to their app
+// =============================================================================
+
+// setupSecondOIDCApp creates a second cookie-mode app in the same workspace
+// with OIDC + consent enabled, plus a signed-in session (and access JWT)
+// bound to it. Mirrors setupOIDCRouter's app fixture + seedSessionForApp.
+func setupSecondOIDCApp(t *testing.T, e *oidcTestEnv) (*core.App, *core.ClientSession, string) {
+	t.Helper()
+	ctx := context.Background()
+
+	accB := testEnv.CreateTestAccount(t, fmt.Sprintf("oidc-b-%s@test.example", GenerateUniqueSlug("u")))
+	appB := testEnv.CreateTestApp(t, e.ws, accB)
+	if _, err := testEnv.DB.Pool().Exec(ctx,
+		`update apps set transport_mode = 'cookie' where id = $1`, appB.ID); err != nil {
+		t.Fatalf("set transport_mode=cookie for app B: %v", err)
+	}
+	appB.TransportMode = core.TransportModeCookie
+
+	empty := ""
+	if err := testEnv.Repo.UpdateAppOIDCConfig(ctx, appB.ID, repo.UpdateAppOIDCConfigParams{
+		Enabled:          true,
+		ClientSecretHash: &empty,
+		RedirectURIs:     []string{"https://customer.example/callback"},
+		RequireConsent:   true,
+	}); err != nil {
+		t.Fatalf("enable OIDC for app B: %v", err)
+	}
+
+	user, _, err := testEnv.GetOrCreateUserWithMembership(ctx,
+		fmt.Sprintf("user-b-%s@test.example", GenerateUniqueSlug("u")), appB, core.UserSourceRegistered)
+	if err != nil {
+		t.Fatalf("GetOrCreateUserWithMembership (app B): %v", err)
+	}
+	now := time.Now().UTC()
+	appBID := appB.ID
+	ses := &core.ClientSession{
+		ID:         uuid.Must(uuid.NewV4()),
+		UserID:     user.ID,
+		AppID:      &appBID,
+		CreatedAt:  now,
+		LastSeenAt: now,
+		ExpiresAt:  now.Add(24 * time.Hour),
+	}
+	if err := testEnv.Repo.InsertClientSession(ctx, ses); err != nil {
+		t.Fatalf("InsertClientSession (app B): %v", err)
+	}
+	issuer := "http://localhost:8080/x/" + e.ws.Slug + "/apps/" + appB.ID.String()
+	access, _, err := e.cas.IssueAccessToken(ses, 15*time.Minute, issuer)
+	if err != nil {
+		t.Fatalf("IssueAccessToken (app B): %v", err)
+	}
+	return appB, ses, access
+}
+
+// A pending req id minted for app A must not be presentable at app B's
+// consent endpoints, even with a valid app B session. Both GET and POST
+// must show the same expired/invalid surface (no wrong-app oracle) and
+// no consent row may be written for app B.
+func TestOIDCConsent_WrongApp_Rejected(t *testing.T) {
+	e := setupOIDCRouter(t)
+	e.enableOIDCWithConsent(t, true)
+	_, accessJWT := e.seedSessionForApp(t)
+	_, challenge := makePKCE()
+
+	// Start a consent flow at app A → pending req id.
+	redirect := "https://customer.example/callback"
+	rr := authorizeGET(e, baseAuthorizeQuery(e, redirect, challenge), accessJWT)
+	u, _ := url.Parse(rr.Header().Get("Location"))
+	reqID := u.Query().Get("req")
+	if reqID == "" {
+		t.Fatalf("expected consent redirect at app A, got %s", rr.Header().Get("Location"))
+	}
+
+	appB, sesB, accessJWTB := setupSecondOIDCApp(t, e)
+
+	// GET app B's consent page with app A's req id + valid app B session.
+	getReq := httptest.NewRequest("GET",
+		"/x/"+e.ws.Slug+"/apps/"+appB.ID.String()+"/oidc/consent?req="+reqID, nil)
+	getReq.Header.Set("Authorization", "Bearer "+accessJWTB)
+	getRR := httptest.NewRecorder()
+	e.router.ServeHTTP(getRR, getReq)
+	if getRR.Code != http.StatusBadRequest {
+		t.Errorf("GET wrong-app consent expected 400, got %d (%s)", getRR.Code, getRR.Body.String())
+	}
+	getBody := getRR.Body.String()
+	if !strings.Contains(getBody, "expired") && !strings.Contains(getBody, "consumed") && !strings.Contains(getBody, "already") {
+		t.Errorf("wrong-app GET should show the expired/consumed surface, body=%.300s", getBody)
+	}
+
+	// POST decision=allow at app B with app A's req id.
+	form := url.Values{"req": {reqID}, "decision": {"allow"}}
+	postReq := httptest.NewRequest("POST",
+		"/x/"+e.ws.Slug+"/apps/"+appB.ID.String()+"/oidc/consent",
+		strings.NewReader(form.Encode()))
+	postReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	postReq.Header.Set("Authorization", "Bearer "+accessJWTB)
+	postRR := httptest.NewRecorder()
+	e.router.ServeHTTP(postRR, postReq)
+	if postRR.Code != http.StatusBadRequest {
+		t.Errorf("POST wrong-app consent expected 400, got %d (%s)", postRR.Code, postRR.Body.String())
+	}
+	postBody := postRR.Body.String()
+	if !strings.Contains(postBody, "expired") && !strings.Contains(postBody, "consumed") && !strings.Contains(postBody, "already") {
+		t.Errorf("wrong-app POST should show the expired/consumed surface, body=%.300s", postBody)
+	}
+
+	// No consent row may exist for app B.
+	_, found, err := testEnv.Repo.GetOIDCConsent(context.Background(), sesB.UserID, appB.ID)
+	if err != nil {
+		t.Fatalf("GetOIDCConsent (app B): %v", err)
+	}
+	if found {
+		t.Error("consent row must NOT be written for app B from a wrong-app req")
+	}
+}
+
+// A pending req id minted at app A's /authorize (unauthenticated path) must
+// not be resumable at app B's /authorize/resume, even with a valid app B
+// session. Same expired/consumed surface as a dead req id.
+func TestOIDCAuthorizeResume_WrongApp_Rejected(t *testing.T) {
+	e := setupOIDCRouter(t)
+	e.enableOIDCWithConsent(t, true)
+	_, challenge := makePKCE()
+
+	// Unauthenticated authorize at app A → login redirect carrying req id.
+	redirect := "https://customer.example/callback"
+	rr := authorizeGET(e, baseAuthorizeQuery(e, redirect, challenge), "")
+	if rr.Code != http.StatusFound {
+		t.Fatalf("unauthenticated authorize expected 302, got %d (%s)", rr.Code, rr.Body.String())
+	}
+	u, _ := url.Parse(rr.Header().Get("Location"))
+	reqID := u.Query().Get("req")
+	if reqID == "" || !strings.Contains(u.Path, "/oidc/login") {
+		t.Fatalf("expected login redirect with req at app A, got %s", rr.Header().Get("Location"))
+	}
+
+	appB, _, accessJWTB := setupSecondOIDCApp(t, e)
+
+	// Resume at app B with app A's req id and a valid app B session.
+	resReq := httptest.NewRequest("GET",
+		"/x/"+e.ws.Slug+"/apps/"+appB.ID.String()+"/oidc/authorize/resume?req="+reqID, nil)
+	resReq.Header.Set("Authorization", "Bearer "+accessJWTB)
+	resRR := httptest.NewRecorder()
+	e.router.ServeHTTP(resRR, resReq)
+	if resRR.Code != http.StatusBadRequest {
+		t.Errorf("wrong-app resume expected 400, got %d (%s)", resRR.Code, resRR.Body.String())
+	}
+	resBody := resRR.Body.String()
+	if !strings.Contains(resBody, "expired") && !strings.Contains(resBody, "consumed") && !strings.Contains(resBody, "already") {
+		t.Errorf("wrong-app resume should show the expired/consumed surface, body=%.300s", resBody)
 	}
 }
