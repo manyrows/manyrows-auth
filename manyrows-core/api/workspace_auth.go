@@ -1979,9 +1979,13 @@ func (handler *RequestHandler) WorkspaceResetPassword(w http.ResponseWriter, r *
 	// safety-net comparison.
 	if appBlocksPasswordReuse(ctxApp) {
 		var liveHash string
-		_ = handler.repo.DB().Pool().QueryRow(r.Context(),
+		if err := handler.repo.DB().Pool().QueryRow(r.Context(),
 			`SELECT COALESCE(password_hash, '') FROM users WHERE id = $1`, user.ID,
-		).Scan(&liveHash)
+		).Scan(&liveHash); err != nil {
+			log.Err(err).Msg("password reuse check failed to load live hash (reset)")
+			WriteError(w, r, "error.internalError", http.StatusInternalServerError)
+			return
+		}
 		reused, rerr := passwordRecentlyUsed(r.Context(), handler.repo, user.ID, newPw, liveHash)
 		if rerr != nil {
 			log.Err(rerr).Msg("password reuse check failed (reset)")

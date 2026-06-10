@@ -325,14 +325,16 @@ func TestResetPassword_ReuseBlocked(t *testing.T) {
 		t.Errorf("step 1: expected error.passwordRecentlyUsed in body, got: %s", rr.Body.String())
 	}
 
-	// --- Step 2: reset to B → must succeed ---
+	// --- Step 2: reset to B → must succeed (records B in history) ---
 	code2 := mintResetOTP(t, app.ID, emailAddr)
 	rr = doResetPassword(t, router, ws.Slug, app.ID.String(), emailAddr, code2, pwB)
 	if rr.Code != http.StatusOK {
 		t.Fatalf("step 2 (reset to B): expected 200, got %d: %s", rr.Code, rr.Body.String())
 	}
 
-	// --- Step 3: reset to B again → must be blocked (B is now in history) ---
+	// --- Step 3: reset to B again → must be blocked (B is the live hash) ---
+	// NOTE: this is satisfied by the live-hash safety net alone and does NOT
+	// prove that recordPasswordHistory ran on the reset path.
 	code3 := mintResetOTP(t, app.ID, emailAddr)
 	rr = doResetPassword(t, router, ws.Slug, app.ID.String(), emailAddr, code3, pwB)
 	if rr.Code != http.StatusBadRequest {
@@ -340,6 +342,27 @@ func TestResetPassword_ReuseBlocked(t *testing.T) {
 	}
 	if !strings.Contains(rr.Body.String(), "passwordRecentlyUsed") {
 		t.Errorf("step 3: expected error.passwordRecentlyUsed in body, got: %s", rr.Body.String())
+	}
+
+	pwC := "ThirdPassword!2026c"
+
+	// --- Step 4: reset to C → must succeed (live hash is now C) ---
+	code4 := mintResetOTP(t, app.ID, emailAddr)
+	rr = doResetPassword(t, router, ws.Slug, app.ID.String(), emailAddr, code4, pwC)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("step 4 (reset to C): expected 200, got %d: %s", rr.Code, rr.Body.String())
+	}
+
+	// --- Step 5: reset to B → must be blocked (B is in history from step 2,
+	// but the live hash is now C — only the history row recorded during step 2
+	// can catch this reuse, pinning recordPasswordHistory on the reset path) ---
+	code5 := mintResetOTP(t, app.ID, emailAddr)
+	rr = doResetPassword(t, router, ws.Slug, app.ID.String(), emailAddr, code5, pwB)
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("step 5 (reset to B after rotating to C): expected 400, got %d: %s", rr.Code, rr.Body.String())
+	}
+	if !strings.Contains(rr.Body.String(), "passwordRecentlyUsed") {
+		t.Errorf("step 5: expected error.passwordRecentlyUsed in body, got: %s", rr.Body.String())
 	}
 }
 
