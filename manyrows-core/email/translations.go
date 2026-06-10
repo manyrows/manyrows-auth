@@ -83,6 +83,12 @@ var translations = map[string]map[string]string{
 		"workspace.email_change.subject": "Your email change code for %s",
 		"workspace.email_change.body":    "Your email change verification code for %s is:\n\n%s\n\nThis code expires in 15 minutes.\nIf you didn't request this, you can ignore this email.",
 
+		// Email change — approval code sent to the OLD address when the
+		// change is requested. The current-inbox holder must actively
+		// consent before the swap can complete.
+		"workspace.email_change_old.subject": "Approve the email change on your %s account",
+		"workspace.email_change_old.body":    "Someone requested changing the email address on your %s account to a new address.\n\nTo approve, enter this code in the app:\n\n%s\n\nThis code expires in 15 minutes.\nIf you didn't request this, do NOT enter the code — and change your password immediately.",
+
 		// Email change — notification sent to the OLD address after a
 		// successful swap. Lets an account-takeover victim notice the
 		// change before the attacker can pivot deeper. Doesn't contain

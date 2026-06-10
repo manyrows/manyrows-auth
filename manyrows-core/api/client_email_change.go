@@ -29,6 +29,15 @@ const (
 // ClientRequestEmailChange initiates an email change for an app user.
 // POST /x/{workspaceSlug}/apps/{appId}/a/me/request-email-change
 //
+// On success two OTP codes are generated and stored:
+//   - code → code_hash: verification code emailed to the NEW address.
+//   - oldCode → old_code_hash: approval code emailed to the CURRENT (old)
+//     address so the existing-inbox holder must actively consent before the
+//     swap can complete.
+//
+// Both sends must succeed; either failure returns 500 and the DB row is
+// left in place (idempotent upsert — a retry overwrites it cleanly).
+//
 // Gated by app.AllowEmailChange — when admins flip it off, this
 // endpoint refuses regardless of UI state. AppKit also hides the
 // change-email block when the flag is false; this is the
@@ -164,8 +173,21 @@ func (handler *RequestHandler) ClientRequestEmailChange(w http.ResponseWriter, r
 		return
 	}
 
+	oldCode, err := generateOTP6()
+	if err != nil {
+		log.Err(err).Msg("Could not generate old-address otp")
+		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
+		return
+	}
+	oldCodeHash, err := hashOTP(otpID, oldCode, pepper)
+	if err != nil {
+		log.Err(err).Msg("Could not hash old-address otp")
+		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
+		return
+	}
+
 	// Upsert email change request
-	if err := handler.repo.UpsertEmailChangeRequest(ctx, otpID, identity.User.ID, app.ID, toEmail, codeHash, "", now.Add(clientEmailChangeTTL)); err != nil {
+	if err := handler.repo.UpsertEmailChangeRequest(ctx, otpID, identity.User.ID, app.ID, toEmail, codeHash, oldCodeHash, now.Add(clientEmailChangeTTL)); err != nil {
 		log.Err(err).Msg("Could not upsert email change request")
 		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 		return
@@ -188,6 +210,20 @@ func (handler *RequestHandler) ClientRequestEmailChange(w http.ResponseWriter, r
 	}
 	if err := handler.sendWorkspaceEmail(ctx, ws.ID, changeEmail); err != nil {
 		log.Err(err).Msg("Could not send email change code")
+		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
+		return
+	}
+
+	// Approval code to the CURRENT address — the old inbox must actively
+	// consent before the change can complete.
+	oldAddrEmail := &email.Email{
+		To:      identity.User.Email,
+		From:    email.WorkspaceFrom(emailName),
+		Subject: fmt.Sprintf(email.T(lang, "workspace.email_change_old.subject"), emailName),
+		Body:    fmt.Sprintf(email.T(lang, "workspace.email_change_old.body"), emailName, oldCode),
+	}
+	if err := handler.sendWorkspaceEmail(ctx, ws.ID, oldAddrEmail); err != nil {
+		log.Err(err).Msg("Could not send email change approval code to old address")
 		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 		return
 	}

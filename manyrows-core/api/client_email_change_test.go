@@ -422,3 +422,43 @@ func TestGetEmailChangeRequest_PopulatesAllFields(t *testing.T) {
 		t.Errorf("ExpiresAt = %v, want %v", got.ExpiresAt, expiresAt)
 	}
 }
+
+// TestClientRequestEmailChange_SendsBothCodes: the request stores two
+// distinct code hashes; one code goes to the OLD address, one to the NEW.
+//
+// Mail interception: the test harness uses email.NewEmailService(isDev=true)
+// which routes through consoleProvider — emails are printed to stdout but
+// not captured in memory. Sent mail is therefore NOT observable in tests;
+// we assert DB state only (both hashes populated and distinct).
+func TestClientRequestEmailChange_SendsBothCodes(t *testing.T) {
+	router, ws, app, _, userID, accessToken, cleanup := emailChangeTestSetup(t)
+	defer cleanup()
+
+	body, _ := json.Marshal(map[string]string{
+		"password": "correct-password",
+		"newEmail": "new-" + GenerateUniqueSlug("ec") + "@example.com",
+	})
+	req := httptest.NewRequest(http.MethodPost, requestEmailChangePath(ws, app), bytes.NewReader(body))
+	req.Header.Set("Authorization", "Bearer "+accessToken)
+	req.Header.Set("Content-Type", "application/json")
+
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rr.Code, rr.Body.String())
+	}
+
+	var codeHash, oldCodeHash string
+	if err := testEnv.DB.Pool().QueryRow(context.Background(),
+		`SELECT code_hash, old_code_hash FROM email_change_requests WHERE user_id = $1`, userID,
+	).Scan(&codeHash, &oldCodeHash); err != nil {
+		t.Fatalf("read request row: %v", err)
+	}
+	if codeHash == "" || oldCodeHash == "" {
+		t.Fatalf("expected both hashes set, got code=%q old=%q", codeHash, oldCodeHash)
+	}
+	if codeHash == oldCodeHash {
+		t.Fatalf("expected distinct hashes")
+	}
+}
