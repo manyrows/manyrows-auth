@@ -12,6 +12,8 @@ import (
 	"manyrows-core/crypto"
 	"manyrows-core/email"
 	"manyrows-core/webhook"
+
+	"github.com/rs/zerolog/log"
 )
 
 type RequestHandler struct {
@@ -51,6 +53,8 @@ func NewRequestHandler(repo *repo.Repo, adminAuthService *auth.Service, clientAu
 			for _, p := range prev {
 				previousTOTPKeys = append(previousTOTPKeys, auth.DeriveTokenSigningKey([]byte(p)))
 			}
+		} else {
+			log.Warn().Err(err).Msg("ignoring MANYROWS_SESSION_AUTH_KEY_PREVIOUS: invalid entry — token rotation grace window inactive")
 		}
 	}
 	// Tests pass nil for the encryptor when they only exercise endpoints

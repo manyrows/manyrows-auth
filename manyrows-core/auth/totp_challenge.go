@@ -156,6 +156,11 @@ func VerifyTOTPSetupChallenge(key []byte, token string) (userID uuid.UUID, appID
 // VerifyTOTPChallengeAny tries each key in order (current first, then
 // previous keys during a rotation grace window). Signing always uses the
 // current key; only verification fans out.
+//
+// Only ErrTOTPChallengeInvalid (HMAC mismatch) causes the next key to be
+// tried. Definitive errors such as ErrTOTPChallengeExpired stop immediately
+// so a clear sentinel reaches the caller rather than being masked by a later
+// key's HMAC mismatch.
 func VerifyTOTPChallengeAny(keys [][]byte, token string) (uuid.UUID, bool, error) {
 	var lastErr error
 	for _, k := range keys {
@@ -164,6 +169,11 @@ func VerifyTOTPChallengeAny(keys [][]byte, token string) (uuid.UUID, bool, error
 			return id, remember, nil
 		}
 		lastErr = err
+		// Only ErrTOTPChallengeInvalid means the HMAC didn't match this key —
+		// try the next one. Any other error (e.g. expired) is definitive; stop.
+		if !errors.Is(err, ErrTOTPChallengeInvalid) {
+			return uuid.Nil, false, err
+		}
 	}
 	if lastErr == nil {
 		lastErr = ErrTOTPChallengeInvalid
@@ -172,6 +182,9 @@ func VerifyTOTPChallengeAny(keys [][]byte, token string) (uuid.UUID, bool, error
 }
 
 // VerifyTOTPSetupChallengeAny — list variant of VerifyTOTPSetupChallenge.
+//
+// Only ErrTOTPSetupChallengeInvalid (HMAC mismatch) causes the next key to be
+// tried. Definitive errors such as ErrTOTPSetupChallengeExpired stop immediately.
 func VerifyTOTPSetupChallengeAny(keys [][]byte, token string) (uuid.UUID, uuid.UUID, bool, error) {
 	var lastErr error
 	for _, k := range keys {
@@ -180,6 +193,11 @@ func VerifyTOTPSetupChallengeAny(keys [][]byte, token string) (uuid.UUID, uuid.U
 			return u, a, remember, nil
 		}
 		lastErr = err
+		// Only ErrTOTPSetupChallengeInvalid means the HMAC didn't match this key —
+		// try the next one. Any other error (e.g. expired) is definitive; stop.
+		if !errors.Is(err, ErrTOTPSetupChallengeInvalid) {
+			return uuid.Nil, uuid.Nil, false, err
+		}
 	}
 	if lastErr == nil {
 		lastErr = ErrTOTPSetupChallengeInvalid

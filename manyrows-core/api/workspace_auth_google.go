@@ -275,7 +275,7 @@ func (handler *RequestHandler) processGoogleCallback(w http.ResponseWriter, r *h
 	}
 
 	// Verify CSRF state and confirm app ID matches
-	stateAppID, _, preloginSesID, err := auth.VerifyOAuthStateAny(r.Context(), handler.repo, handler.tokenVerifyKeys(), state, "google")
+	stateAppID, _, preloginSesID, _, err := auth.VerifyOAuthStateAny(r.Context(), handler.repo, handler.tokenVerifyKeys(), state, "google")
 	if err != nil {
 		WriteError(w, r, "error.invalidCredentials", http.StatusUnauthorized)
 		return

@@ -237,7 +237,7 @@ func (handler *RequestHandler) processExternalIDPCallback(w http.ResponseWriter,
 		return
 	}
 
-	stateAppID, _, preloginSesID, err := auth.VerifyOAuthStateAny(r.Context(), handler.repo, handler.tokenVerifyKeys(), state, idp.ProviderKey())
+	stateAppID, _, preloginSesID, matchedKey, err := auth.VerifyOAuthStateAny(r.Context(), handler.repo, handler.tokenVerifyKeys(), state, idp.ProviderKey())
 	if err != nil || stateAppID != app.ID {
 		WriteError(w, r, "error.invalidCredentials", http.StatusUnauthorized)
 		return
@@ -261,10 +261,11 @@ func (handler *RequestHandler) processExternalIDPCallback(w http.ResponseWriter,
 	baseURL := handler.AppBaseURL(app)
 	redirectURI := baseURL + "/x/" + ws.Slug + "/apps/" + app.ID.String() + "/auth/idp/" + idp.Slug + "/callback"
 
-	verifier, _ := derivePKCE(state, handler.totpKey)
+	// Derive with the key that actually verified the state — mid-rotation the state may be bound to a previous key.
+	verifier, _ := derivePKCE(state, matchedKey)
 	nonce := ""
 	if idp.Mode == core.ExternalIDPModeOIDC {
-		nonce = deriveNonce(state, handler.totpKey)
+		nonce = deriveNonce(state, matchedKey)
 	}
 
 	info, err := oidc.Authenticate(r.Context(), externalIDPProviderConfig(idp, string(clientSecret)), code, redirectURI, verifier, nonce)

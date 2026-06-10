@@ -174,31 +174,35 @@ func VerifyOAuthState(
 // store is touched, so wrong-key attempts return ErrOAuthStateInvalid
 // without burning the single-use row — only a successful HMAC match
 // proceeds to ConsumeOAuthState.
+//
+// The matched key is returned as the fourth value so callers that derive
+// per-flow material (PKCE verifier, OIDC nonce) from the key can use the
+// same key that verified the state — mid-rotation the state may be bound
+// to a previous key.
 func VerifyOAuthStateAny(
 	ctx context.Context,
 	store OAuthStateStore,
 	keys [][]byte,
 	token string,
 	expectedProvider string,
-) (uuid.UUID, string, *uuid.UUID, error) {
+) (uuid.UUID, string, *uuid.UUID, []byte, error) {
 	var lastErr error
 	for _, k := range keys {
 		appID, openerOrigin, preloginSesID, err := VerifyOAuthState(ctx, store, k, token, expectedProvider)
 		if err == nil {
-			return appID, openerOrigin, preloginSesID, nil
+			return appID, openerOrigin, preloginSesID, k, nil
 		}
 		lastErr = err
-		// Only ErrOAuthStateInvalid means the HMAC didn't match this key —
-		// try the next one. Any other error (expired, reused, store error)
-		// means the HMAC matched and the failure is definitive; stop here.
-		if err != ErrOAuthStateInvalid {
-			return uuid.Nil, "", nil, err
+		// ErrOAuthStateInvalid usually means the HMAC didn't match this key;
+		// other errors (expired, reused, store failures) are definitive — stop.
+		if !errors.Is(err, ErrOAuthStateInvalid) {
+			return uuid.Nil, "", nil, nil, err
 		}
 	}
 	if lastErr == nil {
 		lastErr = ErrOAuthStateInvalid
 	}
-	return uuid.Nil, "", nil, lastErr
+	return uuid.Nil, "", nil, nil, lastErr
 }
 
 // PeekOAuthStateOpenerOriginAny — list variant of PeekOAuthStateOpenerOrigin.
