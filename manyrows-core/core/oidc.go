@@ -101,6 +101,7 @@ type OIDCAppConfig struct {
 	ClientSecretHash       *string
 	RedirectURIs           []string
 	PostLogoutRedirectURIs []string
+	RequireConsent         bool
 }
 
 // HasClientSecret reports whether this app is configured as a

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"manyrows-core/core"
@@ -244,13 +245,15 @@ func (r *Repo) SweepExpiredOIDCPendingAuthorize(ctx context.Context) (int64, err
 func (r *Repo) GetAppOIDCConfig(ctx context.Context, appID uuid.UUID) (*core.OIDCAppConfig, error) {
 	const q = `
 		select oidc_enabled, oidc_client_secret_hash,
-		       oidc_redirect_uris, oidc_post_logout_redirect_uris
+		       oidc_redirect_uris, oidc_post_logout_redirect_uris,
+		       oidc_require_consent
 		from apps
 		where id = $1
 	`
 	var c core.OIDCAppConfig
 	err := r.db.Pool().QueryRow(ctx, q, appID).Scan(
 		&c.Enabled, &c.ClientSecretHash, &c.RedirectURIs, &c.PostLogoutRedirectURIs,
+		&c.RequireConsent,
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -269,6 +272,7 @@ type UpdateAppOIDCConfigParams struct {
 	ClientSecretHash       *string // pass nil to leave the existing hash unchanged; pass a non-nil empty string to clear it (public client)
 	RedirectURIs           []string
 	PostLogoutRedirectURIs []string
+	RequireConsent         bool
 }
 
 // UpdateAppOIDCConfig writes the four OIDC columns. ClientSecretHash
@@ -315,9 +319,10 @@ func (r *Repo) UpdateAppOIDCConfig(ctx context.Context, appID uuid.UUID, p Updat
 			set oidc_enabled = $2,
 			    oidc_redirect_uris = $3,
 			    oidc_post_logout_redirect_uris = $4,
+			    oidc_require_consent = $5,
 			    updated_at = now()
 			where id = $1
-		`, appID, p.Enabled, redirects, postLogout)
+		`, appID, p.Enabled, redirects, postLogout, p.RequireConsent)
 		if err != nil {
 			return fmt.Errorf("UpdateAppOIDCConfig: %w", err)
 		}
@@ -338,9 +343,10 @@ func (r *Repo) UpdateAppOIDCConfig(ctx context.Context, appID uuid.UUID, p Updat
 		    oidc_client_secret_hash = $3,
 		    oidc_redirect_uris = $4,
 		    oidc_post_logout_redirect_uris = $5,
+		    oidc_require_consent = $6,
 		    updated_at = now()
 		where id = $1
-	`, appID, p.Enabled, secret, redirects, postLogout)
+	`, appID, p.Enabled, secret, redirects, postLogout, p.RequireConsent)
 	if err != nil {
 		return fmt.Errorf("UpdateAppOIDCConfig: %w", err)
 	}
@@ -348,4 +354,63 @@ func (r *Repo) UpdateAppOIDCConfig(ctx context.Context, appID uuid.UUID, p Updat
 		return ErrNotFound
 	}
 	return nil
+}
+
+// =====================
+// oidc_consents
+// =====================
+
+// GetOIDCConsent returns the user's remembered consent scope for this app.
+// Returns ("", false, nil) when no consent row exists yet.
+func (r *Repo) GetOIDCConsent(ctx context.Context, userID, appID uuid.UUID) (string, bool, error) {
+	var scope string
+	err := r.db.Pool().QueryRow(ctx,
+		`select scope from oidc_consents where user_id = $1 and app_id = $2`,
+		userID, appID).Scan(&scope)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", false, nil
+	}
+	if err != nil {
+		return "", false, fmt.Errorf("GetOIDCConsent: %w", err)
+	}
+	return scope, true, nil
+}
+
+// UpsertOIDCConsent stores the union of the existing and newly granted
+// scope sets. Read-then-write: a concurrent racer losing a union token
+// is self-healing (the next authorize re-prompts and re-unions).
+func (r *Repo) UpsertOIDCConsent(ctx context.Context, userID, appID uuid.UUID, scope string) error {
+	existing, found, err := r.GetOIDCConsent(ctx, userID, appID)
+	if err != nil {
+		return err
+	}
+	merged := scope
+	if found {
+		merged = unionScopes(existing, scope)
+	}
+	_, err = r.db.Pool().Exec(ctx, `
+		insert into oidc_consents (user_id, app_id, scope, granted_at)
+		values ($1, $2, $3, now())
+		on conflict (user_id, app_id) do update set scope = excluded.scope, granted_at = now()
+	`, userID, appID, merged)
+	return err
+}
+
+// unionScopes returns a's tokens followed by b's tokens not already in a.
+func unionScopes(a, b string) string {
+	seen := make(map[string]bool)
+	var out []string
+	for _, t := range strings.Fields(a) {
+		if !seen[t] {
+			seen[t] = true
+			out = append(out, t)
+		}
+	}
+	for _, t := range strings.Fields(b) {
+		if !seen[t] {
+			seen[t] = true
+			out = append(out, t)
+		}
+	}
+	return strings.Join(out, " ")
 }

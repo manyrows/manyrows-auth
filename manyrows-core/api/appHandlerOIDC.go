@@ -40,6 +40,7 @@ type updateAppOIDCConfigRequest struct {
 	PostLogoutRedirectURIs []string `json:"postLogoutRedirectUris,omitempty"`
 	RegenerateSecret       bool     `json:"regenerateSecret,omitempty"`
 	ClearSecret            bool     `json:"clearSecret,omitempty"`
+	RequireConsent         *bool    `json:"requireConsent,omitempty"`
 }
 
 // adminAppOIDCResponse extends adminAppResponse with OIDC config so a
@@ -57,6 +58,7 @@ type adminAppOIDCResponse struct {
 	OIDCDiscoveryURL           string   `json:"oidcDiscoveryUrl"`
 	OIDCRedirectURIs           []string `json:"oidcRedirectUris"`
 	OIDCPostLogoutRedirectURIs []string `json:"oidcPostLogoutRedirectUris"`
+	OIDCRequireConsent         bool     `json:"oidcRequireConsent"`
 }
 
 // HandleUpdateAppOIDCConfig is PUT /admin/.../projects/{pid}/apps/{appId}/oidc-config.
@@ -116,6 +118,10 @@ func (handler *RequestHandler) HandleUpdateAppOIDCConfig(w http.ResponseWriter, 
 	if req.PostLogoutRedirectURIs != nil {
 		postLogout = req.PostLogoutRedirectURIs
 	}
+	requireConsent := curCfg.RequireConsent
+	if req.RequireConsent != nil {
+		requireConsent = *req.RequireConsent
+	}
 
 	// Enabling OIDC with no redirect URIs leaves the app unusable.
 	// Catch it here rather than letting the customer find out at
@@ -134,6 +140,7 @@ func (handler *RequestHandler) HandleUpdateAppOIDCConfig(w http.ResponseWriter, 
 		Enabled:                enabled,
 		RedirectURIs:           redirects,
 		PostLogoutRedirectURIs: postLogout,
+		RequireConsent:         requireConsent,
 	}
 	switch {
 	case req.RegenerateSecret:
@@ -234,6 +241,7 @@ func (handler *RequestHandler) buildAdminAppOIDCResponse(app core.App, ws *core.
 		OIDCIssuerURL:              issuer,
 		OIDCRedirectURIs:           cfg.RedirectURIs,
 		OIDCPostLogoutRedirectURIs: cfg.PostLogoutRedirectURIs,
+		OIDCRequireConsent:         cfg.RequireConsent,
 	}
 	if issuer != "" {
 		resp.OIDCDiscoveryURL = issuer + "/.well-known/openid-configuration"
