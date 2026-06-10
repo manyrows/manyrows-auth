@@ -41,3 +41,4 @@ export {
   useRevokeOrganizationInvite,
 } from "./hooks/organizations";
 export { useSessions, useRevokeSession } from "./hooks/sessions";
+export { usePasskeys, useRenamePasskey, useDeletePasskey } from "./hooks/passkeys";

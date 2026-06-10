@@ -64,4 +64,7 @@ export {
   useRevokeOrganizationInvite,
   useSessions,
   useRevokeSession,
+  usePasskeys,
+  useRenamePasskey,
+  useDeletePasskey,
 } from "./hooks";
