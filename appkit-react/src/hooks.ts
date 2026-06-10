@@ -29,3 +29,4 @@ export {
   useCreateOrganizationInvite,
   useRevokeOrganizationInvite,
 } from "./hooks/organizations";
+export { useSessions, useRevokeSession } from "./hooks/sessions";

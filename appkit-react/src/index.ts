@@ -54,4 +54,6 @@ export {
   useOrganizationInvites,
   useCreateOrganizationInvite,
   useRevokeOrganizationInvite,
+  useSessions,
+  useRevokeSession,
 } from "./hooks";
