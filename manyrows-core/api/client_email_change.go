@@ -165,7 +165,7 @@ func (handler *RequestHandler) ClientRequestEmailChange(w http.ResponseWriter, r
 	}
 
 	// Upsert email change request
-	if err := handler.repo.UpsertEmailChangeRequest(ctx, otpID, identity.User.ID, app.ID, toEmail, codeHash, now.Add(clientEmailChangeTTL)); err != nil {
+	if err := handler.repo.UpsertEmailChangeRequest(ctx, otpID, identity.User.ID, app.ID, toEmail, codeHash, "", now.Add(clientEmailChangeTTL)); err != nil {
 		log.Err(err).Msg("Could not upsert email change request")
 		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 		return

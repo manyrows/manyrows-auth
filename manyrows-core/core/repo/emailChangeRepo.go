@@ -13,14 +13,15 @@ var ErrEmailChangeRequestNotFound = errors.New("email change request not found")
 
 // EmailChangeRequest represents a pending email change for an app user.
 type EmailChangeRequest struct {
-	ID        uuid.UUID
-	UserID    uuid.UUID
-	AppID     uuid.UUID
-	NewEmail  string
-	CodeHash  string
-	ExpiresAt time.Time
-	Attempts  int
-	CreatedAt time.Time
+	ID          uuid.UUID
+	UserID      uuid.UUID
+	AppID       uuid.UUID
+	NewEmail    string
+	CodeHash    string
+	OldCodeHash string
+	ExpiresAt   time.Time
+	Attempts    int
+	CreatedAt   time.Time
 }
 
 // IsActive returns true if the request has not expired.
@@ -32,28 +33,29 @@ func (r *EmailChangeRequest) IsActive(now time.Time) bool {
 func (r *Repo) UpsertEmailChangeRequest(
 	ctx context.Context,
 	id, userID, appID uuid.UUID,
-	newEmail, codeHash string,
+	newEmail, codeHash, oldCodeHash string,
 	expiresAt time.Time,
 ) error {
 	const q = `
-INSERT INTO email_change_requests (id, user_id, app_id, new_email, code_hash, expires_at, created_at)
-VALUES ($1, $2, $3, $4, $5, $6, now())
+INSERT INTO email_change_requests (id, user_id, app_id, new_email, code_hash, old_code_hash, expires_at, created_at)
+VALUES ($1, $2, $3, $4, $5, $6, $7, now())
 ON CONFLICT (user_id) DO UPDATE SET
   id = EXCLUDED.id,
   app_id = EXCLUDED.app_id,
   new_email = EXCLUDED.new_email,
   code_hash = EXCLUDED.code_hash,
+  old_code_hash = EXCLUDED.old_code_hash,
   expires_at = EXCLUDED.expires_at,
   created_at = now();
 `
-	_, err := r.db.Pool().Exec(ctx, q, id, userID, appID, newEmail, codeHash, expiresAt)
+	_, err := r.db.Pool().Exec(ctx, q, id, userID, appID, newEmail, codeHash, oldCodeHash, expiresAt)
 	return err
 }
 
 // GetEmailChangeRequest returns the pending email change request for a user.
 func (r *Repo) GetEmailChangeRequest(ctx context.Context, userID uuid.UUID) (*EmailChangeRequest, error) {
 	const q = `
-SELECT id, user_id, app_id, new_email, code_hash, expires_at, attempts, created_at
+SELECT id, user_id, app_id, new_email, code_hash, old_code_hash, expires_at, attempts, created_at
 FROM email_change_requests
 WHERE user_id = $1
 LIMIT 1;
@@ -61,7 +63,7 @@ LIMIT 1;
 	var req EmailChangeRequest
 	err := r.db.Pool().QueryRow(ctx, q, userID).Scan(
 		&req.ID, &req.UserID, &req.AppID,
-		&req.NewEmail, &req.CodeHash, &req.ExpiresAt, &req.Attempts, &req.CreatedAt,
+		&req.NewEmail, &req.CodeHash, &req.OldCodeHash, &req.ExpiresAt, &req.Attempts, &req.CreatedAt,
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {

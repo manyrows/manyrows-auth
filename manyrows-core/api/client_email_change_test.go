@@ -241,6 +241,7 @@ func TestClientVerifyEmailChange_Success(t *testing.T) {
 		app.ID,
 		newEmail,
 		codeHash,
+		"",
 		time.Now().UTC().Add(15*time.Minute),
 	)
 	if err != nil {
@@ -298,6 +299,7 @@ func TestClientVerifyEmailChange_WrongCode(t *testing.T) {
 		app.ID,
 		newEmail,
 		codeHash,
+		"",
 		time.Now().UTC().Add(15*time.Minute),
 	)
 	if err != nil {
@@ -355,7 +357,7 @@ func TestEmailChange_HashSymmetry(t *testing.T) {
 	requestHash := testHashOTP(otpID, code, testOTPPepper)
 
 	if err := testEnv.Repo.UpsertEmailChangeRequest(ctx, otpID, userID, app.ID,
-		"sym-"+GenerateUniqueSlug("ec")+"@example.com", requestHash,
+		"sym-"+GenerateUniqueSlug("ec")+"@example.com", requestHash, "",
 		time.Now().UTC().Add(15*time.Minute),
 	); err != nil {
 		t.Fatalf("UpsertEmailChangeRequest: %v", err)
@@ -390,7 +392,7 @@ func TestGetEmailChangeRequest_PopulatesAllFields(t *testing.T) {
 	codeHash := testHashOTP(otpID, "123456", testOTPPepper)
 	expiresAt := time.Now().UTC().Add(15 * time.Minute).Truncate(time.Microsecond)
 
-	if err := testEnv.Repo.UpsertEmailChangeRequest(ctx, otpID, userID, app.ID, newEmail, codeHash, expiresAt); err != nil {
+	if err := testEnv.Repo.UpsertEmailChangeRequest(ctx, otpID, userID, app.ID, newEmail, codeHash, "", expiresAt); err != nil {
 		t.Fatalf("UpsertEmailChangeRequest: %v", err)
 	}
 
@@ -412,6 +414,9 @@ func TestGetEmailChangeRequest_PopulatesAllFields(t *testing.T) {
 	}
 	if got.CodeHash != codeHash {
 		t.Errorf("CodeHash = %q, want %q", got.CodeHash, codeHash)
+	}
+	if got.OldCodeHash != "" {
+		t.Errorf("OldCodeHash = %q, want %q", got.OldCodeHash, "")
 	}
 	if !got.ExpiresAt.Equal(expiresAt) {
 		t.Errorf("ExpiresAt = %v, want %v", got.ExpiresAt, expiresAt)
