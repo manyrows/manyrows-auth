@@ -1494,6 +1494,20 @@ func (handler *RequestHandler) WorkspaceSetPassword(w http.ResponseWriter, r *ht
 		return
 	}
 
+	// Per-app reuse prevention: block the newest 5 recorded passwords.
+	if appBlocksPasswordReuse(ctxApp) {
+		reused, rerr := passwordRecentlyUsed(r.Context(), handler.repo, ses.UserID, pw, existingHash)
+		if rerr != nil {
+			log.Err(rerr).Msg("password reuse check failed")
+			WriteError(w, r, "error.internalError", http.StatusInternalServerError)
+			return
+		}
+		if reused {
+			WriteError(w, r, "error.passwordRecentlyUsed", http.StatusBadRequest)
+			return
+		}
+	}
+
 	// Hash password
 	newHash, err := passwordhash.Hash(pw)
 	if err != nil {
@@ -1517,6 +1531,9 @@ func (handler *RequestHandler) WorkspaceSetPassword(w http.ResponseWriter, r *ht
 		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 		return
 	}
+
+	// Record regardless of the toggle so enabling it later has history.
+	recordPasswordHistory(r.Context(), handler.repo, user.ID, newHash)
 
 	// Invalidate all other sessions — password change should revoke
 	// existing access. best-effort: a failure here would leave stale
