@@ -204,8 +204,9 @@ export function useDeleteAccount(): (params: { password: string }) => Promise<vo
 
 /**
  * Returns a function that starts an email change. The server sends a 6-digit
- * code to the NEW address; complete the change with `useVerifyEmailChange`.
- * Requires the current password.
+ * code to BOTH the current (old) address and the new address; complete the
+ * change with `useVerifyEmailChange`, passing both codes. Requires the
+ * current password.
  *
  * ```tsx
  * const requestEmailChange = useRequestEmailChange();
@@ -225,23 +226,25 @@ export function useRequestEmailChange(): (params: { newEmail: string; password: 
 }
 
 /**
- * Returns a function that completes a pending email change with the 6-digit
- * code sent to the new address, then refreshes the snapshot so `useUser()`
- * reflects the new email.
+ * Returns a function that completes a pending email change. The request
+ * step emails a 6-digit code to BOTH addresses — the code from the user's
+ * current (old) address approves the change; the code from the new address
+ * proves inbox ownership. Pass both. Refreshes the snapshot on success so
+ * `useUser()` reflects the new email.
  *
  * ```tsx
  * const verifyEmailChange = useVerifyEmailChange();
- * await verifyEmailChange({ code });
+ * await verifyEmailChange({ oldCode, newCode });
  * ```
  */
-export function useVerifyEmailChange(): (params: { code: string }) => Promise<void> {
+export function useVerifyEmailChange(): (params: { oldCode: string; newCode: string }) => Promise<void> {
   const { snapshot, refresh } = useAppKit();
   const token = snapshot?.jwtToken;
   const baseURL = snapshot?.appBaseURL;
-  return useCallback(async (params: { code: string }) => {
+  return useCallback(async (params: { oldCode: string; newCode: string }) => {
     await authedJson(token, baseURL, `/a/me/verify-email-change`, {
       method: "POST",
-      body: JSON.stringify({ code: params.code }),
+      body: JSON.stringify({ oldCode: params.oldCode, newCode: params.newCode }),
     }, "Failed to verify email change");
     refresh();
   }, [token, baseURL, refresh]);

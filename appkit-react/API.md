@@ -703,7 +703,7 @@ await deleteAccount({ password });
 
 ### `useRequestEmailChange()`
 
-Returns a function that starts an email change. The server sends a 6-digit verification code to the **new** address. Complete the change with `useVerifyEmailChange`. Requires the current password.
+Returns a function that starts an email change. The server sends a 6-digit verification code to **both** the current (old) address and the new address. Complete the change with `useVerifyEmailChange`, passing both codes. Requires the current password.
 
 **Returns: `(params: { newEmail: string; password: string }) => Promise<void>`**
 
@@ -716,13 +716,13 @@ await requestEmailChange({ newEmail: "new@example.com", password });
 
 ### `useVerifyEmailChange()`
 
-Returns a function that completes a pending email change using the 6-digit code sent to the new address. Refreshes the snapshot so `useUser()` reflects the new email.
+Returns a function that completes a pending email change. The request step emails a 6-digit code to **both** the current (old) address and the new address — the old-address code approves the change; the new-address code proves inbox ownership. Pass both. Refreshes the snapshot so `useUser()` reflects the new email.
 
-**Returns: `(params: { code: string }) => Promise<void>`**
+**Returns: `(params: { oldCode: string; newCode: string }) => Promise<void>`**
 
 ```tsx
 const verifyEmailChange = useVerifyEmailChange();
-await verifyEmailChange({ code: "123456" });
+await verifyEmailChange({ oldCode: "222333", newCode: "123456" });
 ```
 
 ---

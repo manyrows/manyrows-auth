@@ -115,14 +115,16 @@ describe("useRequestEmailChange / useVerifyEmailChange", () => {
       .toEqual({ newEmail: "new@example.com", password: "hunter2hunter2" });
   });
 
-  it("POSTs the code to verify-email-change and refreshes the snapshot", async () => {
+  it("POSTs both codes to verify-email-change and refreshes the snapshot", async () => {
     const fetchMock = stubFetch(200, {});
     const { result } = renderHook(() => useVerifyEmailChange());
-    await result.current({ code: "123456" });
+    await result.current({ oldCode: "222333", newCode: "123456" });
     expect(fetchMock).toHaveBeenCalledWith(
       "https://api.test/x/acme/apps/app1/a/me/verify-email-change",
       expect.objectContaining({ method: "POST" }),
     );
+    expect(JSON.parse((fetchMock.mock.calls[0][1] as RequestInit).body as string))
+      .toEqual({ oldCode: "222333", newCode: "123456" });
     expect(h.ctx.refresh).toHaveBeenCalledOnce();
   });
 });
