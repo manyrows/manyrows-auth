@@ -96,9 +96,9 @@ func TestDeleteOldWebhookDeliveries(t *testing.T) {
 	wh := insertWebhook(t, appID, "active")
 	now := time.Now().UTC()
 
-	insertDelivery(t, wh, "success", intPtr(200), now.Add(-40*24*time.Hour), 1, nil) // old terminal → delete
-	insertDelivery(t, wh, "failed", intPtr(500), now.Add(-31*24*time.Hour), 5, nil)  // old terminal → delete
-	insertDelivery(t, wh, "success", intPtr(200), now.Add(-1*24*time.Hour), 1, nil)  // recent terminal → keep
+	insertDelivery(t, wh, "success", intPtr(200), now.Add(-40*24*time.Hour), 1, nil)                 // old terminal → delete
+	insertDelivery(t, wh, "failed", intPtr(500), now.Add(-31*24*time.Hour), 5, nil)                  // old terminal → delete
+	insertDelivery(t, wh, "success", intPtr(200), now.Add(-1*24*time.Hour), 1, nil)                  // recent terminal → keep
 	insertDelivery(t, wh, "pending", nil, now.Add(-40*24*time.Hour), 2, timePtr(now.Add(time.Hour))) // old pending → keep
 
 	n, err := testEnv.Repo.DeleteOldWebhookDeliveries(context.Background(), 30*24*time.Hour)

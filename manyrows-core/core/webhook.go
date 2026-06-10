@@ -8,10 +8,10 @@ import (
 )
 
 type Webhook struct {
-	ID          uuid.UUID `json:"id" db:"id"`
-	ProjectID   uuid.UUID `json:"-" db:"project_id"` // legacy, use AppID
-	AppID       uuid.UUID `json:"appId" db:"app_id"`
-	URL         string    `json:"url" db:"url"`
+	ID        uuid.UUID `json:"id" db:"id"`
+	ProjectID uuid.UUID `json:"-" db:"project_id"` // legacy, use AppID
+	AppID     uuid.UUID `json:"appId" db:"app_id"`
+	URL       string    `json:"url" db:"url"`
 	// Secret is the plaintext signing secret. It is only ever populated
 	// transiently: returned ONCE in the create/rotate API response, and
 	// read from the legacy plaintext column for webhooks created before
@@ -24,10 +24,10 @@ type Webhook struct {
 	SecretEncrypted []byte    `json:"-" db:"secret_encrypted"`
 	Events          []string  `json:"events" db:"events"`
 	Status          string    `json:"status" db:"status"`
-	Description string    `json:"description" db:"description"`
-	CreatedAt   time.Time `json:"createdAt" db:"created_at"`
-	UpdatedAt   time.Time `json:"updatedAt" db:"updated_at"`
-	CreatedBy   uuid.UUID `json:"createdBy" db:"created_by"`
+	Description     string    `json:"description" db:"description"`
+	CreatedAt       time.Time `json:"createdAt" db:"created_at"`
+	UpdatedAt       time.Time `json:"updatedAt" db:"updated_at"`
+	CreatedBy       uuid.UUID `json:"createdBy" db:"created_by"`
 }
 
 type WebhookDelivery struct {
