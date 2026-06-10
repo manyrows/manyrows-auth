@@ -137,7 +137,7 @@ docker compose down
 | `DATABASE_URL` 또는 `MANYROWS_DATABASE_URL`       | (필수) | Postgres 연결 문자열. |
 | `MANYROWS_FROM_EMAIL`                             | (없음) | 발신 메일(관리자 등록, 비밀번호 재설정, 매직 링크)의 보낸 사람 주소. **프로덕션 필수** - From이 비어 있으면 이메일 서비스가 발송을 거부하고 오류를 로깅합니다. DKIM/SPF를 통과하도록 자체 도메인의 주소를 사용하세요. |
 | `MANYROWS_BASE_URL`                               | (자동 고정) | 첫 `/admin/register` 시 자동으로 고정됩니다. 알려진 리버스 프록시 뒤에서는 명시적으로 설정하세요. |
-| `MANYROWS_DB_SCHEMA`                              | `manyrows` | Postgres 스키마. `manyrows`가 데이터베이스의 다른 것과 충돌하면 변경하세요. |
+| `MANYROWS_DB_SCHEMA`                              | `manyrowsauth` | Postgres 스키마. `manyrowsauth`가 데이터베이스의 다른 것과 충돌하면 변경하세요. |
 | `MANYROWS_SMTP_HOST`/`PORT`/`USERNAME`/`PASSWORD` | (없음) | 발신 메일. 설정하지 않으면 메일이 stdout에 로깅됩니다. |
 | `MANYROWS_TURNSTILE_ENABLED`                      | `false` | 등록/로그인 시 Cloudflare 봇 검증. 기본은 꺼져 있습니다. |
 
