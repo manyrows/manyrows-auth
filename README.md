@@ -1,5 +1,7 @@
 # ManyRows Auth
 
+**English** | [한국어](./README.ko.md)
+
 Self-hostable user authentication you can drop in front of your apps.
 Sign-in, password reset, email verification, magic links, OAuth (Google,
 Apple, Microsoft, GitHub, Kakao, Naver) plus any OIDC/OAuth2 provider, passkeys,
