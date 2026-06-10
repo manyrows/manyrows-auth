@@ -1,7 +1,6 @@
 package api
 
 import (
-	"crypto/subtle"
 	"errors"
 	"manyrows-core/auth"
 	"manyrows-core/core"
@@ -184,7 +183,7 @@ func (handler *RequestHandler) VerifyValidationCode(w http.ResponseWriter, r *ht
 	}
 	_ = handler.repo.InsertAttempt(r.Context(), attemptPurposeAdminEmailValidateVerify, subject, ip)
 
-	pepper, err := handler.getOTPPepper()
+	peppers, err := handler.getOTPPeppers()
 	if err != nil {
 		log.Err(err).Msg("Missing OTP pepper")
 		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
@@ -264,14 +263,14 @@ func (handler *RequestHandler) VerifyValidationCode(w http.ResponseWriter, r *ht
 		return
 	}
 
-	expectedHash, err := hashOTP(otp.ID, code, pepper)
+	match, err := otpHashMatches(otp.ID, code, peppers, otp.CodeHash)
 	if err != nil {
 		log.Err(err).Msg("Could not hash otp for verify")
 		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 		return
 	}
 
-	if subtle.ConstantTimeCompare([]byte(otp.CodeHash), []byte(expectedHash)) != 1 {
+	if !match {
 		// Attempt counter already incremented atomically above.
 		// If we just hit the cap, burn the OTP so retries don't
 		// see an active row.

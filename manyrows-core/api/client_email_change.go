@@ -1,7 +1,6 @@
 package api
 
 import (
-	"crypto/subtle"
 	"errors"
 	"fmt"
 	"net/http"
@@ -331,7 +330,7 @@ func (handler *RequestHandler) ClientVerifyEmailChange(w http.ResponseWriter, r 
 	}
 
 	// Verify code hash
-	pepper, err := handler.getOTPPepper()
+	peppers, err := handler.getOTPPeppers()
 	if err != nil {
 		log.Err(err).Msg("Missing OTP pepper")
 		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
@@ -339,8 +338,11 @@ func (handler *RequestHandler) ClientVerifyEmailChange(w http.ResponseWriter, r 
 	}
 
 	// ClientRequestEmailChange hashes with the OTP row id (a fresh UUID
-	// per request), so verify must use the same.
-	expectedNewHash, err := hashOTP(req.ID, newCode, pepper)
+	// per request), so verify must use the same. Compute both comparisons
+	// before branching — no short-circuit — so timing does not reveal
+	// which code was wrong. otpHashMatches iterates all peppers in order,
+	// keeping per-hash constant-time behaviour.
+	newOK, err := otpHashMatches(req.ID, newCode, peppers, req.CodeHash)
 	if err != nil {
 		log.Err(err).Msg("Could not hash otp for verify")
 		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
@@ -348,18 +350,18 @@ func (handler *RequestHandler) ClientVerifyEmailChange(w http.ResponseWriter, r 
 	}
 	// "old:" domain-separates the two hash slots so equal codes can't
 	// produce equal hashes.
-	expectedOldHash, err := hashOTP(req.ID, "old:"+oldCode, pepper)
+	oldOK, err := otpHashMatches(req.ID, "old:"+oldCode, peppers, req.OldCodeHash)
 	if err != nil {
 		log.Err(err).Msg("Could not hash old otp for verify")
 		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 		return
 	}
+	// req.OldCodeHash == "" means the creation site didn't set it; treat
+	// as mismatch (same as the original subtle.ConstantTimeCompare path).
+	if req.OldCodeHash == "" {
+		oldOK = false
+	}
 
-	// Compute both comparisons before branching — no short-circuit — so
-	// timing does not reveal which code was wrong.
-	newOK := subtle.ConstantTimeCompare([]byte(req.CodeHash), []byte(expectedNewHash)) == 1
-	oldOK := req.OldCodeHash != "" &&
-		subtle.ConstantTimeCompare([]byte(req.OldCodeHash), []byte(expectedOldHash)) == 1
 	if !newOK || !oldOK {
 		// Wrong code: bump the per-request counter and, if we just
 		// hit the cap, delete the row so further attempts fall into

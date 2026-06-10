@@ -2,7 +2,6 @@ package api
 
 import (
 	"context"
-	"crypto/subtle"
 	"errors"
 	"net/http"
 	"strings"
@@ -283,7 +282,7 @@ func (handler *RequestHandler) verifyClientEmailOTP(ctx context.Context, appID u
 	if len(code) != 6 || !isDigits(code) {
 		return errors.New("invalid code format")
 	}
-	pepper, err := handler.getOTPPepper()
+	peppers, err := handler.getOTPPeppers()
 	if err != nil {
 		return err
 	}
@@ -315,11 +314,11 @@ func (handler *RequestHandler) verifyClientEmailOTP(ctx context.Context, appID u
 		}
 		return err
 	}
-	expectedHash, err := hashOTP(otp.ID, code, pepper)
+	match, err := otpHashMatches(otp.ID, code, peppers, otp.CodeHash)
 	if err != nil {
 		return err
 	}
-	if subtle.ConstantTimeCompare([]byte(otp.CodeHash), []byte(expectedHash)) != 1 {
+	if !match {
 		// Attempt counter already incremented atomically above.
 		return errors.New("otp mismatch")
 	}

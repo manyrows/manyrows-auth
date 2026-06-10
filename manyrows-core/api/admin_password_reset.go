@@ -1,7 +1,6 @@
 package api
 
 import (
-	"crypto/subtle"
 	"errors"
 	"net/http"
 	"strings"
@@ -252,7 +251,7 @@ func (handler *RequestHandler) AdminResetPassword(w http.ResponseWriter, r *http
 		return
 	}
 
-	pepper, err := handler.getOTPPepper()
+	peppers, err := handler.getOTPPeppers()
 	if err != nil {
 		log.Err(err).Msg("Missing OTP pepper")
 		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
@@ -321,14 +320,14 @@ func (handler *RequestHandler) AdminResetPassword(w http.ResponseWriter, r *http
 		return
 	}
 
-	expectedHash, err := hashOTP(otp.ID, code, pepper)
+	match, err := otpHashMatches(otp.ID, code, peppers, otp.CodeHash)
 	if err != nil {
 		log.Err(err).Msg("Could not hash otp for verify")
 		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 		return
 	}
 
-	if subtle.ConstantTimeCompare([]byte(otp.CodeHash), []byte(expectedHash)) != 1 {
+	if !match {
 		// Attempt counter already incremented atomically above.
 		// If we just hit the cap, burn the OTP so retries fall
 		// through the "no active OTP" branch.

@@ -158,6 +158,44 @@ func hashOTP(otpID uuid.UUID, code string, pepper string) (string, error) {
 	return hex.EncodeToString(mac.Sum(nil)), nil
 }
 
+// getOTPPeppers returns the verification pepper list: the current pepper
+// first, then any _PREVIOUS peppers that are still in the rotation grace
+// window. Hash CREATION always uses getOTPPepper() (current only).
+func (handler *RequestHandler) getOTPPeppers() ([]string, error) {
+	current, err := handler.getOTPPepper()
+	if err != nil {
+		return nil, err
+	}
+	peppers := []string{current}
+	type otpPepperPreviousGetter interface {
+		GetOTPPepperPrevious() ([]string, error)
+	}
+	if g, ok := any(handler.config).(otpPepperPreviousGetter); ok {
+		prev, perr := g.GetOTPPepperPrevious()
+		if perr != nil {
+			return nil, perr
+		}
+		peppers = append(peppers, prev...)
+	}
+	return peppers, nil
+}
+
+// otpHashMatches reports whether code (hashed with any pepper in the list,
+// current first) matches storedHash. Constant-time per comparison; the
+// pepper loop only runs during rotation grace windows.
+func otpHashMatches(otpID uuid.UUID, code string, peppers []string, storedHash string) (bool, error) {
+	for _, pepper := range peppers {
+		expected, err := hashOTP(otpID, code, pepper)
+		if err != nil {
+			return false, err
+		}
+		if subtle.ConstantTimeCompare([]byte(storedHash), []byte(expected)) == 1 {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
 func isDigits(s string) bool {
 	if s == "" {
 		return false
@@ -634,7 +672,7 @@ func (handler *RequestHandler) WorkspaceLogin(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	pepper, err := handler.getOTPPepper()
+	peppers, err := handler.getOTPPeppers()
 	if err != nil {
 		log.Err(err).Msg("Missing OTP pepper")
 		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
@@ -695,14 +733,14 @@ func (handler *RequestHandler) WorkspaceLogin(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	expectedHash, err := hashOTP(otp.ID, code, pepper)
+	match, err := otpHashMatches(otp.ID, code, peppers, otp.CodeHash)
 	if err != nil {
 		log.Err(err).Msg("Could not hash otp for verify")
 		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 		return
 	}
 
-	if subtle.ConstantTimeCompare([]byte(otp.CodeHash), []byte(expectedHash)) != 1 {
+	if !match {
 		// Attempt counter already incremented atomically above.
 		otpLoginFailed(core.AuthFailInvalidCode)
 		WriteError(w, r, "error.invalidCode", http.StatusUnauthorized)
@@ -1884,7 +1922,7 @@ func (handler *RequestHandler) WorkspaceResetPassword(w http.ResponseWriter, r *
 	}
 	_ = handler.repo.InsertAttempt(r.Context(), attemptPurposeWorkspaceResetPWVerify, toEmail, ip)
 
-	pepper, err := handler.getOTPPepper()
+	peppers, err := handler.getOTPPeppers()
 	if err != nil {
 		log.Err(err).Msg("Missing OTP pepper")
 		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
@@ -1940,14 +1978,14 @@ func (handler *RequestHandler) WorkspaceResetPassword(w http.ResponseWriter, r *
 		return
 	}
 
-	expectedHash, err := hashOTP(otp.ID, code, pepper)
+	match, err := otpHashMatches(otp.ID, code, peppers, otp.CodeHash)
 	if err != nil {
 		log.Err(err).Msg("Could not hash otp for verify")
 		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 		return
 	}
 
-	if subtle.ConstantTimeCompare([]byte(otp.CodeHash), []byte(expectedHash)) != 1 {
+	if !match {
 		// Attempt counter already incremented atomically above.
 		WriteError(w, r, "error.invalidCode", http.StatusUnauthorized)
 		return
