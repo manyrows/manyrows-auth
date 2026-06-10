@@ -55,7 +55,7 @@ func (handler *RequestHandler) IssueTOTPSetupChallenge(userID, appID uuid.UUID, 
 // bound appID against the URL-resolved app, returns the user record
 // and rememberMe flag, or writes an HTTP error and returns false.
 func (handler *RequestHandler) resolveTOTPSetupChallenge(w http.ResponseWriter, r *http.Request, ctxApp *core.App, rawToken string) (*core.User, bool, bool) {
-	userID, appID, rememberMe, err := auth.VerifyTOTPSetupChallenge(handler.totpKey, strings.TrimSpace(rawToken))
+	userID, appID, rememberMe, err := auth.VerifyTOTPSetupChallengeAny(handler.tokenVerifyKeys(), strings.TrimSpace(rawToken))
 	if err != nil {
 		if errors.Is(err, auth.ErrTOTPSetupChallengeExpired) {
 			WriteError(w, r, "error.totpSetupChallengeExpired", http.StatusUnauthorized)

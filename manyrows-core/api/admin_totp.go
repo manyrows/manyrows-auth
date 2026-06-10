@@ -269,7 +269,7 @@ func (handler *RequestHandler) AdminTOTPVerify(w http.ResponseWriter, r *http.Re
 	// Without a per-subject cap, a multi-IP attacker who already cleared the
 	// password step gets the full per-IP budget against each IP for the same
 	// account; the per-subject cap bounds the total across IPs.
-	accountID, _, err := auth.VerifyTOTPChallenge(handler.totpKey, req.ChallengeToken)
+	accountID, _, err := auth.VerifyTOTPChallengeAny(handler.tokenVerifyKeys(), req.ChallengeToken)
 	if err != nil {
 		if errors.Is(err, auth.ErrTOTPChallengeExpired) {
 			WriteError(w, r, "error.totpChallengeExpired", http.StatusUnauthorized)

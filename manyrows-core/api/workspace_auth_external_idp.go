@@ -193,7 +193,7 @@ func (handler *RequestHandler) WorkspaceExternalIDPAuthorize(w http.ResponseWrit
 // GET /x/{slug}/apps/{appId}/auth/idp/{providerSlug}/callback?code=…&state=…
 func (handler *RequestHandler) WorkspaceExternalIDPCallback(w http.ResponseWriter, r *http.Request) {
 	state := strings.TrimSpace(r.URL.Query().Get("state"))
-	targetOrigin := sanitizeTargetOrigin(auth.PeekOAuthStateOpenerOrigin(r.Context(), handler.repo, handler.totpKey, state))
+	targetOrigin := sanitizeTargetOrigin(auth.PeekOAuthStateOpenerOriginAny(r.Context(), handler.repo, handler.tokenVerifyKeys(), state))
 
 	buf := newBufferedResponse()
 	handler.processExternalIDPCallback(buf, r)
@@ -237,7 +237,7 @@ func (handler *RequestHandler) processExternalIDPCallback(w http.ResponseWriter,
 		return
 	}
 
-	stateAppID, _, preloginSesID, err := auth.VerifyOAuthState(r.Context(), handler.repo, handler.totpKey, state, idp.ProviderKey())
+	stateAppID, _, preloginSesID, err := auth.VerifyOAuthStateAny(r.Context(), handler.repo, handler.tokenVerifyKeys(), state, idp.ProviderKey())
 	if err != nil || stateAppID != app.ID {
 		WriteError(w, r, "error.invalidCredentials", http.StatusUnauthorized)
 		return

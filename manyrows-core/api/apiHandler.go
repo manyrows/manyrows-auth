@@ -31,12 +31,14 @@ type RequestHandler struct {
 	// totpKey is the HMAC key for short-lived signed tokens — TOTP challenges
 	// AND OAuth state, despite the name. Derived (DeriveTokenSigningKey) from
 	// SESSION_AUTH_KEY so it doesn't share raw bytes with the cookie store.
-	totpKey      []byte
-	dpopVerifier *dpop.Verifier
+	totpKey          []byte
+	previousTOTPKeys [][]byte
+	dpopVerifier     *dpop.Verifier
 }
 
 func NewRequestHandler(repo *repo.Repo, adminAuthService *auth.Service, clientAuthService *client.AuthService, emailService *email.Service, config *config.Config, encryptor crypto.SecretEncryptor, secureSecrets *crypto.EncryptingSystemSecretsStore) *RequestHandler {
 	var totpKey []byte
+	var previousTOTPKeys [][]byte
 	if config != nil {
 		if key, err := config.GetSessionAuthKey(); err == nil {
 			// Domain-separate the token-signing key from the cookie-store auth
@@ -44,6 +46,11 @@ func NewRequestHandler(repo *repo.Repo, adminAuthService *auth.Service, clientAu
 			// store and our raw-HMAC token signers must not share key bytes
 			// across two different crypto constructions. See DeriveTokenSigningKey.
 			totpKey = auth.DeriveTokenSigningKey([]byte(key))
+		}
+		if prev, err := config.GetSessionAuthKeyPrevious(); err == nil {
+			for _, p := range prev {
+				previousTOTPKeys = append(previousTOTPKeys, auth.DeriveTokenSigningKey([]byte(p)))
+			}
 		}
 	}
 	// Tests pass nil for the encryptor when they only exercise endpoints
@@ -72,8 +79,15 @@ func NewRequestHandler(repo *repo.Repo, adminAuthService *auth.Service, clientAu
 		encryptor:         encryptor,
 		secureSecrets:     secureSecrets,
 		totpKey:           totpKey,
+		previousTOTPKeys:  previousTOTPKeys,
 		dpopVerifier:      dpop.NewVerifier(repo),
 	}
+}
+
+// tokenVerifyKeys returns the verification key list: current first, then
+// previous keys during a rotation grace window. Signing uses totpKey only.
+func (handler *RequestHandler) tokenVerifyKeys() [][]byte {
+	return append([][]byte{handler.totpKey}, handler.previousTOTPKeys...)
 }
 
 // requireOwner checks that the current admin has the "owner" role for this workspace.

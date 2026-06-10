@@ -169,6 +169,55 @@ func VerifyOAuthState(
 	return appID, openerOrigin, preloginSessionID, nil
 }
 
+// VerifyOAuthStateAny tries each key in order (current first, then previous
+// keys during a rotation grace window). The HMAC is validated before the
+// store is touched, so wrong-key attempts return ErrOAuthStateInvalid
+// without burning the single-use row — only a successful HMAC match
+// proceeds to ConsumeOAuthState.
+func VerifyOAuthStateAny(
+	ctx context.Context,
+	store OAuthStateStore,
+	keys [][]byte,
+	token string,
+	expectedProvider string,
+) (uuid.UUID, string, *uuid.UUID, error) {
+	var lastErr error
+	for _, k := range keys {
+		appID, openerOrigin, preloginSesID, err := VerifyOAuthState(ctx, store, k, token, expectedProvider)
+		if err == nil {
+			return appID, openerOrigin, preloginSesID, nil
+		}
+		lastErr = err
+		// Only ErrOAuthStateInvalid means the HMAC didn't match this key —
+		// try the next one. Any other error (expired, reused, store error)
+		// means the HMAC matched and the failure is definitive; stop here.
+		if err != ErrOAuthStateInvalid {
+			return uuid.Nil, "", nil, err
+		}
+	}
+	if lastErr == nil {
+		lastErr = ErrOAuthStateInvalid
+	}
+	return uuid.Nil, "", nil, lastErr
+}
+
+// PeekOAuthStateOpenerOriginAny — list variant of PeekOAuthStateOpenerOrigin.
+// Peek is read-only (never consumes the row), so a simple loop returning the
+// first non-empty origin is safe.
+func PeekOAuthStateOpenerOriginAny(
+	ctx context.Context,
+	store OAuthStateStore,
+	keys [][]byte,
+	token string,
+) string {
+	for _, k := range keys {
+		if origin := PeekOAuthStateOpenerOrigin(ctx, store, k, token); origin != "" {
+			return origin
+		}
+	}
+	return ""
+}
+
 // PeekOAuthStateOpenerOrigin returns the opener_origin recorded at sign
 // time WITHOUT consuming the state row. Used by popup-flow callback
 // handlers that need to scope the postMessage targetOrigin in the HTML

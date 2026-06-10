@@ -153,6 +153,40 @@ func VerifyTOTPSetupChallenge(key []byte, token string) (userID uuid.UUID, appID
 	return uid, aid, rm, nil
 }
 
+// VerifyTOTPChallengeAny tries each key in order (current first, then
+// previous keys during a rotation grace window). Signing always uses the
+// current key; only verification fans out.
+func VerifyTOTPChallengeAny(keys [][]byte, token string) (uuid.UUID, bool, error) {
+	var lastErr error
+	for _, k := range keys {
+		id, remember, err := VerifyTOTPChallenge(k, token)
+		if err == nil {
+			return id, remember, nil
+		}
+		lastErr = err
+	}
+	if lastErr == nil {
+		lastErr = ErrTOTPChallengeInvalid
+	}
+	return uuid.Nil, false, lastErr
+}
+
+// VerifyTOTPSetupChallengeAny — list variant of VerifyTOTPSetupChallenge.
+func VerifyTOTPSetupChallengeAny(keys [][]byte, token string) (uuid.UUID, uuid.UUID, bool, error) {
+	var lastErr error
+	for _, k := range keys {
+		u, a, remember, err := VerifyTOTPSetupChallenge(k, token)
+		if err == nil {
+			return u, a, remember, nil
+		}
+		lastErr = err
+	}
+	if lastErr == nil {
+		lastErr = ErrTOTPSetupChallengeInvalid
+	}
+	return uuid.Nil, uuid.Nil, false, lastErr
+}
+
 // VerifyTOTPChallenge verifies the HMAC signature and expiry of a challenge
 // token. Returns the account ID and the rememberMe flag (false for v1
 // tokens, decoded from the payload for v2).

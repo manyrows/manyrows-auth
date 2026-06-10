@@ -215,7 +215,7 @@ func (handler *RequestHandler) WorkspaceGoogleCallbackGET(w http.ResponseWriter,
 	// returns "" if the token is invalid/expired/already-consumed; in
 	// that case the HTML wrapper will render without a postMessage
 	// target, which is the right fail-closed behaviour.
-	rawOrigin := auth.PeekOAuthStateOpenerOrigin(r.Context(), handler.repo, handler.totpKey, state)
+	rawOrigin := auth.PeekOAuthStateOpenerOriginAny(r.Context(), handler.repo, handler.tokenVerifyKeys(), state)
 	targetOrigin := sanitizeTargetOrigin(rawOrigin)
 
 	buf := newBufferedResponse()
@@ -275,7 +275,7 @@ func (handler *RequestHandler) processGoogleCallback(w http.ResponseWriter, r *h
 	}
 
 	// Verify CSRF state and confirm app ID matches
-	stateAppID, _, preloginSesID, err := auth.VerifyOAuthState(r.Context(), handler.repo, handler.totpKey, state, "google")
+	stateAppID, _, preloginSesID, err := auth.VerifyOAuthStateAny(r.Context(), handler.repo, handler.tokenVerifyKeys(), state, "google")
 	if err != nil {
 		WriteError(w, r, "error.invalidCredentials", http.StatusUnauthorized)
 		return

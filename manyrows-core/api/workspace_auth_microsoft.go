@@ -58,7 +58,7 @@ func (handler *RequestHandler) WorkspaceMicrosoftAuthorize(w http.ResponseWriter
 func (handler *RequestHandler) WorkspaceMicrosoftCallback(w http.ResponseWriter, r *http.Request) {
 	state := strings.TrimSpace(r.URL.Query().Get("state"))
 
-	rawOrigin := auth.PeekOAuthStateOpenerOrigin(r.Context(), handler.repo, handler.totpKey, state)
+	rawOrigin := auth.PeekOAuthStateOpenerOriginAny(r.Context(), handler.repo, handler.tokenVerifyKeys(), state)
 	targetOrigin := sanitizeTargetOrigin(rawOrigin)
 
 	buf := newBufferedResponse()
@@ -100,7 +100,7 @@ func (handler *RequestHandler) processMicrosoftCallback(w http.ResponseWriter, r
 		return
 	}
 
-	stateAppID, _, preloginSesID, err := auth.VerifyOAuthState(r.Context(), handler.repo, handler.totpKey, state, "microsoft")
+	stateAppID, _, preloginSesID, err := auth.VerifyOAuthStateAny(r.Context(), handler.repo, handler.tokenVerifyKeys(), state, "microsoft")
 	if err != nil || stateAppID != ctxApp.ID {
 		WriteError(w, r, "error.invalidCredentials", http.StatusUnauthorized)
 		return

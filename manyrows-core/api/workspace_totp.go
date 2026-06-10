@@ -441,7 +441,7 @@ func (handler *RequestHandler) HandleWorkspaceTOTPVerify(w http.ResponseWriter, 
 	// applied just below, after the (unforgeable) challenge token is verified.
 	ip := auth.ClientIP(r)
 
-	userID, rememberMe, err := auth.VerifyTOTPChallenge(handler.totpKey, req.ChallengeToken)
+	userID, rememberMe, err := auth.VerifyTOTPChallengeAny(handler.tokenVerifyKeys(), req.ChallengeToken)
 	if err != nil {
 		recordTOTPFailure(core.LoginFailureTOTPInvalid, "")
 		if errors.Is(err, auth.ErrTOTPChallengeExpired) {

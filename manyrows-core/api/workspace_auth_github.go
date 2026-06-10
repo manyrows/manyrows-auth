@@ -51,7 +51,7 @@ func (handler *RequestHandler) WorkspaceGithubAuthorize(w http.ResponseWriter, r
 func (handler *RequestHandler) WorkspaceGithubCallback(w http.ResponseWriter, r *http.Request) {
 	state := strings.TrimSpace(r.URL.Query().Get("state"))
 
-	rawOrigin := auth.PeekOAuthStateOpenerOrigin(r.Context(), handler.repo, handler.totpKey, state)
+	rawOrigin := auth.PeekOAuthStateOpenerOriginAny(r.Context(), handler.repo, handler.tokenVerifyKeys(), state)
 	targetOrigin := sanitizeTargetOrigin(rawOrigin)
 
 	buf := newBufferedResponse()
@@ -93,7 +93,7 @@ func (handler *RequestHandler) processGithubCallback(w http.ResponseWriter, r *h
 		return
 	}
 
-	stateAppID, _, preloginSesID, err := auth.VerifyOAuthState(r.Context(), handler.repo, handler.totpKey, state, "github")
+	stateAppID, _, preloginSesID, err := auth.VerifyOAuthStateAny(r.Context(), handler.repo, handler.tokenVerifyKeys(), state, "github")
 	if err != nil || stateAppID != ctxApp.ID {
 		WriteError(w, r, "error.invalidCredentials", http.StatusUnauthorized)
 		return
