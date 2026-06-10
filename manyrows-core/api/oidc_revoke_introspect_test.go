@@ -151,3 +151,62 @@ func TestOIDCRevokeIntrospect_RequireClientAuth(t *testing.T) {
 		t.Errorf("introspect without secret: expected 401, got %d", rr.Code)
 	}
 }
+
+// TestOIDCIntrospect_ScopeOnOIDCTokens verifies that RFC 7662 introspection
+// responses include the "scope" member for both refresh and access tokens
+// issued via the OIDC authorization-code grant.
+func TestOIDCIntrospect_ScopeOnOIDCTokens(t *testing.T) {
+	e := setupOIDCRouter(t)
+	grantScope := "openid email offline_access"
+	accessToken, refreshToken, _ := oidcFullGrant(t, e, grantScope)
+
+	// Introspect the refresh token — must carry scope.
+	rrRT := oidcPostForm(e, "/oidc/introspect", url.Values{"token": {refreshToken}, "client_id": {e.app.ID.String()}})
+	if rrRT.Code != http.StatusOK {
+		t.Fatalf("introspect refresh: expected 200, got %d (%s)", rrRT.Code, rrRT.Body.String())
+	}
+	var mRT map[string]any
+	_ = json.Unmarshal(rrRT.Body.Bytes(), &mRT)
+	if mRT["active"] != true {
+		t.Errorf("introspect refresh: expected active=true, got %v", mRT["active"])
+	}
+	if scope, _ := mRT["scope"].(string); scope != grantScope {
+		t.Errorf("introspect refresh token: scope = %q, want %q", scope, grantScope)
+	}
+
+	// Introspect the access token — must also carry scope.
+	rrAT := oidcPostForm(e, "/oidc/introspect", url.Values{"token": {accessToken}, "client_id": {e.app.ID.String()}})
+	if rrAT.Code != http.StatusOK {
+		t.Fatalf("introspect access: expected 200, got %d (%s)", rrAT.Code, rrAT.Body.String())
+	}
+	var mAT map[string]any
+	_ = json.Unmarshal(rrAT.Body.Bytes(), &mAT)
+	if mAT["active"] != true {
+		t.Errorf("introspect access: expected active=true, got %v", mAT["active"])
+	}
+	if scope, _ := mAT["scope"].(string); scope != grantScope {
+		t.Errorf("introspect access token: scope = %q, want %q", scope, grantScope)
+	}
+}
+
+// TestOIDCIntrospect_NoScopeOnFirstPartyToken verifies that a first-party
+// (AppKit) access token — which carries no scope claim — introspects as active
+// but does NOT include a "scope" key in the response.
+func TestOIDCIntrospect_NoScopeOnFirstPartyToken(t *testing.T) {
+	e := setupOIDCRouter(t)
+	e.enableOIDC(t, []string{"https://customer.example/callback"}, nil, "")
+	_, accessJWT := e.seedSessionForApp(t)
+
+	rr := oidcPostForm(e, "/oidc/introspect", url.Values{"token": {accessJWT}, "client_id": {e.app.ID.String()}})
+	if rr.Code != http.StatusOK {
+		t.Fatalf("introspect first-party: expected 200, got %d (%s)", rr.Code, rr.Body.String())
+	}
+	var m map[string]any
+	_ = json.Unmarshal(rr.Body.Bytes(), &m)
+	if m["active"] != true {
+		t.Errorf("introspect first-party: expected active=true, got %v", m["active"])
+	}
+	if _, hasScope := m["scope"]; hasScope {
+		t.Errorf("first-party token introspect must not include scope key, got scope=%v", m["scope"])
+	}
+}

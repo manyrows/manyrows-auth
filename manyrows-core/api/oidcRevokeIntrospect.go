@@ -98,6 +98,7 @@ type oidcIntrospectionResponse struct {
 	ClientID  string `json:"client_id,omitempty"`
 	TokenType string `json:"token_type,omitempty"`
 	Exp       int64  `json:"exp,omitempty"`
+	Scope     string `json:"scope,omitempty"`
 }
 
 // OIDCIntrospect implements RFC 7662. Returns {"active": <bool>, ...} for the
@@ -130,6 +131,7 @@ func (handler *RequestHandler) oidcIntrospect(ctx context.Context, app *core.App
 				return oidcIntrospectionResponse{
 					Active: true, Sub: ses.UserID.String(), ClientID: app.ID.String(),
 					TokenType: "refresh_token", Exp: rt.ExpiresAt.Unix(),
+					Scope: rt.OIDCScope,
 				}
 			}
 		}
@@ -141,10 +143,14 @@ func (handler *RequestHandler) oidcIntrospect(ctx context.Context, app *core.App
 	if sid, uid, exp, aud, ok := handler.clientAuthService.ParseAccessToken(token); ok && aud == app.ID.String() {
 		if ses, err := handler.repo.GetClientSessionByID(ctx, sid); err == nil && ses != nil &&
 			ses.AppID != nil && *ses.AppID == app.ID && ses.IsActive(now) {
-			return oidcIntrospectionResponse{
+			resp := oidcIntrospectionResponse{
 				Active: true, Sub: uid.String(), ClientID: app.ID.String(),
 				TokenType: "Bearer", Exp: exp.Unix(),
 			}
+			if s, ok := handler.clientAuthService.AccessTokenScope(token); ok {
+				resp.Scope = s
+			}
+			return resp
 		}
 	}
 	return inactive
