@@ -160,7 +160,7 @@ export function useUserFields(): () => Promise<AppKitUserField[]> {
 /**
  * Returns a function that updates the user's custom fields. Pass a plain
  * key→value map; only client-writable fields are accepted. Resolves with
- * the updated field list.
+ * the updated field list. Pass a flat key→value map (e.g. { plan: "team" }), not the AppKitUserField[] array returned by useUserFields().
  *
  * ```tsx
  * const updateFields = useUpdateUserFields();

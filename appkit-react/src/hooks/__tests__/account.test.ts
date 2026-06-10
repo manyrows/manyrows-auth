@@ -27,6 +27,12 @@ describe("useIdentities", () => {
       expect.objectContaining({ method: "GET" }),
     );
   });
+
+  it("returns [] when the response has no identities key", async () => {
+    stubFetch(200, {});
+    const { result } = renderHook(() => useIdentities());
+    await expect(result.current()).resolves.toEqual([]);
+  });
 });
 
 describe("useDisconnectIdentity", () => {
@@ -53,6 +59,12 @@ describe("useUserFields", () => {
     stubFetch(200, { fields });
     const { result } = renderHook(() => useUserFields());
     await expect(result.current()).resolves.toEqual(fields);
+  });
+
+  it("returns [] when the response has no fields key", async () => {
+    stubFetch(200, {});
+    const { result } = renderHook(() => useUserFields());
+    await expect(result.current()).resolves.toEqual([]);
   });
 });
 
