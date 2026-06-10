@@ -154,8 +154,10 @@ type updateAppSessionCookieSameSiteRequest struct {
 }
 
 // Per-app password-strength policy. All fields are optional — omitted
-// fields keep their current value. MinLength/MinZxcvbnScore are
-// validated server-side against the DB CHECK ranges (1..256 and 0..4).
+// fields keep their current value. The numeric fields are validated
+// server-side to the same ranges enforced by the DB CHECK constraints
+// (1..256 for length, 0..4 for the zxcvbn score); passwordReusePrevention
+// is a plain toggle.
 type updateAppPasswordPolicyRequest struct {
 	MinLength       *int  `json:"passwordMinLength,omitempty"`
 	MinZxcvbnScore  *int  `json:"passwordMinZxcvbnScore,omitempty"`
