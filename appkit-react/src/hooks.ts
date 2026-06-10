@@ -14,7 +14,14 @@ export {
   useToken,
   useAuthFetch,
 } from "./hooks/snapshot";
-export { useUpdateProfile, useSetPassword } from "./hooks/account";
+export {
+  useUpdateProfile,
+  useSetPassword,
+  useIdentities,
+  useDisconnectIdentity,
+  useUserFields,
+  useUpdateUserFields,
+} from "./hooks/account";
 export {
   useOrganization,
   useOrganizationList,

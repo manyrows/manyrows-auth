@@ -2,6 +2,8 @@
 // profile, password, identities, email change, user fields, deletion.
 import { useCallback } from "react";
 import { useAppKit } from "../AppKit";
+import { authedJson } from "./shared";
+import type { AppKitIdentity, AppKitUserField } from "../types";
 
 /**
  * Returns a function to update the current user's profile.
@@ -93,5 +95,87 @@ export function useSetPassword(): (params: SetPasswordParams) => Promise<void> {
       const errBody = await res.json().catch(() => ({}));
       throw new Error(errBody?.issues?.[0]?.message || errBody?.error || "Failed to set password");
     }
+  }, [token, baseURL]);
+}
+
+/**
+ * Returns a function that lists the user's linked sign-in identities
+ * (OAuth providers / external IdPs).
+ *
+ * ```tsx
+ * const listIdentities = useIdentities();
+ * const identities = await listIdentities(); // [{provider: "google", ...}]
+ * ```
+ */
+export function useIdentities(): () => Promise<AppKitIdentity[]> {
+  const { snapshot } = useAppKit();
+  const token = snapshot?.jwtToken;
+  const baseURL = snapshot?.appBaseURL;
+  return useCallback(async () => {
+    const body = (await authedJson(token, baseURL, `/a/me/identities`, { method: "GET" },
+      "Failed to load identities")) as { identities?: AppKitIdentity[] };
+    return body?.identities ?? [];
+  }, [token, baseURL]);
+}
+
+/**
+ * Returns a function that unlinks a sign-in identity by provider name.
+ * The server rejects removing the user's only way to sign in.
+ *
+ * ```tsx
+ * const disconnectIdentity = useDisconnectIdentity();
+ * await disconnectIdentity("google");
+ * ```
+ */
+export function useDisconnectIdentity(): (provider: string) => Promise<void> {
+  const { snapshot } = useAppKit();
+  const token = snapshot?.jwtToken;
+  const baseURL = snapshot?.appBaseURL;
+  return useCallback(async (provider: string) => {
+    await authedJson(token, baseURL, `/a/me/identities/${encodeURIComponent(provider)}`,
+      { method: "DELETE" }, "Failed to disconnect identity");
+  }, [token, baseURL]);
+}
+
+/**
+ * Returns a function that fetches the user's client-visible custom fields
+ * with their current values.
+ *
+ * ```tsx
+ * const getFields = useUserFields();
+ * const fields = await getFields(); // [{key, type, label, value}]
+ * ```
+ */
+export function useUserFields(): () => Promise<AppKitUserField[]> {
+  const { snapshot } = useAppKit();
+  const token = snapshot?.jwtToken;
+  const baseURL = snapshot?.appBaseURL;
+  return useCallback(async () => {
+    const body = (await authedJson(token, baseURL, `/a/me/fields`, { method: "GET" },
+      "Failed to load user fields")) as { fields?: AppKitUserField[] };
+    return body?.fields ?? [];
+  }, [token, baseURL]);
+}
+
+/**
+ * Returns a function that updates the user's custom fields. Pass a plain
+ * key→value map; only client-writable fields are accepted. Resolves with
+ * the updated field list.
+ *
+ * ```tsx
+ * const updateFields = useUpdateUserFields();
+ * await updateFields({ displayPronouns: "they/them" });
+ * ```
+ */
+export function useUpdateUserFields(): (values: Record<string, unknown>) => Promise<AppKitUserField[]> {
+  const { snapshot } = useAppKit();
+  const token = snapshot?.jwtToken;
+  const baseURL = snapshot?.appBaseURL;
+  return useCallback(async (values: Record<string, unknown>) => {
+    const body = (await authedJson(token, baseURL, `/a/me/fields`, {
+      method: "PATCH",
+      body: JSON.stringify(values),
+    }, "Failed to update user fields")) as { fields?: AppKitUserField[] };
+    return body?.fields ?? [];
   }, [token, baseURL]);
 }
