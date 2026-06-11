@@ -62,6 +62,11 @@ func (a *AppService) externalAPIRouter(h *api.RequestHandler, corsMiddleware fun
 
 		// Auth routes (public POST routes)
 		ar.Route("/auth", func(auth chi.Router) {
+			// One structured access line per end-user auth request, plus a
+			// request-scoped logger (request_id/app_id/workspace_id) the auth
+			// handlers' own logs correlate against.
+			auth.Use(clientAuthAccessLog())
+
 			auth.Post("/", h.WorkspaceLoginRequest)
 			auth.Post("/verify", h.WorkspaceLogin)
 			auth.Post("/request-magic-link", h.WorkspaceLoginRequestMagicLink)

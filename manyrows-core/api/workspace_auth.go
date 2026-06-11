@@ -1403,6 +1403,9 @@ func (handler *RequestHandler) WorkspaceLoginPassword(w http.ResponseWriter, r *
 
 	userID := user.ID
 	sessionID := ses.ID
+	// Record the authenticated subject for the client-auth access-log line
+	// (nil-safe no-op off the /auth access-log middleware).
+	core.SetAuthLogUser(r.Context(), userID)
 	handler.writeAuthLogFromRequest(r, AuthLogInput{
 		WorkspaceID:   ws.ID,
 		AppID:         &ctxApp.ID,
