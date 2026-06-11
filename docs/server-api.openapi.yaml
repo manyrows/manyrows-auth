@@ -1519,6 +1519,35 @@ paths:
         "400": { $ref: "#/components/responses/BadRequest" }
         "404": { $ref: "#/components/responses/NotFound" }
 
+  /apps/{appId}/organizations/{orgId}/members/{userId}/status:
+    parameters:
+      - $ref: "#/components/parameters/AppId"
+      - $ref: "#/components/parameters/OrgId"
+      - $ref: "#/components/parameters/UserId"
+    patch:
+      tags: [Organizations]
+      summary: Suspend or reactivate a member
+      description: >
+        Sets the member's status. `disabled` suspends them — a suspended
+        member resolves to zero org roles on every request and the org drops
+        out of their list — while `active` reactivates. Last-owner protected:
+        suspending the organization's only active owner is rejected.
+      operationId: setOrganizationMemberStatus
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [status]
+              properties:
+                status: { type: string, enum: [active, disabled] }
+      responses:
+        "204": { description: Updated. }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { description: Would suspend the last active owner. }
+
   /apps/{appId}/organizations/{orgId}/invites:
     parameters:
       - $ref: "#/components/parameters/AppId"
