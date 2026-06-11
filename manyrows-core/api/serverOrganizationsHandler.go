@@ -517,6 +517,58 @@ func (handler *RequestHandler) ServerSetOrgMemberRole(w http.ResponseWriter, r *
 	w.WriteHeader(http.StatusNoContent)
 }
 
+type setMemberStatusRequest struct {
+	Status string `json:"status"`
+}
+
+// ServerSetOrgMemberStatus: PATCH …/organizations/{orgId}/members/{userId}/status
+// Suspends (status="disabled") or reactivates (status="active") a member. A
+// disabled member loses all org access on the next request (the read-side
+// chokepoints already reject non-active members). Last-owner protected (409) so
+// an org can't be left with no active owner. Mirrors ServerSetOrgMemberRole.
+func (handler *RequestHandler) ServerSetOrgMemberStatus(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	_, org, ok := handler.serverOrgFromURL(w, r)
+	if !ok {
+		return
+	}
+	userID, ok := handler.userIDFromURL(w, r)
+	if !ok {
+		return
+	}
+	var body setMemberStatusRequest
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		WriteError(w, r, "error.invalidJson", http.StatusBadRequest)
+		return
+	}
+	status := strings.TrimSpace(body.Status)
+	// Reject bogus status values up front so the repo's invalid-status guard
+	// (a plain error, not a sentinel) is unreachable and real infra failures
+	// still map to 500 below.
+	if status != core.OrgMemberStatusActive && status != core.OrgMemberStatusDisabled {
+		WriteError(w, r, "error.badRequest", http.StatusBadRequest)
+		return
+	}
+
+	// The last-owner check and the status update run atomically inside the repo
+	// (per-org serialized transaction) so a disable can't race past the guard.
+	if err := handler.repo.SetOrganizationMemberStatusGuarded(ctx, org.ID, userID, status); err != nil {
+		switch {
+		case errors.Is(err, repo.ErrNotFound):
+			WriteError(w, r, "error.notFound", http.StatusNotFound)
+		case errors.Is(err, repo.ErrLastOwner):
+			WriteError(w, r, "error.conflict", http.StatusConflict)
+		default:
+			log.Err(err).Msg("ServerSetOrgMemberStatus: update failed")
+			WriteError(w, r, "error.internalError", http.StatusInternalServerError)
+		}
+		return
+	}
+	handler.dispatchOrgMemberEvent(whOrgMemberUpdated, org.AppID, org.ID, userID)
+	handler.auditOrg(r, core.AuthEventOrgMemberRoleChanged, org, &userID)
+	w.WriteHeader(http.StatusNoContent)
+}
+
 // ServerRemoveOrgMember: DELETE …/organizations/{orgId}/members/{userId}
 func (handler *RequestHandler) ServerRemoveOrgMember(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()

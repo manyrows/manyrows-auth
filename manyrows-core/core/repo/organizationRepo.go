@@ -545,6 +545,53 @@ func (r *Repo) SetOrganizationMemberRoleGuarded(ctx context.Context, orgID, user
 	return tx.Commit(ctx)
 }
 
+// SetOrganizationMemberStatusGuarded sets a member's status, refusing
+// (ErrLastOwner) to disable the organization's last active owner (mirrors the
+// role guard's per-org serialized transaction). status must be
+// core.OrgMemberStatusActive or core.OrgMemberStatusDisabled. Returns
+// ErrNotFound if the org or membership is missing.
+func (r *Repo) SetOrganizationMemberStatusGuarded(ctx context.Context, orgID, userID uuid.UUID, status string) error {
+	if status != core.OrgMemberStatusActive && status != core.OrgMemberStatusDisabled {
+		return fmt.Errorf("invalid org member status: %q", status)
+	}
+	tx, err := r.db.Pool().Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	var lockedOrg uuid.UUID
+	if err := tx.QueryRow(ctx, `SELECT id FROM organizations WHERE id = $1 FOR UPDATE`, orgID).Scan(&lockedOrg); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return ErrNotFound
+		}
+		return err
+	}
+
+	var role, current string
+	if err := tx.QueryRow(ctx, `SELECT org_role, status FROM organization_members WHERE org_id = $1 AND user_id = $2`, orgID, userID).Scan(&role, &current); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return ErrNotFound
+		}
+		return err
+	}
+
+	if status == core.OrgMemberStatusDisabled && role == core.OrgRoleOwner && current == core.OrgMemberStatusActive {
+		var owners int
+		if err := tx.QueryRow(ctx, `SELECT count(*) FROM organization_members WHERE org_id = $1 AND org_role = 'owner' AND status = 'active'`, orgID).Scan(&owners); err != nil {
+			return err
+		}
+		if owners <= 1 {
+			return ErrLastOwner
+		}
+	}
+
+	if _, err := tx.Exec(ctx, `UPDATE organization_members SET status = $3 WHERE org_id = $1 AND user_id = $2`, orgID, userID, status); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
+}
+
 // OrganizationAdminView is one org with its active-member count, for the admin
 // org list. Includes archived orgs (status carries the state).
 type OrganizationAdminView struct {

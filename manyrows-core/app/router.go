@@ -325,6 +325,7 @@ func (a *AppService) initRouter() error {
 			r.Post("/organizations/{orgId}/members", requestHandler.HandleAddAppOrganizationMember)
 			r.Put("/organizations/{orgId}/members/{userId}/roles", requestHandler.HandleSetAppOrganizationMemberRoles)
 			r.Patch("/organizations/{orgId}/members/{userId}", requestHandler.HandleSetAppOrganizationMemberTier)
+			r.Patch("/organizations/{orgId}/members/{userId}/status", requestHandler.HandleSetAppOrganizationMemberStatus)
 			r.Delete("/organizations/{orgId}/members/{userId}", requestHandler.HandleRemoveAppOrganizationMember)
 			r.Get("/organizations/{orgId}/invites", requestHandler.HandleListAppOrganizationInvites)
 			r.Post("/organizations/{orgId}/invites", requestHandler.HandleCreateAppOrganizationInvite)
