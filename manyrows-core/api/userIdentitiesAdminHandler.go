@@ -25,8 +25,14 @@ func (handler *RequestHandler) loadUserScopedToApp(
 		WriteError(w, r, "error.notFound", http.StatusNotFound)
 		return nil, false
 	}
-	user, ok := handler.lookupUserScopedToApp(r.Context(), appID, uid)
-	if !ok {
+	user, found, lookupErr := handler.lookupUserScopedToApp(r.Context(), appID, uid)
+	if lookupErr != nil {
+		// Transient/infra error (app or user load failed). Preserve the
+		// original 500 so callers don't see a misleading "not found".
+		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
+		return nil, false
+	}
+	if !found {
 		WriteError(w, r, "error.notFound", http.StatusNotFound)
 		return nil, false
 	}
@@ -34,33 +40,35 @@ func (handler *RequestHandler) loadUserScopedToApp(
 }
 
 // lookupUserScopedToApp loads a user and confirms app membership without
-// writing an HTTP response (for batch loops). Returns (nil,false) on any
-// miss — bad app, user gone, or a user belonging to a different pool — so
-// callers can't distinguish "not found" from "wrong pool" (same probing
-// guarantee loadUserScopedToApp gives its HTTP callers). Transient load
-// errors are logged and also surface as a miss.
+// writing an HTTP response (for batch loops). Returns (nil,false,nil) for a
+// genuine miss — bad id, user gone, or a user belonging to a different pool —
+// so callers can't distinguish "not found" from "wrong pool" (same probing
+// guarantee loadUserScopedToApp gives its HTTP callers). The error return is
+// non-nil ONLY for transient/infra failures (app or user load returning a
+// non-ErrNotFound error) so callers can map those to 500 rather than 404.
 func (handler *RequestHandler) lookupUserScopedToApp(
 	ctx context.Context, appID, userID uuid.UUID,
-) (*core.User, bool) {
+) (*core.User, bool, error) {
 	if userID == uuid.Nil {
-		return nil, false
+		return nil, false, nil
 	}
 	app, err := handler.repo.GetAppByID(ctx, appID)
 	if err != nil {
 		log.Err(err).Msg("Could not load app for identity admin")
-		return nil, false
+		return nil, false, err
 	}
 	user, err := handler.repo.GetUserByID(ctx, userID)
 	if err != nil {
-		if !errors.Is(err, repo.ErrNotFound) {
-			log.Err(err).Msg("Could not load user for identity admin")
+		if errors.Is(err, repo.ErrNotFound) {
+			return nil, false, nil
 		}
-		return nil, false
+		log.Err(err).Msg("Could not load user for identity admin")
+		return nil, false, err
 	}
 	if user.UserPoolID != app.UserPoolID {
-		return nil, false
+		return nil, false, nil
 	}
-	return user, true
+	return user, true, nil
 }
 
 // HandleAdminListUserIdentities returns one user's linked OAuth identities

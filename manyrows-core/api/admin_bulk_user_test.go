@@ -240,4 +240,100 @@ func TestBulkUserActions(t *testing.T) {
 
 // maxBatchUsersTestCap mirrors the api.maxBatchUsers cap (unexported) so the
 // over-cap case can build a payload of cap+1 without importing the const.
+// The test lives in package api_test, so the unexported maxBatchUsers const
+// is not accessible from here.
 func maxBatchUsersTestCap() int { return 100 }
+
+// TestBulkUserActions_WritesAuditLogs asserts the bulk handler leaves the
+// same per-user audit trail the single-user admin handlers do: a
+// password.cleared row for clearPassword and an account.status_changed row
+// for a status flip, both attributed to the admin actor. unlock/resetTotp
+// don't log (their single-user counterparts don't either) so are not checked.
+func TestBulkUserActions_WritesAuditLogs(t *testing.T) {
+	ctx := context.Background()
+	svc := NewTestServices(t)
+	router := setupAdminBulkUserRouter(t, svc)
+
+	acc := testEnv.CreateTestAccount(t, "abual-"+GenerateUniqueSlug("u")+"@example.com")
+	ws := testEnv.CreateTestWorkspace(t, acc, "WS", GenerateUniqueSlug("ws"))
+	app := testEnv.CreateTestApp(t, ws, acc)
+	sess, claims := testEnv.CreateTestSession(t, acc)
+	defer testEnv.CleanupTestData(t, &TestFixtures{Account: acc, Workspace: ws, Session: sess})
+
+	mkUser := func(prefix string) *core.User {
+		email := prefix + "-" + GenerateUniqueSlug("u") + "@example.com"
+		u, _, err := testEnv.Repo.GetOrCreateUser(ctx, email, app, core.UserSourceRegistered)
+		if err != nil {
+			t.Fatalf("GetOrCreateUser(%s): %v", prefix, err)
+		}
+		t.Cleanup(func() {
+			_, _ = testEnv.DB.Pool().Exec(ctx, "DELETE FROM auth_logs WHERE subject_user_id = $1", u.ID)
+			_, _ = testEnv.DB.Pool().Exec(ctx, "DELETE FROM client_sessions WHERE user_id = $1", u.ID)
+			_, _ = testEnv.DB.Pool().Exec(ctx, "DELETE FROM attempts WHERE subject = $1", u.Email)
+			_, _ = testEnv.DB.Pool().Exec(ctx, "DELETE FROM users WHERE id = $1", u.ID)
+		})
+		return u
+	}
+	pwUser := mkUser("pw")
+	statUser := mkUser("stat")
+
+	if err := testEnv.Repo.UpdateUserPassword(ctx, pwUser.ID, "$2a$10$abcdefghijklmnopqrstuv", time.Now()); err != nil {
+		t.Fatalf("UpdateUserPassword: %v", err)
+	}
+
+	bulkURL := fmt.Sprintf("/admin/workspace/%s/projects/%s/apps/%s/users:bulk",
+		ws.ID, app.ProjectID, app.ID)
+	post := func(t *testing.T, payload map[string]any) bulkResp {
+		t.Helper()
+		body, _ := json.Marshal(payload)
+		req := httptest.NewRequest(http.MethodPost, bulkURL, bytes.NewReader(body))
+		testEnv.SetSessionCookie(t, req, claims)
+		rr := httptest.NewRecorder()
+		router.ServeHTTP(rr, req)
+		if rr.Code != http.StatusOK {
+			t.Fatalf("bulk action expected 200, got %d: %s", rr.Code, rr.Body.String())
+		}
+		var out bulkResp
+		if err := json.Unmarshal(rr.Body.Bytes(), &out); err != nil {
+			t.Fatalf("decode response: %v (body=%s)", err, rr.Body.String())
+		}
+		return out
+	}
+
+	// Bulk clearPassword on pwUser -> expect a password.cleared admin row.
+	if out := post(t, map[string]any{
+		"action":  "clearPassword",
+		"userIds": []string{pwUser.ID.String()},
+	}); out.Succeeded != 1 {
+		t.Fatalf("clearPassword: expected succeeded=1, got %d", out.Succeeded)
+	}
+
+	// Bulk setStatus disable on statUser (starts enabled) -> expect an
+	// account.status_changed admin row.
+	if out := post(t, map[string]any{
+		"action":  "setStatus",
+		"userIds": []string{statUser.ID.String()},
+		"enabled": false,
+	}); out.Succeeded != 1 {
+		t.Fatalf("setStatus: expected succeeded=1, got %d", out.Succeeded)
+	}
+
+	countLog := func(event string, userID uuid.UUID) int {
+		t.Helper()
+		var n int
+		if err := testEnv.DB.Pool().QueryRow(ctx,
+			`SELECT count(*) FROM auth_logs
+			 WHERE event = $1 AND subject_user_id = $2 AND actor_type = 'admin'`,
+			event, userID).Scan(&n); err != nil {
+			t.Fatalf("query auth_logs (%s): %v", event, err)
+		}
+		return n
+	}
+
+	if got := countLog("password.cleared", pwUser.ID); got != 1 {
+		t.Errorf("expected 1 admin password.cleared log for pwUser, got %d", got)
+	}
+	if got := countLog("account.status_changed", statUser.ID); got != 1 {
+		t.Errorf("expected 1 admin account.status_changed log for statUser, got %d", got)
+	}
+}

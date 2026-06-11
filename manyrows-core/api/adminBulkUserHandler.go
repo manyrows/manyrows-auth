@@ -30,7 +30,7 @@ type bulkUserResult struct {
 // POST /admin/workspace/{workspaceId}/projects/{projectId}/apps/{appId}/users:bulk
 func (handler *RequestHandler) HandleAdminBulkUserAction(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	_, _, appID, ok := handler.parseAppContext(w, r)
+	wsID, _, appID, ok := handler.parseAppContext(w, r)
 	if !ok {
 		return
 	}
@@ -72,12 +72,20 @@ func (handler *RequestHandler) HandleAdminBulkUserAction(w http.ResponseWriter, 
 			results, failed = append(results, res), failed+1
 			continue
 		}
-		user, found := handler.lookupUserScopedToApp(ctx, appID, uid)
-		if !found {
+		user, found, lookupErr := handler.lookupUserScopedToApp(ctx, appID, uid)
+		if lookupErr != nil || !found {
+			// Both a transient load error and a genuine miss are recorded
+			// as a per-user failure; a transient error on one user must not
+			// abort the rest of the batch (best-effort).
 			res.Error = "not found"
 			results, failed = append(results, res), failed+1
 			continue
 		}
+
+		// Capture the prior enabled state before applying — the setStatus
+		// audit log only fires when the status actually changes (mirrors the
+		// single-user HandleSetWorkspaceAccountStatus handler).
+		wasEnabled := user.Enabled
 
 		if err := handler.applyBulkUserAction(ctx, req.Action, appID, user, req.Enabled); err != nil {
 			log.Err(err).Str("action", req.Action).Str("user_id", idStr).Msg("bulk user action failed")
@@ -85,6 +93,13 @@ func (handler *RequestHandler) HandleAdminBulkUserAction(w http.ResponseWriter, 
 			results, failed = append(results, res), failed+1
 			continue
 		}
+
+		// On success, emit the same per-user auth-log entry the single-user
+		// admin handlers write so bulk recovery leaves an identical audit
+		// trail. unlock/resetTotp single-user handlers don't log, so only
+		// clearPassword/setStatus are mirrored here.
+		handler.logBulkUserAction(r, wsID, req.Action, user.ID, wasEnabled, req.Enabled)
+
 		res.OK = true
 		results, succeeded = append(results, res), succeeded+1
 	}
@@ -94,6 +109,54 @@ func (handler *RequestHandler) HandleAdminBulkUserAction(w http.ResponseWriter, 
 		"succeeded": succeeded,
 		"failed":    failed,
 	}, http.StatusOK)
+}
+
+// logBulkUserAction writes the per-user auth-log row that mirrors the
+// single-user admin handlers, for the actions that log:
+//   - clearPassword -> AuthEventPasswordCleared (always, on success)
+//   - setStatus     -> AuthEventAccountStatusChanged (only when the
+//     enabled state actually changes), matching
+//     HandleSetWorkspaceAccountStatus / HandleClearUserPassword.
+//
+// unlock and resetTotp are intentionally not logged (their single-user
+// counterparts don't log either). Best-effort: writeAuthLogFromRequest
+// never blocks the caller on a log-write failure.
+func (handler *RequestHandler) logBulkUserAction(
+	r *http.Request, wsID uuid.UUID, action string, userID uuid.UUID, wasEnabled bool, enabled *bool,
+) {
+	var in AuthLogInput
+	switch action {
+	case "clearPassword":
+		in = AuthLogInput{
+			WorkspaceID:   wsID,
+			Event:         core.AuthEventPasswordCleared,
+			Outcome:       core.AuthOutcomeSuccess,
+			SubjectUserID: &userID,
+			ActorType:     core.AuthActorAdmin,
+		}
+	case "setStatus":
+		if enabled == nil || wasEnabled == *enabled {
+			return
+		}
+		in = AuthLogInput{
+			WorkspaceID:   wsID,
+			Event:         core.AuthEventAccountStatusChanged,
+			Outcome:       core.AuthOutcomeSuccess,
+			SubjectUserID: &userID,
+			ActorType:     core.AuthActorAdmin,
+			Metadata: core.AccountStatusChangedMetadata{
+				From: statusLabel(wasEnabled),
+				To:   statusLabel(*enabled),
+			},
+		}
+	default:
+		return
+	}
+	if admin, ok := core.AdminAccountFromContext(r.Context()); ok && admin != nil {
+		in.ActorAccountID = &admin.ID
+		in.ActorLabel = admin.Email
+	}
+	handler.writeAuthLogFromRequest(r, in)
 }
 
 // applyBulkUserAction performs one recovery action against one user. Each
