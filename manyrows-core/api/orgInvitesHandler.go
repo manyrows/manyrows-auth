@@ -273,13 +273,13 @@ func (handler *RequestHandler) AcceptOrgInvite(w http.ResponseWriter, r *http.Re
 	// consent, and it is scoped to exactly inv.Email (not arbitrary signups).
 	user, created, err := handler.repo.GetOrCreateUser(r.Context(), inv.Email, app, core.UserSourceInvited)
 	if err != nil {
-		log.Err(err).Msg("AcceptOrgInvite: GetOrCreateUser failed")
+		reqLog(r.Context()).Err(err).Msg("AcceptOrgInvite: GetOrCreateUser failed")
 		failRedirect("server_error")
 		return
 	}
 	appMember, _, err := handler.repo.EnsureAppMember(r.Context(), app.ID, user.ID, core.UserSourceInvited)
 	if err != nil {
-		log.Err(err).Msg("AcceptOrgInvite: EnsureAppMember failed")
+		reqLog(r.Context()).Err(err).Msg("AcceptOrgInvite: EnsureAppMember failed")
 		failRedirect("server_error")
 		return
 	}
@@ -297,7 +297,7 @@ func (handler *RequestHandler) AcceptOrgInvite(w http.ResponseWriter, r *http.Re
 	}
 	if !user.IsEmailVerified() {
 		if verr := handler.repo.SetUserEmailVerified(r.Context(), user.ID, time.Now().UTC()); verr != nil {
-			log.Err(verr).Msg("AcceptOrgInvite: SetUserEmailVerified failed")
+			reqLog(r.Context()).Err(verr).Msg("AcceptOrgInvite: SetUserEmailVerified failed")
 		}
 	}
 
@@ -328,7 +328,7 @@ func (handler *RequestHandler) AcceptOrgInvite(w http.ResponseWriter, r *http.Re
 			failRedirect("invalid_token")
 			return
 		default:
-			log.Err(err).Msg("AcceptOrgInvite: accept tx failed")
+			reqLog(r.Context()).Err(err).Msg("AcceptOrgInvite: accept tx failed")
 			failRedirect("server_error")
 			return
 		}
@@ -342,7 +342,7 @@ func (handler *RequestHandler) AcceptOrgInvite(w http.ResponseWriter, r *http.Re
 	// Reload the user so the sign-in tail sees the freshly-verified flag.
 	signedIn, lerr := handler.repo.GetUserByID(r.Context(), user.ID)
 	if lerr != nil || signedIn == nil {
-		log.Err(lerr).Msg("AcceptOrgInvite: reload user failed")
+		reqLog(r.Context()).Err(lerr).Msg("AcceptOrgInvite: reload user failed")
 		failRedirect("server_error")
 		return
 	}

@@ -16,7 +16,6 @@ import (
 	"manyrows-core/utils"
 
 	"github.com/gofrs/uuid/v5"
-	"github.com/rs/zerolog/log"
 )
 
 // =====================
@@ -70,7 +69,7 @@ func (handler *RequestHandler) WorkspaceLoginRequestMagicLink(w http.ResponseWri
 
 	loggedIn, _, err := handler.clientAuthService.IsLoggedIntoApp(r, app.ID)
 	if err != nil {
-		log.Err(err).Msg("magic-link: IsLoggedIntoApp failed")
+		reqLog(r.Context()).Err(err).Msg("magic-link: IsLoggedIntoApp failed")
 		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 		return
 	}
@@ -172,14 +171,14 @@ func (handler *RequestHandler) sendAppMagicLink(
 			return true
 		}
 	} else if err != nil {
-		log.Err(err).Msg("magic-link: LatestUnusedMagicLink failed")
+		reqLog(r.Context()).Err(err).Msg("magic-link: LatestUnusedMagicLink failed")
 		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 		return false
 	}
 
 	rawToken, tokenHash, err := handler.adminAuthService.NewMagicToken()
 	if err != nil {
-		log.Err(err).Msg("magic-link: NewMagicToken failed")
+		reqLog(r.Context()).Err(err).Msg("magic-link: NewMagicToken failed")
 		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 		return false
 	}
@@ -190,7 +189,7 @@ func (handler *RequestHandler) sendAppMagicLink(
 		TokenHash: tokenHash,
 		ExpiresAt: now.Add(magicLinkTTL),
 	}); err != nil {
-		log.Err(err).Msg("magic-link: CreateMagicLink failed")
+		reqLog(r.Context()).Err(err).Msg("magic-link: CreateMagicLink failed")
 		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 		return false
 	}
@@ -209,13 +208,13 @@ func (handler *RequestHandler) sendAppMagicLink(
 		Body:    fmt.Sprintf(email.T(lang, "apps.magicLink.body"), emailName, consumeURL),
 	}
 	if err := handler.sendWorkspaceEmail(r.Context(), ws.ID, mlEmail); err != nil {
-		log.Err(err).Msg("magic-link: send email failed")
+		reqLog(r.Context()).Err(err).Msg("magic-link: send email failed")
 		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 		return false
 	}
 
 	if err := handler.repo.InsertAttempt(r.Context(), attemptPurposeAppMagicLink, toEmail, ip); err != nil {
-		log.Err(err).Msg("magic-link: InsertAttempt (post-send) failed")
+		reqLog(r.Context()).Err(err).Msg("magic-link: InsertAttempt (post-send) failed")
 	}
 	return true
 }
@@ -263,7 +262,7 @@ func (handler *RequestHandler) WorkspaceConsumeMagicLink(w http.ResponseWriter, 
 	tokenHash := handler.adminAuthService.HashMagicToken(token)
 	ml, found, err := handler.repo.ConsumeMagicLink(r.Context(), tokenHash)
 	if err != nil {
-		log.Err(err).Msg("magic-link consume: repo error")
+		reqLog(r.Context()).Err(err).Msg("magic-link consume: repo error")
 		failRedirect("server_error")
 		return
 	}
@@ -344,7 +343,7 @@ func (handler *RequestHandler) WorkspaceConsumeMagicLink(w http.ResponseWriter, 
 			failRedirect("account_disabled")
 			return
 		}
-		log.Err(err).Msg("magic-link: ResolveSignInIdentity failed")
+		reqLog(r.Context()).Err(err).Msg("magic-link: ResolveSignInIdentity failed")
 		failRedirect("server_error")
 		return
 	}
@@ -387,7 +386,7 @@ func (handler *RequestHandler) finishClientSignInRedirect(
 	if !user.IsEmailVerified() {
 		now := time.Now().UTC()
 		if err := handler.repo.SetUserEmailVerified(r.Context(), user.ID, now); err != nil {
-			log.Err(err).Msg("magic-link: SetUserEmailVerified failed")
+			reqLog(r.Context()).Err(err).Msg("magic-link: SetUserEmailVerified failed")
 		}
 	}
 
@@ -403,7 +402,7 @@ func (handler *RequestHandler) finishClientSignInRedirect(
 	// handler in AppKit-ui.
 	userTOTP, totpErr := handler.repo.GetUserByIDWithTOTP(r.Context(), user.ID)
 	if totpErr != nil {
-		log.Err(totpErr).Msg("magic-link: GetUserByIDWithTOTP failed")
+		reqLog(r.Context()).Err(totpErr).Msg("magic-link: GetUserByIDWithTOTP failed")
 		failRedirect("server_error")
 		return
 	}
@@ -439,7 +438,7 @@ func (handler *RequestHandler) finishClientSignInRedirect(
 
 	ses, err := handler.clientAuthService.CreateSessionWithOptions(r.Context(), user.ID, ctxApp.ID, ua, ip, rememberMe, ctxApp.SessionTTL(), ctxApp.RememberMeTTL(), ctxApp.MaxSessions())
 	if err != nil {
-		log.Err(err).Msg("magic-link: CreateSession failed")
+		reqLog(r.Context()).Err(err).Msg("magic-link: CreateSession failed")
 		failRedirect("server_error")
 		return
 	}
@@ -455,11 +454,13 @@ func (handler *RequestHandler) finishClientSignInRedirect(
 	// doesn't get logged as a successful login.
 	tokenPair, err := handler.clientAuthService.IssueTokenPair(r.Context(), ses, ua, ip, effectiveSessionTTL(ctxApp, rememberMe), ctxApp.AccessTokenTTL(), "", handler.clientAuthService.IssuerForApp(ctxApp), "")
 	if err != nil {
-		log.Err(err).Msg("magic-link: IssueTokenPair failed")
+		reqLog(r.Context()).Err(err).Msg("magic-link: IssueTokenPair failed")
 		_ = handler.clientAuthService.DeleteSession(r.Context(), ses.ID)
 		failRedirect("server_error")
 		return
 	}
+
+	core.SetAuthLogUser(r.Context(), userID)
 
 	handler.recordClientSignInSuccess(r, ws.ID, ctxApp.ID, &userID, &sessionID, user.Email, sourceEmail, created, method)
 

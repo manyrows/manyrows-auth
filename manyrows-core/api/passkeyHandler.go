@@ -17,7 +17,6 @@ import (
 	"github.com/go-webauthn/webauthn/protocol"
 	"github.com/go-webauthn/webauthn/webauthn"
 	"github.com/gofrs/uuid/v5"
-	"github.com/rs/zerolog/log"
 	"golang.org/x/net/idna"
 	"golang.org/x/net/publicsuffix"
 )
@@ -251,7 +250,7 @@ func (handler *RequestHandler) HandleSetAppWebAuthnRPID(w http.ResponseWriter, r
 		if trimmed != "" {
 			origins, err := handler.repo.GetCorsOrigins(r.Context(), appID)
 			if err != nil {
-				log.Err(err).Msg("Could not load CORS origins for RPID validation")
+				reqLog(r.Context()).Err(err).Msg("Could not load CORS origins for RPID validation")
 				WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 				return
 			}
@@ -268,7 +267,7 @@ func (handler *RequestHandler) HandleSetAppWebAuthnRPID(w http.ResponseWriter, r
 	}
 
 	if err := handler.repo.SetAppWebAuthnRPID(r.Context(), appID, rpid); err != nil {
-		log.Err(err).Msg("Could not save app WebAuthn RPID")
+		reqLog(r.Context()).Err(err).Msg("Could not save app WebAuthn RPID")
 		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 		return
 	}
@@ -285,7 +284,7 @@ func (handler *RequestHandler) HandleGetAppWebAuthnRPID(w http.ResponseWriter, r
 	}
 	rpid, err := handler.repo.GetAppWebAuthnRPID(r.Context(), appID)
 	if err != nil {
-		log.Err(err).Msg("Could not load app WebAuthn RPID")
+		reqLog(r.Context()).Err(err).Msg("Could not load app WebAuthn RPID")
 		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 		return
 	}
@@ -313,7 +312,7 @@ func (handler *RequestHandler) WorkspacePasskeyRegisterBegin(w http.ResponseWrit
 	subject := user.ID.String()
 	subjectCount, err := handler.repo.CountAttemptsBySubject(r.Context(), attemptPurposeWorkspacePasskeyRegister, subject, since)
 	if err != nil {
-		log.Err(err).Msg("failed to count attempts for passkey register-begin")
+		reqLog(r.Context()).Err(err).Msg("failed to count attempts for passkey register-begin")
 		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 		return
 	}
@@ -331,7 +330,7 @@ func (handler *RequestHandler) WorkspacePasskeyRegisterBegin(w http.ResponseWrit
 
 	existing, err := handler.repo.ListPasskeysByUser(r.Context(), app.ID, user.ID)
 	if err != nil {
-		log.Err(err).Msg("Could not list passkeys for register-begin")
+		reqLog(r.Context()).Err(err).Msg("Could not list passkeys for register-begin")
 		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 		return
 	}
@@ -374,14 +373,14 @@ func (handler *RequestHandler) WorkspacePasskeyRegisterBegin(w http.ResponseWrit
 	}
 	creation, sessionData, err := wa.BeginRegistration(pkUser, opts...)
 	if err != nil {
-		log.Err(err).Msg("BeginRegistration failed")
+		reqLog(r.Context()).Err(err).Msg("BeginRegistration failed")
 		WriteError(w, r, "error.passkeyBeginFailed", http.StatusBadRequest)
 		return
 	}
 
 	sessionJSON, err := json.Marshal(sessionData)
 	if err != nil {
-		log.Err(err).Msg("Could not marshal webauthn session data")
+		reqLog(r.Context()).Err(err).Msg("Could not marshal webauthn session data")
 		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 		return
 	}
@@ -396,7 +395,7 @@ func (handler *RequestHandler) WorkspacePasskeyRegisterBegin(w http.ResponseWrit
 		ExpiresAt:   time.Now().UTC().Add(webauthnChallengeTTL),
 	})
 	if err != nil {
-		log.Err(err).Msg("Could not persist webauthn register challenge")
+		reqLog(r.Context()).Err(err).Msg("Could not persist webauthn register challenge")
 		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 		return
 	}
@@ -439,7 +438,7 @@ func (handler *RequestHandler) WorkspacePasskeyRegisterFinish(w http.ResponseWri
 
 	ch, found, err := handler.repo.ConsumeWebAuthnChallenge(r.Context(), req.ChallengeID)
 	if err != nil {
-		log.Err(err).Msg("Could not consume webauthn register challenge")
+		reqLog(r.Context()).Err(err).Msg("Could not consume webauthn register challenge")
 		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 		return
 	}
@@ -450,21 +449,21 @@ func (handler *RequestHandler) WorkspacePasskeyRegisterFinish(w http.ResponseWri
 
 	var sessionData webauthn.SessionData
 	if err := json.Unmarshal(ch.SessionData, &sessionData); err != nil {
-		log.Err(err).Msg("Could not unmarshal webauthn session data")
+		reqLog(r.Context()).Err(err).Msg("Could not unmarshal webauthn session data")
 		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 		return
 	}
 
 	parsed, err := protocol.ParseCredentialCreationResponseBytes(req.Response)
 	if err != nil {
-		log.Err(err).Msg("Could not parse credential creation response")
+		reqLog(r.Context()).Err(err).Msg("Could not parse credential creation response")
 		WriteError(w, r, "error.passkeyResponseInvalid", http.StatusBadRequest)
 		return
 	}
 
 	existing, err := handler.repo.ListPasskeysByUser(r.Context(), app.ID, user.ID)
 	if err != nil {
-		log.Err(err).Msg("Could not load existing passkeys for finish-register")
+		reqLog(r.Context()).Err(err).Msg("Could not load existing passkeys for finish-register")
 		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 		return
 	}
@@ -472,7 +471,7 @@ func (handler *RequestHandler) WorkspacePasskeyRegisterFinish(w http.ResponseWri
 
 	cred, err := wa.CreateCredential(pkUser, sessionData, parsed)
 	if err != nil {
-		log.Err(err).Msg("CreateCredential failed")
+		reqLog(r.Context()).Err(err).Msg("CreateCredential failed")
 		WriteError(w, r, "error.passkeyVerifyFailed", http.StatusBadRequest)
 		return
 	}
@@ -482,7 +481,7 @@ func (handler *RequestHandler) WorkspacePasskeyRegisterFinish(w http.ResponseWri
 	// future library refactor or a misconfigured option can't slip a
 	// non-UV credential into the database.
 	if !cred.Flags.UserVerified {
-		log.Warn().Msg("Refusing passkey registration: authenticator did not perform user verification")
+		reqLog(r.Context()).Warn().Msg("Refusing passkey registration: authenticator did not perform user verification")
 		WriteError(w, r, "error.passkeyUVRequired", http.StatusBadRequest)
 		return
 	}
@@ -511,7 +510,7 @@ func (handler *RequestHandler) WorkspacePasskeyRegisterFinish(w http.ResponseWri
 		Name:           req.Name,
 	})
 	if err != nil {
-		log.Err(err).Msg("Could not persist new passkey")
+		reqLog(r.Context()).Err(err).Msg("Could not persist new passkey")
 		WriteError(w, r, "error.passkeyAlreadyRegistered", http.StatusConflict)
 		return
 	}
@@ -575,14 +574,14 @@ func (handler *RequestHandler) WorkspacePasskeyLoginBegin(w http.ResponseWriter,
 		webauthn.WithUserVerification(protocol.VerificationRequired),
 	)
 	if err != nil {
-		log.Err(err).Msg("BeginDiscoverableLogin failed")
+		reqLog(r.Context()).Err(err).Msg("BeginDiscoverableLogin failed")
 		WriteError(w, r, "error.passkeyBeginFailed", http.StatusBadRequest)
 		return
 	}
 
 	sessionJSON, err := json.Marshal(sessionData)
 	if err != nil {
-		log.Err(err).Msg("Could not marshal webauthn session data")
+		reqLog(r.Context()).Err(err).Msg("Could not marshal webauthn session data")
 		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 		return
 	}
@@ -596,7 +595,7 @@ func (handler *RequestHandler) WorkspacePasskeyLoginBegin(w http.ResponseWriter,
 		ExpiresAt:   time.Now().UTC().Add(webauthnChallengeTTL),
 	})
 	if err != nil {
-		log.Err(err).Msg("Could not persist webauthn login challenge")
+		reqLog(r.Context()).Err(err).Msg("Could not persist webauthn login challenge")
 		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 		return
 	}
@@ -670,7 +669,7 @@ func (handler *RequestHandler) WorkspacePasskeyLoginFinish(w http.ResponseWriter
 
 	ch, found, err := handler.repo.ConsumeWebAuthnChallenge(r.Context(), req.ChallengeID)
 	if err != nil {
-		log.Err(err).Msg("Could not consume webauthn login challenge")
+		reqLog(r.Context()).Err(err).Msg("Could not consume webauthn login challenge")
 		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 		return
 	}
@@ -683,7 +682,7 @@ func (handler *RequestHandler) WorkspacePasskeyLoginFinish(w http.ResponseWriter
 
 	var sessionData webauthn.SessionData
 	if err := json.Unmarshal(ch.SessionData, &sessionData); err != nil {
-		log.Err(err).Msg("Could not unmarshal webauthn session data")
+		reqLog(r.Context()).Err(err).Msg("Could not unmarshal webauthn session data")
 		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 		return
 	}
@@ -691,7 +690,7 @@ func (handler *RequestHandler) WorkspacePasskeyLoginFinish(w http.ResponseWriter
 	parsed, err := protocol.ParseCredentialRequestResponseBytes(req.Response)
 	if err != nil {
 		_ = handler.repo.InsertAttempt(r.Context(), attemptPurposeWorkspacePasskeyLogin, "", ip)
-		log.Err(err).Msg("Could not parse credential request response")
+		reqLog(r.Context()).Err(err).Msg("Could not parse credential request response")
 		passkeyLoginFailed(core.AuthFailPasskeyInvalid, nil, "", nil)
 		WriteError(w, r, "error.passkeyResponseInvalid", http.StatusBadRequest)
 		return
@@ -731,7 +730,7 @@ func (handler *RequestHandler) WorkspacePasskeyLoginFinish(w http.ResponseWriter
 	_, cred, err := wa.ValidatePasskeyLogin(resolver, sessionData, parsed)
 	if err != nil || resolvedUser == nil {
 		_ = handler.repo.InsertAttempt(r.Context(), attemptPurposeWorkspacePasskeyLogin, "", ip)
-		log.Err(err).Msg("ValidatePasskeyLogin failed")
+		reqLog(r.Context()).Err(err).Msg("ValidatePasskeyLogin failed")
 		passkeyLoginFailed(core.AuthFailPasskeyInvalid, nil, "", nil)
 		WriteError(w, r, "error.passkeyVerifyFailed", http.StatusUnauthorized)
 		return
@@ -745,7 +744,7 @@ func (handler *RequestHandler) WorkspacePasskeyLoginFinish(w http.ResponseWriter
 	// should already enforce it because we set UserVerification: required
 	// on the session, but a re-check is cheap insurance.
 	if !cred.Flags.UserVerified {
-		log.Warn().Str("passkey_id", matchedPasskey.ID.String()).Msg("Refusing passkey login: authenticator did not perform user verification")
+		reqLog(r.Context()).Warn().Str("passkey_id", matchedPasskey.ID.String()).Msg("Refusing passkey login: authenticator did not perform user verification")
 		passkeyLoginFailed(core.AuthFailPasskeyUVRequired, &userID, user.Email, &passkeyID)
 		WriteError(w, r, "error.passkeyUVRequired", http.StatusUnauthorized)
 		return
@@ -756,7 +755,7 @@ func (handler *RequestHandler) WorkspacePasskeyLoginFinish(w http.ResponseWriter
 	// new counter doesn't strictly exceed the old (with the all-zero
 	// special case). The DB UPDATE is defense-in-depth below.
 	if cred.Authenticator.CloneWarning {
-		log.Warn().Str("passkey_id", matchedPasskey.ID.String()).Msg("Refusing passkey login: clone warning from authenticator")
+		reqLog(r.Context()).Warn().Str("passkey_id", matchedPasskey.ID.String()).Msg("Refusing passkey login: clone warning from authenticator")
 		passkeyLoginFailed(core.AuthFailPasskeyCloneSuspected, &userID, user.Email, &passkeyID)
 		WriteError(w, r, "error.passkeyCloneSuspected", http.StatusUnauthorized)
 		return
@@ -786,7 +785,7 @@ func (handler *RequestHandler) WorkspacePasskeyLoginFinish(w http.ResponseWriter
 	}
 
 	if err := handler.repo.UpdatePasskeyOnLogin(r.Context(), matchedPasskey.ID, cred.Authenticator.SignCount, cred.Flags.BackupState); err != nil {
-		log.Err(err).Msg("Refusing passkey login: sign-counter regression")
+		reqLog(r.Context()).Err(err).Msg("Refusing passkey login: sign-counter regression")
 		passkeyLoginFailed(core.AuthFailPasskeyCloneSuspected, &userID, user.Email, &passkeyID)
 		WriteError(w, r, "error.passkeyCloneSuspected", http.StatusUnauthorized)
 		return
@@ -794,7 +793,7 @@ func (handler *RequestHandler) WorkspacePasskeyLoginFinish(w http.ResponseWriter
 
 	ses, err := handler.clientAuthService.CreateSessionWithOptions(r.Context(), user.ID, app.ID, ua, ip, req.RememberMe, app.SessionTTL(), app.RememberMeTTL(), app.MaxSessions())
 	if err != nil {
-		log.Err(err).Msg("Could not create client session for passkey login")
+		reqLog(r.Context()).Err(err).Msg("Could not create client session for passkey login")
 		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 		return
 	}
@@ -805,10 +804,12 @@ func (handler *RequestHandler) WorkspacePasskeyLoginFinish(w http.ResponseWriter
 	}
 	tokenPair, err := handler.clientAuthService.IssueTokenPair(r.Context(), ses, ua, ip, effectiveSessionTTL(app, req.RememberMe), app.AccessTokenTTL(), dpopJKT, handler.clientAuthService.IssuerForApp(app), "")
 	if err != nil {
-		log.Err(err).Msg("Could not issue token pair for passkey login")
+		reqLog(r.Context()).Err(err).Msg("Could not issue token pair for passkey login")
 		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 		return
 	}
+
+	core.SetAuthLogUser(r.Context(), user.ID)
 
 	loginAt := time.Now().UTC()
 	_ = handler.repo.UpdateUserLastLogin(r.Context(), user.ID, loginAt)
@@ -892,7 +893,7 @@ func (handler *RequestHandler) WorkspaceListMyPasskeys(w http.ResponseWriter, r 
 	}
 	passkeys, err := handler.repo.ListPasskeysByUser(r.Context(), app.ID, user.ID)
 	if err != nil {
-		log.Err(err).Msg("Could not list passkeys")
+		reqLog(r.Context()).Err(err).Msg("Could not list passkeys")
 		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 		return
 	}
@@ -1018,7 +1019,7 @@ func (handler *RequestHandler) HandleAdminListUserPasskeys(w http.ResponseWriter
 	}
 	passkeys, err := handler.repo.ListPasskeysByUser(r.Context(), appID, user.ID)
 	if err != nil {
-		log.Err(err).Msg("Could not list user passkeys (admin)")
+		reqLog(r.Context()).Err(err).Msg("Could not list user passkeys (admin)")
 		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 		return
 	}
