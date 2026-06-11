@@ -137,6 +137,19 @@ func TestOrgMemberSuspend(t *testing.T) {
 		t.Fatalf("member should be disabled via handler, got %q", got)
 	}
 
+	// A status change is audited under its own event — distinct from a role
+	// change — so the forensic trail doesn't conflate a suspension with a
+	// permission edit. Exactly one row for this org+subject.
+	var statusAuditCount int
+	if err := testEnv.DB.Pool().QueryRow(ctx,
+		`SELECT count(*) FROM auth_logs WHERE event = $1 AND app_id = $2 AND subject_user_id = $3 AND metadata->>'orgId' = $4`,
+		string(core.AuthEventOrgMemberStatusChanged), app.ID, member.ID, org.ID.String()).Scan(&statusAuditCount); err != nil {
+		t.Fatalf("query auth_logs: %v", err)
+	}
+	if statusAuditCount != 1 {
+		t.Errorf("expected 1 %s audit log for the suspended member, got %d", core.AuthEventOrgMemberStatusChanged, statusAuditCount)
+	}
+
 	// Sole-owner disable via the handler → 409 (last-owner mapped to conflict).
 	if rr := patchStatus(soloOrg.ID.String(), soloOwner.ID.String(), core.OrgMemberStatusDisabled); rr.Code != http.StatusConflict {
 		t.Fatalf("disable sole owner via handler: expected 409, got %d (%s)", rr.Code, rr.Body.String())

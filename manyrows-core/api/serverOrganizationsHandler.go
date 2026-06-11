@@ -565,7 +565,7 @@ func (handler *RequestHandler) ServerSetOrgMemberStatus(w http.ResponseWriter, r
 		return
 	}
 	handler.dispatchOrgMemberEvent(whOrgMemberUpdated, org.AppID, org.ID, userID)
-	handler.auditOrg(r, core.AuthEventOrgMemberRoleChanged, org, &userID)
+	handler.auditOrg(r, core.AuthEventOrgMemberStatusChanged, org, &userID)
 	w.WriteHeader(http.StatusNoContent)
 }
 
