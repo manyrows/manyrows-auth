@@ -16,7 +16,6 @@ import (
 
 	"github.com/gofrs/uuid/v5"
 	"github.com/pquerna/otp/totp"
-	"github.com/rs/zerolog/log"
 )
 
 const totpChallengeTTL = 5 * time.Minute
@@ -60,7 +59,7 @@ func (handler *RequestHandler) HandleWorkspaceTOTPSetup(w http.ResponseWriter, r
 
 	userWithTOTP, err := handler.repo.GetUserByIDWithTOTP(r.Context(), ses.UserID)
 	if err != nil || userWithTOTP == nil {
-		log.Err(err).Msg("failed to get user for TOTP setup")
+		reqLog(r.Context()).Err(err).Msg("failed to get user for TOTP setup")
 		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 		return
 	}
@@ -79,7 +78,7 @@ func (handler *RequestHandler) HandleWorkspaceTOTPSetup(w http.ResponseWriter, r
 		AccountName: userWithTOTP.Email,
 	})
 	if err != nil {
-		log.Err(err).Msg("failed to generate TOTP key")
+		reqLog(r.Context()).Err(err).Msg("failed to generate TOTP key")
 		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 		return
 	}
@@ -89,13 +88,13 @@ func (handler *RequestHandler) HandleWorkspaceTOTPSetup(w http.ResponseWriter, r
 		crypto.AAD("users", "totp_secret_encrypted", userWithTOTP.ID),
 	)
 	if err != nil {
-		log.Err(err).Msg("failed to encrypt TOTP secret")
+		reqLog(r.Context()).Err(err).Msg("failed to encrypt TOTP secret")
 		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 		return
 	}
 
 	if err := handler.repo.SetUserTOTPSecret(r.Context(), userWithTOTP.ID, encrypted); err != nil {
-		log.Err(err).Msg("failed to store TOTP secret")
+		reqLog(r.Context()).Err(err).Msg("failed to store TOTP secret")
 		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 		return
 	}
@@ -130,7 +129,7 @@ func (handler *RequestHandler) HandleWorkspaceTOTPEnable(w http.ResponseWriter, 
 
 	userWithTOTP, err := handler.repo.GetUserByIDWithTOTP(r.Context(), ses.UserID)
 	if err != nil || userWithTOTP == nil {
-		log.Err(err).Msg("failed to get user for TOTP enable")
+		reqLog(r.Context()).Err(err).Msg("failed to get user for TOTP enable")
 		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 		return
 	}
@@ -150,7 +149,7 @@ func (handler *RequestHandler) HandleWorkspaceTOTPEnable(w http.ResponseWriter, 
 		crypto.AAD("users", "totp_secret_encrypted", userWithTOTP.ID),
 	)
 	if err != nil {
-		log.Err(err).Msg("failed to decrypt TOTP secret")
+		reqLog(r.Context()).Err(err).Msg("failed to decrypt TOTP secret")
 		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 		return
 	}
@@ -166,28 +165,28 @@ func (handler *RequestHandler) HandleWorkspaceTOTPEnable(w http.ResponseWriter, 
 
 	backupCodes, err := generateBackupCodes(8)
 	if err != nil {
-		log.Err(err).Msg("failed to generate backup codes")
+		reqLog(r.Context()).Err(err).Msg("failed to generate backup codes")
 		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 		return
 	}
 
 	storedCodes, err := handler.hashBackupCodes(backupCodes, userWithTOTP.ID)
 	if err != nil {
-		log.Err(err).Msg("failed to hash backup codes")
+		reqLog(r.Context()).Err(err).Msg("failed to hash backup codes")
 		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 		return
 	}
 
 	now := time.Now().UTC()
 	if err := handler.repo.EnableUserTOTP(r.Context(), userWithTOTP.ID, now, storedCodes); err != nil {
-		log.Err(err).Msg("failed to enable user TOTP")
+		reqLog(r.Context()).Err(err).Msg("failed to enable user TOTP")
 		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 		return
 	}
 	// Burn the enrollment step so the same code can't be replayed at the first
 	// login verify. Non-fatal: enrollment already committed.
 	if _, err := handler.repo.AdvanceUserTOTPStep(r.Context(), userWithTOTP.ID, enrollStep); err != nil {
-		log.Err(err).Msg("AdvanceUserTOTPStep after enroll failed (non-fatal)")
+		reqLog(r.Context()).Err(err).Msg("AdvanceUserTOTPStep after enroll failed (non-fatal)")
 	}
 
 	utils.WriteJson(w, map[string]any{
@@ -231,7 +230,7 @@ func (handler *RequestHandler) HandleWorkspaceTOTPDisable(w http.ResponseWriter,
 
 	userWithTOTP, err := handler.repo.GetUserByIDWithTOTP(r.Context(), ses.UserID)
 	if err != nil || userWithTOTP == nil {
-		log.Err(err).Msg("failed to get user for TOTP disable")
+		reqLog(r.Context()).Err(err).Msg("failed to get user for TOTP disable")
 		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 		return
 	}
@@ -246,7 +245,7 @@ func (handler *RequestHandler) HandleWorkspaceTOTPDisable(w http.ResponseWriter,
 	}
 
 	if err := handler.repo.DisableUserTOTP(r.Context(), userWithTOTP.ID); err != nil {
-		log.Err(err).Msg("failed to disable user TOTP")
+		reqLog(r.Context()).Err(err).Msg("failed to disable user TOTP")
 		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 		return
 	}
@@ -343,7 +342,7 @@ func (handler *RequestHandler) HandleWorkspaceTOTPRegenerateBackupCodes(w http.R
 
 	userWithTOTP, err := handler.repo.GetUserByIDWithTOTP(r.Context(), ses.UserID)
 	if err != nil || userWithTOTP == nil {
-		log.Err(err).Msg("failed to get user for backup codes regen")
+		reqLog(r.Context()).Err(err).Msg("failed to get user for backup codes regen")
 		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 		return
 	}
@@ -360,20 +359,20 @@ func (handler *RequestHandler) HandleWorkspaceTOTPRegenerateBackupCodes(w http.R
 
 	backupCodes, err := generateBackupCodes(8)
 	if err != nil {
-		log.Err(err).Msg("failed to generate backup codes")
+		reqLog(r.Context()).Err(err).Msg("failed to generate backup codes")
 		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 		return
 	}
 
 	storedCodes, err := handler.hashBackupCodes(backupCodes, userWithTOTP.ID)
 	if err != nil {
-		log.Err(err).Msg("failed to hash backup codes")
+		reqLog(r.Context()).Err(err).Msg("failed to hash backup codes")
 		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 		return
 	}
 
 	if err := handler.repo.UpdateUserTOTPBackupCodes(r.Context(), userWithTOTP.ID, storedCodes); err != nil {
-		log.Err(err).Msg("failed to update user backup codes")
+		reqLog(r.Context()).Err(err).Msg("failed to update user backup codes")
 		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 		return
 	}
@@ -460,7 +459,7 @@ func (handler *RequestHandler) HandleWorkspaceTOTPVerify(w http.ResponseWriter, 
 
 	userWithTOTP, err := handler.repo.GetUserByIDWithTOTP(r.Context(), userID)
 	if err != nil || userWithTOTP == nil {
-		log.Err(err).Msg("failed to fetch user for TOTP verify")
+		reqLog(r.Context()).Err(err).Msg("failed to fetch user for TOTP verify")
 		recordTOTPFailure(core.LoginFailureNoUser, "")
 		WriteError(w, r, "error.invalidCredentials", http.StatusUnauthorized)
 		return
@@ -493,7 +492,7 @@ func (handler *RequestHandler) HandleWorkspaceTOTPVerify(w http.ResponseWriter, 
 		crypto.AAD("users", "totp_secret_encrypted", userWithTOTP.ID),
 	)
 	if err != nil {
-		log.Err(err).Msg("failed to decrypt user TOTP secret")
+		reqLog(r.Context()).Err(err).Msg("failed to decrypt user TOTP secret")
 		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 		return
 	}
@@ -510,7 +509,7 @@ func (handler *RequestHandler) HandleWorkspaceTOTPVerify(w http.ResponseWriter, 
 	if step, ok := auth.VerifyTOTPCode(code, string(secret)); ok {
 		advanced, err := handler.repo.AdvanceUserTOTPStep(r.Context(), userWithTOTP.ID, step)
 		if err != nil {
-			log.Err(err).Msg("AdvanceUserTOTPStep failed")
+			reqLog(r.Context()).Err(err).Msg("AdvanceUserTOTPStep failed")
 			WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 			return
 		}
@@ -567,7 +566,7 @@ func (handler *RequestHandler) completeWorkspaceTOTPLogin(
 	ctxApp, _ := core.AppFromContext(r.Context())
 	ses, err := handler.clientAuthService.CreateSessionWithOptions(r.Context(), user.ID, ctxApp.ID, ua, ip, rememberMe, ctxApp.SessionTTL(), ctxApp.RememberMeTTL(), ctxApp.MaxSessions())
 	if err != nil {
-		log.Err(err).Msg("Could not create client session after TOTP verify")
+		reqLog(r.Context()).Err(err).Msg("Could not create client session after TOTP verify")
 		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 		return
 	}
@@ -580,7 +579,7 @@ func (handler *RequestHandler) completeWorkspaceTOTPLogin(
 
 	tokenPair, err := handler.clientAuthService.IssueTokenPair(r.Context(), ses, ua, ip, effectiveSessionTTL(ctxApp, rememberMe), ctxApp.AccessTokenTTL(), dpopJKT, handler.clientAuthService.IssuerForApp(ctxApp), "")
 	if err != nil {
-		log.Err(err).Msg("Could not issue token pair after TOTP verify")
+		reqLog(r.Context()).Err(err).Msg("Could not issue token pair after TOTP verify")
 		_ = handler.clientAuthService.DeleteSession(r.Context(), ses.ID)
 		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 		return
@@ -591,6 +590,9 @@ func (handler *RequestHandler) completeWorkspaceTOTPLogin(
 	_ = handler.repo.UpdateAppUserLastLogin(r.Context(), ctxApp.ID, user.ID, loginAt)
 	userID := user.ID
 	sessionID := ses.ID
+	// Record the authenticated subject for the client-auth access-log line
+	// (nil-safe no-op off the /auth access-log middleware).
+	core.SetAuthLogUser(r.Context(), userID)
 	handler.writeAuthLogFromRequest(r, AuthLogInput{
 		WorkspaceID:   ws.ID,
 		AppID:         &ctxApp.ID,

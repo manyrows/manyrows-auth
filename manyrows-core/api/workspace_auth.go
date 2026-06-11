@@ -24,7 +24,6 @@ import (
 	"time"
 
 	"github.com/gofrs/uuid/v5"
-	"github.com/rs/zerolog/log"
 )
 
 // NOTE:
@@ -90,13 +89,13 @@ func (handler *RequestHandler) ensureDefaultRole(ctx context.Context, app *core.
 
 	existing, err := handler.repo.GetUserRolesByUserAndAppID(ctx, app.ProjectID, user.ID, appID)
 	if err != nil {
-		log.Err(err).Msg("Could not check existing user roles during login")
+		reqLog(ctx).Err(err).Msg("Could not check existing user roles during login")
 		return
 	}
 	if len(existing) > 0 {
 		return
 	}
-	log.Info().Str("app", app.ID.String()).Str("email", user.Email).Str("appId", appID.String()).Msg("Assigning default role to user on login")
+	reqLog(ctx).Info().Str("app", app.ID.String()).Str("email", user.Email).Str("appId", appID.String()).Msg("Assigning default role to user on login")
 	if err := handler.repo.ReplaceUserRoles(ctx, repo.ReplaceUserRolesParams{
 		ProjectID: app.ProjectID,
 		AppID:     appID,
@@ -104,7 +103,7 @@ func (handler *RequestHandler) ensureDefaultRole(ctx context.Context, app *core.
 		RoleIDs:   []uuid.UUID{*app.DefaultRoleID},
 		Now:       time.Now().UTC(),
 	}); err != nil {
-		log.Err(err).Msg("Could not assign default role during login")
+		reqLog(ctx).Err(err).Msg("Could not assign default role during login")
 	}
 }
 
@@ -274,7 +273,7 @@ func (handler *RequestHandler) WorkspaceLoginRequest(w http.ResponseWriter, r *h
 	// If already have an active bearer session for this app, forbid.
 	loggedIn, _, err := handler.clientAuthService.IsLoggedIntoApp(r, ctxApp.ID)
 	if err != nil {
-		log.Err(err).Msg("Could not resolve client session")
+		reqLog(r.Context()).Err(err).Msg("Could not resolve client session")
 		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 		return
 	}
@@ -333,21 +332,21 @@ func (handler *RequestHandler) WorkspaceLoginRequest(w http.ResponseWriter, r *h
 			return
 		}
 	} else if err != nil && !errors.Is(err, repo.ErrClientOTPNotFound) {
-		log.Err(err).Msg("Could not check existing otp for cooldown")
+		reqLog(r.Context()).Err(err).Msg("Could not check existing otp for cooldown")
 		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 		return
 	}
 
 	pepper, err := handler.getOTPPepper()
 	if err != nil {
-		log.Err(err).Msg("Missing OTP pepper")
+		reqLog(r.Context()).Err(err).Msg("Missing OTP pepper")
 		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 		return
 	}
 
 	code, err := generateOTP6()
 	if err != nil {
-		log.Err(err).Msg("Could not generate otp")
+		reqLog(r.Context()).Err(err).Msg("Could not generate otp")
 		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 		return
 	}
@@ -355,7 +354,7 @@ func (handler *RequestHandler) WorkspaceLoginRequest(w http.ResponseWriter, r *h
 	otpID := utils.NewUUID()
 	codeHash, err := hashOTP(otpID, code, pepper)
 	if err != nil {
-		log.Err(err).Msg("Could not hash otp")
+		reqLog(r.Context()).Err(err).Msg("Could not hash otp")
 		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 		return
 	}
@@ -364,7 +363,7 @@ func (handler *RequestHandler) WorkspaceLoginRequest(w http.ResponseWriter, r *h
 
 	// Ensure only one active/unused OTP per email+app.
 	if err := handler.repo.DeleteUnusedClientOTPs(r.Context(), ctxApp.ID, emailNorm); err != nil {
-		log.Err(err).Msg("Could not delete unused otps")
+		reqLog(r.Context()).Err(err).Msg("Could not delete unused otps")
 		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 		return
 	}
@@ -384,7 +383,7 @@ func (handler *RequestHandler) WorkspaceLoginRequest(w http.ResponseWriter, r *h
 	}
 
 	if err := handler.repo.InsertClientOTP(r.Context(), otp); err != nil {
-		log.Err(err).Msg("Could not insert otp")
+		reqLog(r.Context()).Err(err).Msg("Could not insert otp")
 		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 		return
 	}
@@ -402,7 +401,7 @@ func (handler *RequestHandler) WorkspaceLoginRequest(w http.ResponseWriter, r *h
 		Body:    fmt.Sprintf(email.T(lang, "workspace.otp.body"), emailName, code),
 	}
 	if err := handler.sendWorkspaceEmail(r.Context(), ws.ID, otpEmail); err != nil {
-		log.Err(err).Msg("Could not send otp email")
+		reqLog(r.Context()).Err(err).Msg("Could not send otp email")
 		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 		return
 	}
@@ -410,7 +409,7 @@ func (handler *RequestHandler) WorkspaceLoginRequest(w http.ResponseWriter, r *h
 	// ...then burn the attempt budget only if we actually sent.
 	if err := handler.repo.InsertAttempt(r.Context(), attemptPurposeOTP, toEmail, ip); err != nil {
 		// We already sent the email; treat this as non-fatal.
-		log.Err(err).Msg("Could not insert otp attempt (post-send)")
+		reqLog(r.Context()).Err(err).Msg("Could not insert otp attempt (post-send)")
 	}
 
 	// "OTP sent" is a side-effect of attempting to log in, not an auth
@@ -514,7 +513,7 @@ func (handler *RequestHandler) WorkspaceRegister(w http.ResponseWriter, r *http.
 	// If already have an active bearer session for this app, forbid.
 	loggedIn, _, err := handler.clientAuthService.IsLoggedIntoApp(r, app.ID)
 	if err != nil {
-		log.Err(err).Msg("Could not resolve client session")
+		reqLog(r.Context()).Err(err).Msg("Could not resolve client session")
 		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 		return
 	}
@@ -541,21 +540,21 @@ func (handler *RequestHandler) WorkspaceRegister(w http.ResponseWriter, r *http.
 			return
 		}
 	} else if err != nil && !errors.Is(err, repo.ErrClientOTPNotFound) {
-		log.Err(err).Msg("Could not check existing otp for cooldown")
+		reqLog(r.Context()).Err(err).Msg("Could not check existing otp for cooldown")
 		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 		return
 	}
 
 	pepper, err := handler.getOTPPepper()
 	if err != nil {
-		log.Err(err).Msg("Missing OTP pepper")
+		reqLog(r.Context()).Err(err).Msg("Missing OTP pepper")
 		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 		return
 	}
 
 	code, err := generateOTP6()
 	if err != nil {
-		log.Err(err).Msg("Could not generate otp")
+		reqLog(r.Context()).Err(err).Msg("Could not generate otp")
 		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 		return
 	}
@@ -563,7 +562,7 @@ func (handler *RequestHandler) WorkspaceRegister(w http.ResponseWriter, r *http.
 	otpID := utils.NewUUID()
 	codeHash, err := hashOTP(otpID, code, pepper)
 	if err != nil {
-		log.Err(err).Msg("Could not hash otp")
+		reqLog(r.Context()).Err(err).Msg("Could not hash otp")
 		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 		return
 	}
@@ -572,7 +571,7 @@ func (handler *RequestHandler) WorkspaceRegister(w http.ResponseWriter, r *http.
 
 	// Delete old unused OTPs
 	if err := handler.repo.DeleteUnusedClientOTPs(r.Context(), app.ID, emailNorm); err != nil {
-		log.Err(err).Msg("Could not delete unused otps")
+		reqLog(r.Context()).Err(err).Msg("Could not delete unused otps")
 		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 		return
 	}
@@ -592,7 +591,7 @@ func (handler *RequestHandler) WorkspaceRegister(w http.ResponseWriter, r *http.
 	}
 
 	if err := handler.repo.InsertClientOTP(r.Context(), otp); err != nil {
-		log.Err(err).Msg("Could not insert otp")
+		reqLog(r.Context()).Err(err).Msg("Could not insert otp")
 		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 		return
 	}
@@ -610,14 +609,14 @@ func (handler *RequestHandler) WorkspaceRegister(w http.ResponseWriter, r *http.
 		Body:    fmt.Sprintf(email.T(lang, "workspace.otp.body"), emailName, code),
 	}
 	if err := handler.sendWorkspaceEmail(r.Context(), ws.ID, otpEmail2); err != nil {
-		log.Err(err).Msg("Could not send otp email")
+		reqLog(r.Context()).Err(err).Msg("Could not send otp email")
 		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 		return
 	}
 
 	// Burn attempt budget
 	if err := handler.repo.InsertAttempt(r.Context(), attemptPurposeOTP, toEmail, ip); err != nil {
-		log.Err(err).Msg("Could not insert otp attempt (post-send)")
+		reqLog(r.Context()).Err(err).Msg("Could not insert otp attempt (post-send)")
 	}
 
 	// Same rationale as WorkspaceLoginRequest above: "OTP sent" isn't an
@@ -674,7 +673,7 @@ func (handler *RequestHandler) WorkspaceLogin(w http.ResponseWriter, r *http.Req
 
 	peppers, err := handler.getOTPPeppers()
 	if err != nil {
-		log.Err(err).Msg("Missing OTP pepper")
+		reqLog(r.Context()).Err(err).Msg("Missing OTP pepper")
 		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 		return
 	}
@@ -688,7 +687,7 @@ func (handler *RequestHandler) WorkspaceLogin(w http.ResponseWriter, r *http.Req
 			WriteError(w, r, "error.invalidCode", http.StatusUnauthorized)
 			return
 		}
-		log.Err(err).Msg("Could not load otp")
+		reqLog(r.Context()).Err(err).Msg("Could not load otp")
 		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 		return
 	}
@@ -728,14 +727,14 @@ func (handler *RequestHandler) WorkspaceLogin(w http.ResponseWriter, r *http.Req
 			WriteError(w, r, "error.invalidCode", http.StatusUnauthorized)
 			return
 		}
-		log.Err(err).Msg("Could not claim otp attempt")
+		reqLog(r.Context()).Err(err).Msg("Could not claim otp attempt")
 		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 		return
 	}
 
 	match, err := otpHashMatches(otp.ID, code, peppers, otp.CodeHash)
 	if err != nil {
-		log.Err(err).Msg("Could not hash otp for verify")
+		reqLog(r.Context()).Err(err).Msg("Could not hash otp for verify")
 		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 		return
 	}
@@ -748,7 +747,7 @@ func (handler *RequestHandler) WorkspaceLogin(w http.ResponseWriter, r *http.Req
 	}
 
 	if err := handler.repo.MarkClientOTPUsed(r.Context(), otp.ID, now); err != nil {
-		log.Err(err).Msg("Could not mark otp used")
+		reqLog(r.Context()).Err(err).Msg("Could not mark otp used")
 		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 		return
 	}
@@ -770,7 +769,7 @@ func (handler *RequestHandler) WorkspaceLogin(w http.ResponseWriter, r *http.Req
 			WriteError(w, r, "error.accountDisabled", http.StatusForbidden)
 			return
 		}
-		log.Err(err).Msg("Could not resolve sign-in identity")
+		reqLog(r.Context()).Err(err).Msg("Could not resolve sign-in identity")
 		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 		return
 	}
@@ -778,7 +777,7 @@ func (handler *RequestHandler) WorkspaceLogin(w http.ResponseWriter, r *http.Req
 	// Mark email as verified (they just proved ownership via OTP)
 	if !user.IsEmailVerified() {
 		if err := handler.repo.SetUserEmailVerified(r.Context(), user.ID, now); err != nil {
-			log.Err(err).Msg("Could not mark user email verified")
+			reqLog(r.Context()).Err(err).Msg("Could not mark user email verified")
 			// Non-fatal - continue with login
 		}
 	}
@@ -796,7 +795,7 @@ func (handler *RequestHandler) WorkspaceLogin(w http.ResponseWriter, r *http.Req
 	{
 		userTOTP, totpErr := handler.repo.GetUserByIDWithTOTP(r.Context(), user.ID)
 		if totpErr != nil {
-			log.Err(totpErr).Msg("failed to fetch user TOTP data for OTP login")
+			reqLog(r.Context()).Err(totpErr).Msg("failed to fetch user TOTP data for OTP login")
 			WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 			return
 		}
@@ -830,7 +829,7 @@ func (handler *RequestHandler) WorkspaceLogin(w http.ResponseWriter, r *http.Req
 	// Create session with user ID (scoped to app)
 	ses, err := handler.clientAuthService.CreateSessionWithOptions(r.Context(), user.ID, ctxApp.ID, ua, ip, req.RememberMe, ctxApp.SessionTTL(), ctxApp.RememberMeTTL(), ctxApp.MaxSessions())
 	if err != nil {
-		log.Err(err).Msg("Could not create client session")
+		reqLog(r.Context()).Err(err).Msg("Could not create client session")
 		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 		return
 	}
@@ -847,7 +846,7 @@ func (handler *RequestHandler) WorkspaceLogin(w http.ResponseWriter, r *http.Req
 	// Issue token pair (access + refresh)
 	tokenPair, err := handler.clientAuthService.IssueTokenPair(r.Context(), ses, ua, ip, effectiveSessionTTL(ctxApp, req.RememberMe), ctxApp.AccessTokenTTL(), dpopJKT, handler.clientAuthService.IssuerForApp(ctxApp), "")
 	if err != nil {
-		log.Err(err).Msg("Could not issue token pair")
+		reqLog(r.Context()).Err(err).Msg("Could not issue token pair")
 		// best-effort: token issuance failed after we created the session
 		// row; clean up so the user isn't holding a phantom session.
 		_ = handler.clientAuthService.DeleteSession(r.Context(), ses.ID)
@@ -857,6 +856,9 @@ func (handler *RequestHandler) WorkspaceLogin(w http.ResponseWriter, r *http.Req
 
 	userID := user.ID
 	sessionID := ses.ID
+	// Record the authenticated subject for the client-auth access-log line
+	// (nil-safe no-op off the /auth access-log middleware).
+	core.SetAuthLogUser(r.Context(), userID)
 	if created {
 		// register.success precedes login.success — captures the
 		// account-creation event distinct from the login itself, so
@@ -979,9 +981,17 @@ func (handler *RequestHandler) WorkspaceRefresh(w http.ResponseWriter, r *http.R
 			WriteError(w, r, "error.sessionNotFound", http.StatusUnauthorized)
 			return
 		}
-		log.Err(err).Msg("Could not refresh token pair")
+		reqLog(r.Context()).Err(err).Msg("Could not refresh token pair")
 		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 		return
+	}
+
+	// Record the authenticated subject for the client-auth access-log line.
+	// The freshly-issued access token carries the resolved user as its
+	// subject claim, so we read it back without an extra DB lookup. Nil-safe
+	// no-op off the /auth access-log middleware.
+	if _, refreshedUserID, _, _, ok := handler.clientAuthService.ParseAccessToken(tokenPair.AccessToken); ok && refreshedUserID != uuid.Nil {
+		core.SetAuthLogUser(r.Context(), refreshedUserID)
 	}
 
 	// Use the token pair's own RefreshExpiresIn rather than ctxApp.SessionTTL()
@@ -1011,7 +1021,7 @@ func (handler *RequestHandler) WorkspaceLogout(w http.ResponseWriter, r *http.Re
 
 	ses, err := handler.clientAuthService.GetSession(r)
 	if err != nil {
-		log.Err(err).Msg("Could not get client session")
+		reqLog(r.Context()).Err(err).Msg("Could not get client session")
 		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 		return
 	}
@@ -1032,12 +1042,12 @@ func (handler *RequestHandler) WorkspaceLogout(w http.ResponseWriter, r *http.Re
 
 	// Revoke all refresh tokens for this session first
 	if err := handler.clientAuthService.RevokeAllSessionTokens(r.Context(), ses.ID); err != nil {
-		log.Err(err).Msg("Could not revoke refresh tokens")
+		reqLog(r.Context()).Err(err).Msg("Could not revoke refresh tokens")
 		// Continue with session deletion even if token revocation fails
 	}
 
 	if err := handler.clientAuthService.DeleteSession(r.Context(), ses.ID); err != nil {
-		log.Err(err).Msg("Could not revoke client session")
+		reqLog(r.Context()).Err(err).Msg("Could not revoke client session")
 		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 		return
 	}
@@ -1101,7 +1111,7 @@ func (handler *RequestHandler) WorkspacePublicLogout(w http.ResponseWriter, r *h
 	if refreshToken != "" {
 		info, err := handler.clientAuthService.LogoutSessionByRefreshToken(r.Context(), refreshToken)
 		if err != nil {
-			log.Err(err).Msg("public logout: revoke failed")
+			reqLog(r.Context()).Err(err).Msg("public logout: revoke failed")
 			// Continue — still clear cookies on the way out.
 		}
 		if info.Found && ws != nil {
@@ -1276,7 +1286,7 @@ func (handler *RequestHandler) WorkspaceLoginPassword(w http.ResponseWriter, r *
 	// exactly the same logic.
 	authResult, err := validateAppPasswordCredentials(r.Context(), handler.repo, ctxApp, toEmail, pw)
 	if err != nil {
-		log.Err(err).Msg("failed to validate password credentials")
+		reqLog(r.Context()).Err(err).Msg("failed to validate password credentials")
 		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 		return
 	}
@@ -1346,7 +1356,7 @@ func (handler *RequestHandler) WorkspaceLoginPassword(w http.ResponseWriter, r *
 	{
 		userTOTP, totpErr := handler.repo.GetUserByIDWithTOTP(r.Context(), user.ID)
 		if totpErr != nil {
-			log.Err(totpErr).Msg("failed to fetch user TOTP data")
+			reqLog(r.Context()).Err(totpErr).Msg("failed to fetch user TOTP data")
 			WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 			return
 		}
@@ -1380,7 +1390,7 @@ func (handler *RequestHandler) WorkspaceLoginPassword(w http.ResponseWriter, r *
 	// Create session
 	ses, err := handler.clientAuthService.CreateSessionWithOptions(r.Context(), user.ID, ctxApp.ID, ua, ip, req.RememberMe, ctxApp.SessionTTL(), ctxApp.RememberMeTTL(), ctxApp.MaxSessions())
 	if err != nil {
-		log.Err(err).Msg("Could not create client session for password login")
+		reqLog(r.Context()).Err(err).Msg("Could not create client session for password login")
 		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 		return
 	}
@@ -1396,7 +1406,7 @@ func (handler *RequestHandler) WorkspaceLoginPassword(w http.ResponseWriter, r *
 	// Issue token pair
 	tokenPair, err := handler.clientAuthService.IssueTokenPair(r.Context(), ses, ua, ip, effectiveSessionTTL(ctxApp, req.RememberMe), ctxApp.AccessTokenTTL(), dpopJKT, handler.clientAuthService.IssuerForApp(ctxApp), "")
 	if err != nil {
-		log.Err(err).Msg("Could not issue token pair for password login")
+		reqLog(r.Context()).Err(err).Msg("Could not issue token pair for password login")
 		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 		return
 	}
@@ -1470,7 +1480,7 @@ func (handler *RequestHandler) WorkspaceSetPassword(w http.ResponseWriter, r *ht
 	subject := ses.UserID.String()
 	subjectCount, cerr := handler.repo.CountAttemptsBySubject(r.Context(), attemptPurposeWorkspaceSetPassword, subject, since)
 	if cerr != nil {
-		log.Err(cerr).Msg("failed to count attempts for set-password")
+		reqLog(r.Context()).Err(cerr).Msg("failed to count attempts for set-password")
 		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 		return
 	}
@@ -1522,7 +1532,7 @@ func (handler *RequestHandler) WorkspaceSetPassword(w http.ResponseWriter, r *ht
 	if existingHash == "" {
 		recentOTP, otpErr := handler.recentlyUsedOTPForApp(r.Context(), ses.AppID, userEmail, passwordSetAfterRegisterWindow)
 		if otpErr != nil {
-			log.Err(otpErr).Msg("failed to check recent OTP for initial password set")
+			reqLog(r.Context()).Err(otpErr).Msg("failed to check recent OTP for initial password set")
 			WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 			return
 		}
@@ -1562,7 +1572,7 @@ func (handler *RequestHandler) WorkspaceSetPassword(w http.ResponseWriter, r *ht
 	if appBlocksPasswordReuse(ctxApp) {
 		reused, rerr := passwordRecentlyUsed(r.Context(), handler.repo, ses.UserID, pw, existingHash)
 		if rerr != nil {
-			log.Err(rerr).Msg("password reuse check failed")
+			reqLog(r.Context()).Err(rerr).Msg("password reuse check failed")
 			WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 			return
 		}
@@ -1575,7 +1585,7 @@ func (handler *RequestHandler) WorkspaceSetPassword(w http.ResponseWriter, r *ht
 	// Hash password
 	newHash, err := passwordhash.Hash(pw)
 	if err != nil {
-		log.Err(err).Msg("failed to hash password")
+		reqLog(r.Context()).Err(err).Msg("failed to hash password")
 		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 		return
 	}
@@ -1585,13 +1595,13 @@ func (handler *RequestHandler) WorkspaceSetPassword(w http.ResponseWriter, r *ht
 	// Get user by ID (user already exists — they are authenticated)
 	user, err := handler.repo.GetUserByID(r.Context(), ses.UserID)
 	if err != nil {
-		log.Err(err).Msg("failed to get user for set password")
+		reqLog(r.Context()).Err(err).Msg("failed to get user for set password")
 		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 		return
 	}
 
 	if err := handler.repo.UpdateUserPassword(r.Context(), user.ID, newHash, now); err != nil {
-		log.Err(err).Msg("failed to update user password")
+		reqLog(r.Context()).Err(err).Msg("failed to update user password")
 		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 		return
 	}
@@ -1790,31 +1800,31 @@ func (handler *RequestHandler) dispatchForgotPasswordAsync(ctx context.Context, 
 			return
 		}
 	} else if err != nil && !errors.Is(err, repo.ErrClientOTPNotFound) {
-		log.Err(err).Msg("forgot-password async: cooldown check failed")
+		reqLog(ctx).Err(err).Msg("forgot-password async: cooldown check failed")
 		return
 	}
 
 	pepper, err := handler.getOTPPepper()
 	if err != nil {
-		log.Err(err).Msg("forgot-password async: missing OTP pepper")
+		reqLog(ctx).Err(err).Msg("forgot-password async: missing OTP pepper")
 		return
 	}
 
 	code, err := generateOTP6()
 	if err != nil {
-		log.Err(err).Msg("forgot-password async: generate OTP failed")
+		reqLog(ctx).Err(err).Msg("forgot-password async: generate OTP failed")
 		return
 	}
 
 	otpID := utils.NewUUID()
 	codeHash, err := hashOTP(otpID, code, pepper)
 	if err != nil {
-		log.Err(err).Msg("forgot-password async: hash OTP failed")
+		reqLog(ctx).Err(err).Msg("forgot-password async: hash OTP failed")
 		return
 	}
 
 	if err := handler.repo.DeleteUnusedClientOTPs(ctx, args.App.ID, emailNorm); err != nil {
-		log.Err(err).Msg("forgot-password async: delete old OTPs failed")
+		reqLog(ctx).Err(err).Msg("forgot-password async: delete old OTPs failed")
 		return
 	}
 
@@ -1833,7 +1843,7 @@ func (handler *RequestHandler) dispatchForgotPasswordAsync(ctx context.Context, 
 	}
 
 	if err := handler.repo.InsertClientOTP(ctx, otp); err != nil {
-		log.Err(err).Msg("forgot-password async: insert OTP failed")
+		reqLog(ctx).Err(err).Msg("forgot-password async: insert OTP failed")
 		return
 	}
 
@@ -1852,7 +1862,7 @@ func (handler *RequestHandler) dispatchForgotPasswordAsync(ctx context.Context, 
 		Body:    fmt.Sprintf(email.T(lang, "workspace.password_reset.body"), emailName, code),
 	}
 	if err := handler.sendWorkspaceEmail(ctx, args.Workspace.ID, resetEmail); err != nil {
-		log.Err(err).Msg("forgot-password async: send email failed")
+		reqLog(ctx).Err(err).Msg("forgot-password async: send email failed")
 		return
 	}
 }
@@ -1927,7 +1937,7 @@ func (handler *RequestHandler) WorkspaceResetPassword(w http.ResponseWriter, r *
 
 	peppers, err := handler.getOTPPeppers()
 	if err != nil {
-		log.Err(err).Msg("Missing OTP pepper")
+		reqLog(r.Context()).Err(err).Msg("Missing OTP pepper")
 		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 		return
 	}
@@ -1941,7 +1951,7 @@ func (handler *RequestHandler) WorkspaceResetPassword(w http.ResponseWriter, r *
 			WriteError(w, r, "error.invalidCode", http.StatusUnauthorized)
 			return
 		}
-		log.Err(err).Msg("Could not get otp for password reset")
+		reqLog(r.Context()).Err(err).Msg("Could not get otp for password reset")
 		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 		return
 	}
@@ -1976,14 +1986,14 @@ func (handler *RequestHandler) WorkspaceResetPassword(w http.ResponseWriter, r *
 			WriteError(w, r, "error.invalidCode", http.StatusUnauthorized)
 			return
 		}
-		log.Err(err).Msg("Could not claim otp attempt")
+		reqLog(r.Context()).Err(err).Msg("Could not claim otp attempt")
 		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 		return
 	}
 
 	match, err := otpHashMatches(otp.ID, code, peppers, otp.CodeHash)
 	if err != nil {
-		log.Err(err).Msg("Could not hash otp for verify")
+		reqLog(r.Context()).Err(err).Msg("Could not hash otp for verify")
 		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 		return
 	}
@@ -1996,7 +2006,7 @@ func (handler *RequestHandler) WorkspaceResetPassword(w http.ResponseWriter, r *
 
 	// Code is valid - mark as used
 	if err := handler.repo.MarkClientOTPUsed(r.Context(), otp.ID, now); err != nil {
-		log.Err(err).Msg("Could not mark otp used")
+		reqLog(r.Context()).Err(err).Msg("Could not mark otp used")
 		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 		return
 	}
@@ -2004,7 +2014,7 @@ func (handler *RequestHandler) WorkspaceResetPassword(w http.ResponseWriter, r *
 	// Get user by email
 	user, err := handler.repo.GetUserByEmail(r.Context(), toEmail, ctxApp)
 	if err != nil {
-		log.Err(err).Msg("Could not get user for password reset")
+		reqLog(r.Context()).Err(err).Msg("Could not get user for password reset")
 		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 		return
 	}
@@ -2023,13 +2033,13 @@ func (handler *RequestHandler) WorkspaceResetPassword(w http.ResponseWriter, r *
 		if err := handler.repo.DB().Pool().QueryRow(r.Context(),
 			`SELECT COALESCE(password_hash, '') FROM users WHERE id = $1`, user.ID,
 		).Scan(&liveHash); err != nil {
-			log.Err(err).Msg("password reuse check failed to load live hash (reset)")
+			reqLog(r.Context()).Err(err).Msg("password reuse check failed to load live hash (reset)")
 			WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 			return
 		}
 		reused, rerr := passwordRecentlyUsed(r.Context(), handler.repo, user.ID, newPw, liveHash)
 		if rerr != nil {
-			log.Err(rerr).Msg("password reuse check failed (reset)")
+			reqLog(r.Context()).Err(rerr).Msg("password reuse check failed (reset)")
 			WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 			return
 		}
@@ -2043,14 +2053,14 @@ func (handler *RequestHandler) WorkspaceResetPassword(w http.ResponseWriter, r *
 	// This lets users add password auth via the reset flow.
 	newHash, err := passwordhash.Hash(newPw)
 	if err != nil {
-		log.Err(err).Msg("failed to hash password")
+		reqLog(r.Context()).Err(err).Msg("failed to hash password")
 		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 		return
 	}
 
 	// Update password
 	if err := handler.repo.UpdateUserPassword(r.Context(), user.ID, newHash, now); err != nil {
-		log.Err(err).Msg("failed to update user password")
+		reqLog(r.Context()).Err(err).Msg("failed to update user password")
 		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 		return
 	}
@@ -2069,7 +2079,7 @@ func (handler *RequestHandler) WorkspaceResetPassword(w http.ResponseWriter, r *
 	// Revoke all sessions unless explicitly opted out (default: true)
 	if req.LogoutAll == nil || *req.LogoutAll {
 		if _, err := handler.repo.DeleteClientSessionsByUser(r.Context(), user.ID, nil); err != nil {
-			log.Err(err).Msg("failed to delete sessions after password reset")
+			reqLog(r.Context()).Err(err).Msg("failed to delete sessions after password reset")
 		}
 	}
 

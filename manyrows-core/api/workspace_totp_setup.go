@@ -13,7 +13,6 @@ import (
 
 	"github.com/gofrs/uuid/v5"
 	"github.com/pquerna/otp/totp"
-	"github.com/rs/zerolog/log"
 )
 
 // =====================================================================
@@ -72,7 +71,7 @@ func (handler *RequestHandler) resolveTOTPSetupChallenge(w http.ResponseWriter, 
 	}
 	user, err := handler.repo.GetUserByIDWithTOTP(r.Context(), userID)
 	if err != nil || user == nil {
-		log.Err(err).Msg("totp setup: user lookup failed")
+		reqLog(r.Context()).Err(err).Msg("totp setup: user lookup failed")
 		WriteError(w, r, "error.unauthorized", http.StatusUnauthorized)
 		return nil, false, false
 	}
@@ -114,7 +113,7 @@ func (handler *RequestHandler) HandleWorkspaceTOTPSetupInit(w http.ResponseWrite
 		AccountName: user.Email,
 	})
 	if err != nil {
-		log.Err(err).Msg("totp setup-init: generate failed")
+		reqLog(r.Context()).Err(err).Msg("totp setup-init: generate failed")
 		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 		return
 	}
@@ -123,12 +122,12 @@ func (handler *RequestHandler) HandleWorkspaceTOTPSetupInit(w http.ResponseWrite
 		crypto.AAD("users", "totp_secret_encrypted", user.ID),
 	)
 	if err != nil {
-		log.Err(err).Msg("totp setup-init: encrypt failed")
+		reqLog(r.Context()).Err(err).Msg("totp setup-init: encrypt failed")
 		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 		return
 	}
 	if err := handler.repo.SetUserTOTPSecret(r.Context(), user.ID, encrypted); err != nil {
-		log.Err(err).Msg("totp setup-init: persist failed")
+		reqLog(r.Context()).Err(err).Msg("totp setup-init: persist failed")
 		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 		return
 	}
@@ -197,7 +196,7 @@ func (handler *RequestHandler) runTOTPSetupCompletion(
 		crypto.AAD("users", "totp_secret_encrypted", user.ID),
 	)
 	if err != nil {
-		log.Err(err).Msg("totp setup-complete: decrypt failed")
+		reqLog(r.Context()).Err(err).Msg("totp setup-complete: decrypt failed")
 		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 		return nil, false
 	}
@@ -213,27 +212,27 @@ func (handler *RequestHandler) runTOTPSetupCompletion(
 
 	backupCodes, err := generateBackupCodes(8)
 	if err != nil {
-		log.Err(err).Msg("totp setup-complete: backup-codes generate failed")
+		reqLog(r.Context()).Err(err).Msg("totp setup-complete: backup-codes generate failed")
 		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 		return nil, false
 	}
 	storedCodes, err := handler.hashBackupCodes(backupCodes, user.ID)
 	if err != nil {
-		log.Err(err).Msg("totp setup-complete: backup-codes hash failed")
+		reqLog(r.Context()).Err(err).Msg("totp setup-complete: backup-codes hash failed")
 		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 		return nil, false
 	}
 
 	now := time.Now().UTC()
 	if err := handler.repo.EnableUserTOTP(r.Context(), user.ID, now, storedCodes); err != nil {
-		log.Err(err).Msg("totp setup-complete: EnableUserTOTP failed")
+		reqLog(r.Context()).Err(err).Msg("totp setup-complete: EnableUserTOTP failed")
 		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 		return nil, false
 	}
 	// Burn the enrollment step so the same code can't be replayed at the next
 	// verify (this path mints a session immediately). Non-fatal.
 	if _, err := handler.repo.AdvanceUserTOTPStep(r.Context(), user.ID, enrollStep); err != nil {
-		log.Err(err).Msg("totp setup-complete: AdvanceUserTOTPStep failed (non-fatal)")
+		reqLog(r.Context()).Err(err).Msg("totp setup-complete: AdvanceUserTOTPStep failed (non-fatal)")
 	}
 	handler.dispatchMFAEvent(whMFAEnabled, ctxApp.ID, user.ID)
 	handler.writeAuthLogFromRequest(r, AuthLogInput{
@@ -251,7 +250,7 @@ func (handler *RequestHandler) runTOTPSetupCompletion(
 	ua := strings.TrimSpace(r.UserAgent())
 	ses, err := handler.clientAuthService.CreateSessionWithOptions(r.Context(), user.ID, ctxApp.ID, ua, ip, rememberMe, ctxApp.SessionTTL(), ctxApp.RememberMeTTL(), ctxApp.MaxSessions())
 	if err != nil {
-		log.Err(err).Msg("totp setup-complete: CreateSession failed")
+		reqLog(r.Context()).Err(err).Msg("totp setup-complete: CreateSession failed")
 		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 		return nil, false
 	}
@@ -260,6 +259,9 @@ func (handler *RequestHandler) runTOTPSetupCompletion(
 	_ = handler.repo.UpdateAppUserLastLogin(r.Context(), ctxApp.ID, user.ID, now)
 	userID := user.ID
 	sessionID := ses.ID
+	// Record the authenticated subject for the client-auth access-log line
+	// (nil-safe no-op off the /auth access-log middleware).
+	core.SetAuthLogUser(r.Context(), userID)
 	handler.writeAuthLogFromRequest(r, AuthLogInput{
 		WorkspaceID:   ctxApp.WorkspaceID,
 		AppID:         &ctxApp.ID,
@@ -324,7 +326,7 @@ func (handler *RequestHandler) HandleWorkspaceTOTPSetupComplete(w http.ResponseW
 		"",
 	)
 	if err != nil {
-		log.Err(err).Msg("totp setup-complete (tier 1): IssueTokenPair failed")
+		reqLog(r.Context()).Err(err).Msg("totp setup-complete (tier 1): IssueTokenPair failed")
 		_ = handler.clientAuthService.DeleteSession(r.Context(), result.Session.ID)
 		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 		return
