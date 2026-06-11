@@ -13,7 +13,6 @@ import (
 	"time"
 
 	"github.com/gofrs/uuid/v5"
-	"github.com/rs/zerolog/log"
 )
 
 // =====================
@@ -215,7 +214,7 @@ func (handler *RequestHandler) processAppleCallback(w http.ResponseWriter, r *ht
 	// back — i.e. forced account-linking / takeover.
 	loggedIn, _, sesErr := handler.clientAuthService.IsLoggedIntoApp(r, ctxApp.ID)
 	if sesErr != nil {
-		log.Err(sesErr).Msg("Could not resolve client session for apple callback")
+		reqLog(r.Context()).Err(sesErr).Msg("Could not resolve client session for apple callback")
 		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 		return
 	}
@@ -273,7 +272,7 @@ func (handler *RequestHandler) processAppleCallback(w http.ResponseWriter, r *ht
 		crypto.AAD("apps", "apple_private_key_encrypted", ctxApp.ID),
 	)
 	if err != nil {
-		log.Err(err).Msg("failed to decrypt apple private key")
+		reqLog(r.Context()).Err(err).Msg("failed to decrypt apple private key")
 		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 		return
 	}
@@ -286,7 +285,7 @@ func (handler *RequestHandler) processAppleCallback(w http.ResponseWriter, r *ht
 		appleClientSecretTTL,
 	)
 	if err != nil {
-		log.Err(err).Msg("failed to generate apple client secret")
+		reqLog(r.Context()).Err(err).Msg("failed to generate apple client secret")
 		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 		return
 	}

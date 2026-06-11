@@ -11,7 +11,6 @@ import (
 	"manyrows-core/utils"
 
 	"github.com/gofrs/uuid/v5"
-	"github.com/rs/zerolog/log"
 )
 
 // tier1OAuthLoginOpts is the per-provider configuration for the
@@ -142,7 +141,7 @@ func (handler *RequestHandler) completeTier1OAuthLogin(
 	}
 
 	if opts.ProviderSubject == "" {
-		log.Warn().
+		reqLog(r.Context()).Warn().
 			Str("provider", opts.WebhookMethod).
 			Str("email", email).
 			Msg("OAuth login completed without a provider subject - identity will not be linked")
@@ -184,7 +183,7 @@ func (handler *RequestHandler) completeTier1OAuthLogin(
 			WriteError(w, r, "error.identityConflict", http.StatusConflict)
 			return
 		}
-		log.Err(err).Msgf("Could not resolve %s sign-in identity", opts.WebhookMethod)
+		reqLog(r.Context()).Err(err).Msgf("Could not resolve %s sign-in identity", opts.WebhookMethod)
 		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 		return
 	}
@@ -198,7 +197,7 @@ func (handler *RequestHandler) completeTier1OAuthLogin(
 
 	if !user.IsEmailVerified() {
 		if err := handler.repo.SetUserEmailVerified(r.Context(), user.ID, now); err != nil {
-			log.Err(err).Msg("Could not mark user email verified")
+			reqLog(r.Context()).Err(err).Msg("Could not mark user email verified")
 		}
 	}
 
@@ -212,7 +211,7 @@ func (handler *RequestHandler) completeTier1OAuthLogin(
 	{
 		userTOTP, totpErr := handler.repo.GetUserByIDWithTOTP(r.Context(), user.ID)
 		if totpErr != nil {
-			log.Err(totpErr).Msgf("failed to fetch user TOTP data for %s login", opts.WebhookMethod)
+			reqLog(r.Context()).Err(totpErr).Msgf("failed to fetch user TOTP data for %s login", opts.WebhookMethod)
 			WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 			return
 		}
@@ -277,7 +276,7 @@ func (handler *RequestHandler) completeTier1OAuthLogin(
 	if ses == nil {
 		ses, err = handler.clientAuthService.CreateSessionWithOptions(r.Context(), user.ID, ctxApp.ID, ua, ip, rememberMe, ctxApp.SessionTTL(), ctxApp.RememberMeTTL(), ctxApp.MaxSessions())
 		if err != nil {
-			log.Err(err).Msgf("Could not create client session for %s login", opts.WebhookMethod)
+			reqLog(r.Context()).Err(err).Msgf("Could not create client session for %s login", opts.WebhookMethod)
 			WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 			return
 		}
@@ -296,7 +295,7 @@ func (handler *RequestHandler) completeTier1OAuthLogin(
 
 	tokenPair, err := handler.clientAuthService.IssueTokenPair(r.Context(), ses, ua, ip, effectiveSessionTTL(ctxApp, rememberMe), ctxApp.AccessTokenTTL(), dpopJKT, handler.clientAuthService.IssuerForApp(ctxApp), "")
 	if err != nil {
-		log.Err(err).Msgf("Could not issue token pair for %s login", opts.WebhookMethod)
+		reqLog(r.Context()).Err(err).Msgf("Could not issue token pair for %s login", opts.WebhookMethod)
 		// Only tear down a session we just created — never the caller's
 		// pre-existing one we chose to honor.
 		if !reusedSession {
@@ -307,6 +306,11 @@ func (handler *RequestHandler) completeTier1OAuthLogin(
 	}
 
 	_ = handler.repo.InsertAttempt(r.Context(), opts.AttemptPurpose, email, ip)
+
+	// Session established (fresh or reused) and token pair issued — record
+	// the resolved subject on the request-scoped auth log holder so the
+	// access log line for this social/IdP login carries the user id.
+	core.SetAuthLogUser(r.Context(), user.ID)
 
 	userID := user.ID
 	sessionID := ses.ID

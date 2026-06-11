@@ -13,7 +13,6 @@ import (
 	"time"
 
 	"github.com/gofrs/uuid/v5"
-	"github.com/rs/zerolog/log"
 )
 
 // =====================
@@ -57,7 +56,7 @@ func (handler *RequestHandler) WorkspaceLoginGoogle(w http.ResponseWriter, r *ht
 	if ctxApp != nil {
 		loggedIn, _, err := handler.clientAuthService.IsLoggedIntoApp(r, ctxApp.ID)
 		if err != nil {
-			log.Err(err).Msg("Could not resolve client session")
+			reqLog(r.Context()).Err(err).Msg("Could not resolve client session")
 			WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 			return
 		}
@@ -260,7 +259,7 @@ func (handler *RequestHandler) processGoogleCallback(w http.ResponseWriter, r *h
 	// its own check because it's reached via redirect, not a fresh POST.
 	loggedIn, _, sesErr := handler.clientAuthService.IsLoggedIntoApp(r, ctxApp.ID)
 	if sesErr != nil {
-		log.Err(sesErr).Msg("Could not resolve client session for google callback")
+		reqLog(r.Context()).Err(sesErr).Msg("Could not resolve client session for google callback")
 		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 		return
 	}
@@ -312,7 +311,7 @@ func (handler *RequestHandler) processGoogleCallback(w http.ResponseWriter, r *h
 		crypto.AAD("apps", "google_oauth_client_secret_encrypted", ctxApp.ID),
 	)
 	if err != nil {
-		log.Err(err).Msg("failed to decrypt google oauth client secret")
+		reqLog(r.Context()).Err(err).Msg("failed to decrypt google oauth client secret")
 		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 		return
 	}

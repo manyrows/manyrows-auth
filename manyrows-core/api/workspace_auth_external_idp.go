@@ -17,7 +17,6 @@ import (
 	"manyrows-core/utils"
 
 	"github.com/gofrs/uuid/v5"
-	"github.com/rs/zerolog/log"
 )
 
 // =====================
@@ -100,7 +99,7 @@ func (handler *RequestHandler) loadEnabledExternalIDP(w http.ResponseWriter, r *
 			WriteError(w, r, "error.notFound", http.StatusNotFound)
 			return nil, nil, false
 		}
-		log.Err(err).Str("app_id", app.ID.String()).Str("slug", slug).Msg("loadEnabledExternalIDP: lookup failed")
+		reqLog(r.Context()).Err(err).Str("app_id", app.ID.String()).Str("slug", slug).Msg("loadEnabledExternalIDP: lookup failed")
 		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 		return nil, nil, false
 	}
@@ -145,7 +144,7 @@ func (handler *RequestHandler) WorkspaceExternalIDPAuthorize(w http.ResponseWrit
 	}
 	allowed, err := handler.isOpenerOriginAllowed(r.Context(), app, openerOrigin)
 	if err != nil {
-		log.Err(err).Msg("external idp authorize: GetCorsOrigins failed")
+		reqLog(r.Context()).Err(err).Msg("external idp authorize: GetCorsOrigins failed")
 		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 		return
 	}
@@ -164,7 +163,7 @@ func (handler *RequestHandler) WorkspaceExternalIDPAuthorize(w http.ResponseWrit
 
 	state, err := auth.SignOAuthState(r.Context(), handler.repo, handler.totpKey, app.ID, idp.ProviderKey(), openerOrigin, preloginSessionID, externalIDPStateTTL)
 	if err != nil {
-		log.Err(err).Msg("external idp authorize: sign state failed")
+		reqLog(r.Context()).Err(err).Msg("external idp authorize: sign state failed")
 		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 		return
 	}
@@ -179,7 +178,7 @@ func (handler *RequestHandler) WorkspaceExternalIDPAuthorize(w http.ResponseWrit
 	challenge, nonce := handler.pkceAndNonce(idp, state)
 	authorizeURL, err := oidc.AuthorizeURL(r.Context(), externalIDPProviderConfig(idp, ""), redirectURI, state, challenge, nonce)
 	if err != nil {
-		log.Err(err).Str("slug", idp.Slug).Msg("external idp authorize: build URL failed")
+		reqLog(r.Context()).Err(err).Str("slug", idp.Slug).Msg("external idp authorize: build URL failed")
 		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 		return
 	}
@@ -216,7 +215,7 @@ func (handler *RequestHandler) processExternalIDPCallback(w http.ResponseWriter,
 	// forced-linking guard as the bespoke providers.
 	loggedIn, _, sesErr := handler.clientAuthService.IsLoggedIntoApp(r, app.ID)
 	if sesErr != nil {
-		log.Err(sesErr).Msg("external idp callback: session resolve failed")
+		reqLog(r.Context()).Err(sesErr).Msg("external idp callback: session resolve failed")
 		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 		return
 	}
@@ -253,7 +252,7 @@ func (handler *RequestHandler) processExternalIDPCallback(w http.ResponseWriter,
 		crypto.AAD("external_idps", "client_secret_encrypted", idp.ID),
 	)
 	if err != nil {
-		log.Err(err).Str("slug", idp.Slug).Msg("external idp callback: decrypt secret failed")
+		reqLog(r.Context()).Err(err).Str("slug", idp.Slug).Msg("external idp callback: decrypt secret failed")
 		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 		return
 	}
@@ -271,7 +270,7 @@ func (handler *RequestHandler) processExternalIDPCallback(w http.ResponseWriter,
 	info, err := oidc.Authenticate(r.Context(), externalIDPProviderConfig(idp, string(clientSecret)), code, redirectURI, verifier, nonce)
 	if err != nil {
 		_ = handler.repo.InsertAttempt(r.Context(), "external_idp_oauth", "external_idp_code_failed", ip)
-		log.Warn().Err(err).Str("slug", idp.Slug).Msg("external idp callback: authenticate failed")
+		reqLog(r.Context()).Warn().Err(err).Str("slug", idp.Slug).Msg("external idp callback: authenticate failed")
 		handler.writeAuthLogFromRequest(r, AuthLogInput{
 			WorkspaceID:   ws.ID,
 			AppID:         &app.ID,

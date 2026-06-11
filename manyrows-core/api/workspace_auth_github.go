@@ -10,7 +10,6 @@ import (
 	"strings"
 
 	"github.com/gofrs/uuid/v5"
-	"github.com/rs/zerolog/log"
 )
 
 // =====================
@@ -72,7 +71,7 @@ func (handler *RequestHandler) processGithubCallback(w http.ResponseWriter, r *h
 	// active — same forced-linking guard as the other providers.
 	loggedIn, _, sesErr := handler.clientAuthService.IsLoggedIntoApp(r, ctxApp.ID)
 	if sesErr != nil {
-		log.Err(sesErr).Msg("Could not resolve client session for github callback")
+		reqLog(r.Context()).Err(sesErr).Msg("Could not resolve client session for github callback")
 		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 		return
 	}
@@ -110,7 +109,7 @@ func (handler *RequestHandler) processGithubCallback(w http.ResponseWriter, r *h
 		crypto.AAD("apps", "github_client_secret_encrypted", ctxApp.ID),
 	)
 	if err != nil {
-		log.Err(err).Msg("failed to decrypt github client secret")
+		reqLog(r.Context()).Err(err).Msg("failed to decrypt github client secret")
 		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 		return
 	}
