@@ -74,10 +74,10 @@ func TestOIDCConsent_UpsertAndGet(t *testing.T) {
 }
 
 // TestOIDCConsent_RequireConsentConfigRoundTrip verifies:
-// 1. A fresh app has RequireConsent=false.
-// 2. Toggling it to true via the admin OIDC config endpoint persists it.
-// 3. Updating other fields (redirect URIs) without mentioning
-//    requireConsent leaves the toggle unchanged.
+//  1. A fresh app has RequireConsent=false.
+//  2. Toggling it to true via the admin OIDC config endpoint persists it.
+//  3. Updating other fields (redirect URIs) without mentioning
+//     requireConsent leaves the toggle unchanged.
 func TestOIDCConsent_RequireConsentConfigRoundTrip(t *testing.T) {
 	ctx := context.Background()
 	router := setupOIDCAdminRouter(t)
