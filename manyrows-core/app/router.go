@@ -415,6 +415,18 @@ func (a *AppService) initRouter() error {
 	return nil
 }
 
+// echoRequestIDHeader writes the resolved request id (chi RequestID honors
+// an inbound X-Request-Id, else generates one) onto the response so clients
+// and operators can correlate. Set before the handler writes status/body.
+func echoRequestIDHeader(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if rid := middleware.GetReqID(r.Context()); rid != "" {
+			w.Header().Set(middleware.RequestIDHeader, rid)
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
 func createBaseRouter(getBaseURL func() string, useHTTPSOnly bool) *chi.Mux {
 	r := chi.NewRouter()
 	if useHTTPSOnly {
@@ -423,6 +435,7 @@ func createBaseRouter(getBaseURL func() string, useHTTPSOnly bool) *chi.Mux {
 	r.Use(commonSecurityHeaders(useHTTPSOnly))
 	r.Use(middleware.StripSlashes)
 	r.Use(middleware.RequestID)
+	r.Use(echoRequestIDHeader)
 	// NOTE: do NOT add chi's middleware.RealIP here. It overwrites
 	// r.RemoteAddr from client-supplied headers (True-Client-IP /
 	// X-Real-IP / X-Forwarded-For) BEFORE any trusted-proxy check runs,

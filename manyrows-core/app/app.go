@@ -256,6 +256,9 @@ func initLogger(config *config2.Config) {
 		return filepath.Base(file) + ":" + strconv.Itoa(line)
 	}
 	log.Logger = log.With().Caller().Logger()
+	// Unseeded contexts fall back to the fully-configured global logger,
+	// so reqLog(ctx) is a behavior-preserving drop-in for the global log.
+	zerolog.DefaultContextLogger = &log.Logger
 	level, err := zerolog.ParseLevel(config.GetLogLevel())
 	if err != nil {
 		println("Parse Level error" + err.Error())
