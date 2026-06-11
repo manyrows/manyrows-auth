@@ -1871,5 +1871,10 @@
   "appUsers.bulk.confirmBody": "선택한 {{count}}명에게 \"{{action}}\" 작업을 실행합니다.",
   "appUsers.bulk.result": "성공 {{succeeded}}건, 실패 {{failed}}건",
   "sessions.columnUserId": "사용자 ID",
-  "sessions.user": "사용자"
+  "sessions.user": "사용자",
+  "orgMembers.suspend": "정지",
+  "orgMembers.reactivate": "재활성화",
+  "orgMembers.statusDisabled": "정지됨",
+  "orgMembers.suspendConfirm": "이 멤버를 정지할까요? 재활성화 전까지 조직에 접근할 수 없습니다.",
+  "orgMembers.lastOwnerError": "조직의 유일한 소유자는 정지할 수 없습니다."
 }

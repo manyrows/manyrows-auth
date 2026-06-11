@@ -30,7 +30,7 @@ import {
   Tooltip,
   Typography,
 } from "@mui/material";
-import { SquarePen, Trash2 } from "lucide-react";
+import { Ban, SquarePen, Trash2, UserCheck } from "lucide-react";
 import type { Project } from "../core.ts";
 import { errText } from "./AppAuthMethods.tsx";
 import PageHeader from "../components/PageHeader.tsx";
@@ -121,6 +121,10 @@ export default function AppOrganizationMembers({ project, appId, org, onBack }: 
   // Remove member
   const [removeTarget, setRemoveTarget] = React.useState<OrgMember | null>(null);
   const [removeSaving, setRemoveSaving] = React.useState(false);
+
+  // Suspend / reactivate member
+  const [suspendTarget, setSuspendTarget] = React.useState<OrgMember | null>(null);
+  const [suspendSaving, setSuspendSaving] = React.useState(false);
 
   const loadMembers = React.useCallback(
     async (p: number, ps: number, q: string) => {
@@ -275,6 +279,34 @@ export default function AppOrganizationMembers({ project, appId, org, onBack }: 
     }
   }
 
+  async function confirmSuspend() {
+    if (!suspendTarget) return;
+    const isSuspending = suspendTarget.status === "active";
+    const nextStatus = isSuspending ? "disabled" : "active";
+    setSuspendSaving(true);
+    try {
+      await axios.patch(`${orgURL}/members/${suspendTarget.userId}/status`, { status: nextStatus });
+      enqueueSnackbar(
+        isSuspending
+          ? t("orgMembers.suspend", { defaultValue: "Suspend" })
+          : t("orgMembers.reactivate", { defaultValue: "Reactivate" }),
+        { variant: "success" },
+      );
+      setSuspendTarget(null);
+      await loadMembers(page, pageSize, debouncedSearch);
+    } catch (e: unknown) {
+      if ((e as { response?: { status?: number } })?.response?.status === 409) {
+        enqueueSnackbar(t("orgMembers.lastOwnerError", { defaultValue: "Cannot suspend the organization's only owner." }), {
+          variant: "error",
+        });
+      } else {
+        enqueueSnackbar(errText(e), { variant: "error" });
+      }
+    } finally {
+      setSuspendSaving(false);
+    }
+  }
+
   return (
     <Box>
       <Breadcrumbs sx={{ mb: 1 }}>
@@ -352,13 +384,38 @@ export default function AppOrganizationMembers({ project, appId, org, onBack }: 
                           </Typography>
                         )}
                       </TableCell>
-                      <TableCell>{m.status}</TableCell>
+                      <TableCell>
+                        {m.status === "disabled" ? (
+                          <Chip
+                            size="small"
+                            label={t("orgMembers.statusDisabled", { defaultValue: "Suspended" })}
+                            color="warning"
+                          />
+                        ) : (
+                          m.status
+                        )}
+                      </TableCell>
                       <TableCell align="right">
                         {isActive && (
                           <Stack direction="row" spacing={0.5} justifyContent="flex-end">
                             <Tooltip title={t("organizations.editMember", { defaultValue: "Edit member" })}>
                               <IconButton size="small" onClick={() => openEditMember(m)}>
                                 <SquarePen size={15} />
+                              </IconButton>
+                            </Tooltip>
+                            <Tooltip
+                              title={
+                                m.status === "disabled"
+                                  ? t("orgMembers.reactivate", { defaultValue: "Reactivate" })
+                                  : t("orgMembers.suspend", { defaultValue: "Suspend" })
+                              }
+                            >
+                              <IconButton
+                                size="small"
+                                color={m.status === "disabled" ? "success" : "warning"}
+                                onClick={() => setSuspendTarget(m)}
+                              >
+                                {m.status === "disabled" ? <UserCheck size={15} /> : <Ban size={15} />}
                               </IconButton>
                             </Tooltip>
                             <Tooltip title={t("organizations.removeMember", { defaultValue: "Remove member" })}>
@@ -565,6 +622,39 @@ export default function AppOrganizationMembers({ project, appId, org, onBack }: 
           </Button>
           <Button color="error" variant="contained" onClick={() => void confirmRemove()} disabled={removeSaving}>
             {t("organizations.remove", { defaultValue: "Remove" })}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Suspend / reactivate member confirm dialog */}
+      <Dialog open={!!suspendTarget} onClose={() => setSuspendTarget(null)} fullWidth maxWidth="xs">
+        <DialogTitle>
+          {suspendTarget?.status === "disabled"
+            ? t("orgMembers.reactivate", { defaultValue: "Reactivate" })
+            : t("orgMembers.suspend", { defaultValue: "Suspend" })}
+        </DialogTitle>
+        <DialogContent>
+          <Typography variant="body2">
+            {suspendTarget?.status === "disabled"
+              ? `${t("orgMembers.reactivate", { defaultValue: "Reactivate" })} ${suspendTarget?.email || suspendTarget?.userId}?`
+              : t("orgMembers.suspendConfirm", {
+                  defaultValue: "Suspend this member? They lose organization access until reactivated.",
+                })}
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setSuspendTarget(null)} disabled={suspendSaving}>
+            {t("common.cancel", { defaultValue: "Cancel" })}
+          </Button>
+          <Button
+            color={suspendTarget?.status === "disabled" ? "success" : "warning"}
+            variant="contained"
+            onClick={() => void confirmSuspend()}
+            disabled={suspendSaving}
+          >
+            {suspendTarget?.status === "disabled"
+              ? t("orgMembers.reactivate", { defaultValue: "Reactivate" })
+              : t("orgMembers.suspend", { defaultValue: "Suspend" })}
           </Button>
         </DialogActions>
       </Dialog>

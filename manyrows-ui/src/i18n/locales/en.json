@@ -1875,5 +1875,10 @@
   "appUsers.bulk.confirmBody": "This runs \"{{action}}\" on the {{count}} selected users.",
   "appUsers.bulk.result": "{{succeeded}} succeeded, {{failed}} failed",
   "sessions.columnUserId": "User ID",
-  "sessions.user": "User"
+  "sessions.user": "User",
+  "orgMembers.suspend": "Suspend",
+  "orgMembers.reactivate": "Reactivate",
+  "orgMembers.statusDisabled": "Suspended",
+  "orgMembers.suspendConfirm": "Suspend this member? They lose organization access until reactivated.",
+  "orgMembers.lastOwnerError": "Cannot suspend the organization's only owner."
 }
