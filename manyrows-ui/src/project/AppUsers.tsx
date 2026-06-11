@@ -649,6 +649,12 @@ export default function AppUsers({ project, appId: appIdProp }: Props) {
   const [bulkLoading, setBulkLoading] = React.useState(false);
   const [bulkProgress, setBulkProgress] = React.useState<{ done: number; total: number; errors: BulkError[] }>({ done: 0, total: 0, errors: [] });
 
+  // Recovery bulk action (single-request endpoint)
+  type RecoveryAction = "resetTotp" | "unlock" | "clearPassword" | "enable" | "disable";
+  const [recoveryAction, setRecoveryAction] = React.useState<RecoveryAction | "">("");
+  const [recoveryConfirmOpen, setRecoveryConfirmOpen] = React.useState(false);
+  const [recoveryLoading, setRecoveryLoading] = React.useState(false);
+
   const toggleSelect = React.useCallback((id: string) => {
     setSelectedIds((prev) => {
       const next = new Set(prev);
@@ -1087,6 +1093,45 @@ export default function AppUsers({ project, appId: appIdProp }: Props) {
     setBulkMode(null);
     setBulkProgress({ done: 0, total: 0, errors: [] });
     clearSelection();
+  };
+
+  const runRecoveryBulk = async () => {
+    if (!recoveryAction || !selectedAppId) return;
+    const userIds = [...selectedIds];
+    if (userIds.length === 0) return;
+
+    type BulkBody =
+      | { action: "resetTotp" | "unlock" | "clearPassword"; userIds: string[] }
+      | { action: "setStatus"; userIds: string[]; enabled: boolean };
+
+    const body: BulkBody =
+      recoveryAction === "enable"
+        ? { action: "setStatus", userIds, enabled: true }
+        : recoveryAction === "disable"
+          ? { action: "setStatus", userIds, enabled: false }
+          : { action: recoveryAction, userIds };
+
+    setRecoveryLoading(true);
+    try {
+      const res = await axios.post<{ results: { userId: string; ok: boolean; error?: string }[]; succeeded: number; failed: number }>(
+        `/admin/workspace/${project.workspaceId}/projects/${project.id}/apps/${selectedAppId}/users:bulk`,
+        body,
+      );
+      const { succeeded, failed, results } = res.data;
+      enqueueSnackbar(t("appUsers.bulk.result", { succeeded, failed }), { variant: failed > 0 ? "warning" : "success" });
+      if (failed > 0) {
+        const failedIds = results.filter((r) => !r.ok).map((r) => r.userId);
+        console.warn("Bulk action partial failures:", failedIds, results.filter((r) => !r.ok));
+      }
+      setRecoveryConfirmOpen(false);
+      setRecoveryAction("");
+      clearSelection();
+      await refreshList();
+    } catch (e) {
+      enqueueSnackbar(extractApiError(e, t("projectMembers.failedToSave")), { variant: "error" });
+    } finally {
+      setRecoveryLoading(false);
+    }
   };
 
   const confirmDeleteMember = async () => {
@@ -1707,7 +1752,7 @@ export default function AppUsers({ project, appId: appIdProp }: Props) {
                 }}
               >
                 <Typography variant="body2" sx={{ fontWeight: 600, mr: 1 }}>
-                  {t("projectMembers.bulkSelected", { defaultValue: "{{count}} selected", count: selectedIds.size })}
+                  {t("appUsers.bulk.selected", { count: selectedIds.size })}
                 </Typography>
                 <Button size="small" variant="outlined" onClick={() => setBulkMode("disable")}>
                   {t("projectMembers.bulkDisable", { defaultValue: "Disable" })}
@@ -1717,6 +1762,34 @@ export default function AppUsers({ project, appId: appIdProp }: Props) {
                 </Button>
                 <Button size="small" variant="outlined" color="error" onClick={() => setBulkMode("delete")}>
                   {t("projectMembers.bulkRemove", { defaultValue: "Remove from app" })}
+                </Button>
+                <Divider orientation="vertical" flexItem sx={{ mx: 0.5 }} />
+                <FormControl size="small" sx={{ minWidth: 170 }}>
+                  <Select
+                    displayEmpty
+                    value={recoveryAction}
+                    onChange={(e) => setRecoveryAction(e.target.value as RecoveryAction | "")}
+                    sx={{ fontSize: 13, height: 30 }}
+                  >
+                    <MenuItem value="" disabled>
+                      <Typography variant="body2" color="text.secondary">{t("appUsers.bulk.action")}</Typography>
+                    </MenuItem>
+                    <MenuItem value="resetTotp">{t("appUsers.bulk.resetTotp")}</MenuItem>
+                    <MenuItem value="unlock">{t("appUsers.bulk.unlock")}</MenuItem>
+                    <MenuItem value="clearPassword">{t("appUsers.bulk.clearPassword")}</MenuItem>
+                    <MenuItem value="enable">{t("appUsers.bulk.enable")}</MenuItem>
+                    <MenuItem value="disable">{t("appUsers.bulk.disable")}</MenuItem>
+                  </Select>
+                </FormControl>
+                <Button
+                  size="small"
+                  variant="contained"
+                  disableElevation
+                  disabled={!recoveryAction}
+                  onClick={() => setRecoveryConfirmOpen(true)}
+                  sx={{ textTransform: "none" }}
+                >
+                  {t("appUsers.bulk.apply")}
                 </Button>
                 <Box sx={{ flex: 1 }} />
                 <Button size="small" onClick={clearSelection}>
@@ -2764,6 +2837,26 @@ export default function AppUsers({ project, appId: appIdProp }: Props) {
           />
         </React.Suspense>
       )}
+
+      {/* Recovery bulk action confirm dialog */}
+      <ConfirmActionDialog
+        open={recoveryConfirmOpen}
+        loading={recoveryLoading}
+        title={t("appUsers.bulk.confirmTitle", { count: selectedIds.size })}
+        cancelLabel={t("common.cancel")}
+        confirmLabel={t("appUsers.bulk.apply")}
+        onClose={() => { if (!recoveryLoading) { setRecoveryConfirmOpen(false); } }}
+        onConfirm={runRecoveryBulk}
+      >
+        <Typography variant="body2" color="text.secondary">
+          {t("appUsers.bulk.confirmBody", {
+            count: selectedIds.size,
+            action: recoveryAction
+              ? t(`appUsers.bulk.${recoveryAction}`)
+              : "",
+          })}
+        </Typography>
+      </ConfirmActionDialog>
 
       <Dialog
         open={!!bulkMode}

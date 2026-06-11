@@ -1861,6 +1861,17 @@
   "projectMembers.userDisabled": "사용자가 비활성화되었습니다",
   "appUsers.organizations": "조직",
   "appUsers.orgNone": "소속된 조직이 없습니다",
+  "appUsers.bulk.selected": "{{count}}명 선택됨",
+  "appUsers.bulk.action": "일괄 작업",
+  "appUsers.bulk.resetTotp": "2단계 인증 초기화",
+  "appUsers.bulk.unlock": "잠금 해제",
+  "appUsers.bulk.clearPassword": "비밀번호 초기화",
+  "appUsers.bulk.enable": "활성화",
+  "appUsers.bulk.disable": "비활성화",
+  "appUsers.bulk.apply": "적용",
+  "appUsers.bulk.confirmTitle": "{{count}}명에게 적용할까요?",
+  "appUsers.bulk.confirmBody": "선택한 {{count}}명에게 \"{{action}}\" 작업을 실행합니다.",
+  "appUsers.bulk.result": "성공 {{succeeded}}건, 실패 {{failed}}건",
   "sessions.columnUserId": "사용자 ID",
   "sessions.user": "사용자"
 }
