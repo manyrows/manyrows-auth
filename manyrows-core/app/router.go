@@ -377,6 +377,9 @@ func (a *AppService) initRouter() error {
 			r.Delete("/users/{userId}/totp", requestHandler.HandleAdminResetUserTOTP)
 			r.Post("/users/{userId}/unlock", requestHandler.HandleAdminUnlockUser)
 
+			// Bulk recovery: fan one action out over many users.
+			r.Post("/users:bulk", requestHandler.HandleAdminBulkUserAction)
+
 			// Parity with the S2S API for support operations on a user.
 			r.Post("/users/{userId}/magic-link", requestHandler.HandleAdminCreateMagicLink)
 			r.Put("/users/{userId}/password", requestHandler.HandleAdminSetUserPassword)

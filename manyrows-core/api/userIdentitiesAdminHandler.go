@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"errors"
 	"net/http"
 
@@ -24,24 +25,39 @@ func (handler *RequestHandler) loadUserScopedToApp(
 		WriteError(w, r, "error.notFound", http.StatusNotFound)
 		return nil, false
 	}
-	app, err := handler.repo.GetAppByID(r.Context(), appID)
-	if err != nil {
-		log.Err(err).Msg("Could not load app for identity admin")
-		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
+	user, ok := handler.lookupUserScopedToApp(r.Context(), appID, uid)
+	if !ok {
+		WriteError(w, r, "error.notFound", http.StatusNotFound)
 		return nil, false
 	}
-	user, err := handler.repo.GetUserByID(r.Context(), uid)
+	return user, true
+}
+
+// lookupUserScopedToApp loads a user and confirms app membership without
+// writing an HTTP response (for batch loops). Returns (nil,false) on any
+// miss — bad app, user gone, or a user belonging to a different pool — so
+// callers can't distinguish "not found" from "wrong pool" (same probing
+// guarantee loadUserScopedToApp gives its HTTP callers). Transient load
+// errors are logged and also surface as a miss.
+func (handler *RequestHandler) lookupUserScopedToApp(
+	ctx context.Context, appID, userID uuid.UUID,
+) (*core.User, bool) {
+	if userID == uuid.Nil {
+		return nil, false
+	}
+	app, err := handler.repo.GetAppByID(ctx, appID)
 	if err != nil {
-		if errors.Is(err, repo.ErrNotFound) {
-			WriteError(w, r, "error.notFound", http.StatusNotFound)
-			return nil, false
+		log.Err(err).Msg("Could not load app for identity admin")
+		return nil, false
+	}
+	user, err := handler.repo.GetUserByID(ctx, userID)
+	if err != nil {
+		if !errors.Is(err, repo.ErrNotFound) {
+			log.Err(err).Msg("Could not load user for identity admin")
 		}
-		log.Err(err).Msg("Could not load user for identity admin")
-		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 		return nil, false
 	}
 	if user.UserPoolID != app.UserPoolID {
-		WriteError(w, r, "error.notFound", http.StatusNotFound)
 		return nil, false
 	}
 	return user, true
