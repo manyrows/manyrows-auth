@@ -32,6 +32,19 @@ func (r *Repo) CountAttemptsBySubject(ctx context.Context, purpose string, subje
 	return count, nil
 }
 
+// DeleteAttemptsBySubject removes attempt rows for a subject across the
+// given purposes. Used by the admin/server unlock to clear the lockout
+// counter so an unlocked user is not immediately re-locked by the stale
+// failure count.
+func (r *Repo) DeleteAttemptsBySubject(ctx context.Context, subject string, purposes ...string) error {
+	if subject == "" || len(purposes) == 0 {
+		return nil
+	}
+	const q = `delete from attempts where subject = $1 and purpose = any($2)`
+	_, err := r.db.Pool().Exec(ctx, q, subject, purposes)
+	return err
+}
+
 func (r *Repo) CountAttemptsByIP(ctx context.Context, purpose string, ip string, since time.Time) (int, error) {
 	const q = `
 		select count(*)

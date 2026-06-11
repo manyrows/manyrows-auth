@@ -40,7 +40,7 @@ func (handler *RequestHandler) HandleAdminUnlockUser(w http.ResponseWriter, r *h
 	if !ok {
 		return
 	}
-	if err := handler.repo.ClearUserLockedUntil(r.Context(), user.ID); err != nil {
+	if err := handler.unlockUserAccount(r.Context(), user); err != nil {
 		log.Err(err).Msg("Could not unlock user (admin)")
 		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 		return

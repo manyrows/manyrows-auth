@@ -60,8 +60,20 @@ func (handler *RequestHandler) ServerUnlockUser(w http.ResponseWriter, r *http.R
 	if !ok {
 		return
 	}
-	if err := handler.repo.ClearUserLockedUntil(r.Context(), userID); err != nil {
-		log.Err(err).Msg("ServerUnlockUser: ClearUserLockedUntil failed")
+	// Load the full user so the unlock can purge the failed-login attempts
+	// keyed on the user's email (resolveAppMember only gives us the ID).
+	user, err := handler.repo.GetUserByID(r.Context(), userID)
+	if err != nil {
+		if errors.Is(err, repo.ErrNotFound) {
+			WriteError(w, r, "error.notFound", http.StatusNotFound)
+			return
+		}
+		log.Err(err).Msg("ServerUnlockUser: GetUserByID failed")
+		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
+		return
+	}
+	if err := handler.unlockUserAccount(r.Context(), user); err != nil {
+		log.Err(err).Msg("ServerUnlockUser: unlockUserAccount failed")
 		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 		return
 	}
