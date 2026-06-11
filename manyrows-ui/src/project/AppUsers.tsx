@@ -650,7 +650,7 @@ export default function AppUsers({ project, appId: appIdProp }: Props) {
   const [bulkProgress, setBulkProgress] = React.useState<{ done: number; total: number; errors: BulkError[] }>({ done: 0, total: 0, errors: [] });
 
   // Recovery bulk action (single-request endpoint)
-  type RecoveryAction = "resetTotp" | "unlock" | "clearPassword" | "enable" | "disable";
+  type RecoveryAction = "resetTotp" | "unlock" | "clearPassword";
   const [recoveryAction, setRecoveryAction] = React.useState<RecoveryAction | "">("");
   const [recoveryConfirmOpen, setRecoveryConfirmOpen] = React.useState(false);
   const [recoveryLoading, setRecoveryLoading] = React.useState(false);
@@ -1100,16 +1100,7 @@ export default function AppUsers({ project, appId: appIdProp }: Props) {
     const userIds = [...selectedIds];
     if (userIds.length === 0) return;
 
-    type BulkBody =
-      | { action: "resetTotp" | "unlock" | "clearPassword"; userIds: string[] }
-      | { action: "setStatus"; userIds: string[]; enabled: boolean };
-
-    const body: BulkBody =
-      recoveryAction === "enable"
-        ? { action: "setStatus", userIds, enabled: true }
-        : recoveryAction === "disable"
-          ? { action: "setStatus", userIds, enabled: false }
-          : { action: recoveryAction, userIds };
+    const body: { action: RecoveryAction; userIds: string[] } = { action: recoveryAction, userIds };
 
     setRecoveryLoading(true);
     try {
@@ -1777,8 +1768,6 @@ export default function AppUsers({ project, appId: appIdProp }: Props) {
                     <MenuItem value="resetTotp">{t("appUsers.bulk.resetTotp")}</MenuItem>
                     <MenuItem value="unlock">{t("appUsers.bulk.unlock")}</MenuItem>
                     <MenuItem value="clearPassword">{t("appUsers.bulk.clearPassword")}</MenuItem>
-                    <MenuItem value="enable">{t("appUsers.bulk.enable")}</MenuItem>
-                    <MenuItem value="disable">{t("appUsers.bulk.disable")}</MenuItem>
                   </Select>
                 </FormControl>
                 <Button

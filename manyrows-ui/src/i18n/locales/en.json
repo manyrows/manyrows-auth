@@ -1870,8 +1870,6 @@
   "appUsers.bulk.resetTotp": "Reset 2FA",
   "appUsers.bulk.unlock": "Unlock",
   "appUsers.bulk.clearPassword": "Clear password",
-  "appUsers.bulk.enable": "Enable",
-  "appUsers.bulk.disable": "Disable",
   "appUsers.bulk.apply": "Apply",
   "appUsers.bulk.confirmTitle": "Apply to {{count}} users?",
   "appUsers.bulk.confirmBody": "This runs \"{{action}}\" on the {{count}} selected users.",
