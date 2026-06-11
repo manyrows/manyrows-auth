@@ -12,6 +12,7 @@ require (
 	github.com/gorilla/sessions v1.4.0
 	github.com/jackc/pgx-gofrs-uuid v0.0.0-20230224015001-1d428863c2e2
 	github.com/jackc/pgx/v5 v5.10.0
+	github.com/mileusna/useragent v1.3.5
 	github.com/pquerna/otp v1.5.0
 	github.com/pressly/goose/v3 v3.27.1
 	github.com/prometheus/client_golang v1.23.2

@@ -366,7 +366,7 @@ export default function Profile({ workspaceBaseUrl, jwtToken, user, onBack, hide
   // The tab order is fixed: Profile | Password | Security | Sessions.
 
   // Sessions
-  type SessionItem = { id: string; createdAt: string; lastSeenAt: string; userAgent?: string; ip?: string; current: boolean };
+  type SessionItem = { id: string; createdAt: string; lastSeenAt: string; userAgent?: string; deviceLabel?: string; ip?: string; current: boolean };
   const [sessions, setSessions] = React.useState<SessionItem[]>([]);
   const [sessionsLoading, setSessionsLoading] = React.useState(false);
   const [sessionsError, setSessionsError] = React.useState<string | null>(null);
@@ -1583,7 +1583,7 @@ export default function Profile({ workspaceBaseUrl, jwtToken, user, onBack, hide
             >
               <div style={{ display: "flex", flexDirection: "column", gap: 2, flex: 1, minWidth: 0 }}>
                 <span style={{ fontSize: 13, fontWeight: s.current ? 600 : 400 }}>
-                  {s.current ? "Current session" : parseBrowser(s.userAgent)}
+                  {s.current ? "Current session" : (s.deviceLabel || parseBrowser(s.userAgent))}
                 </span>
                 <span style={{ fontSize: 11, color: "var(--ak-color-text-secondary, #666)" }}>
                   {s.ip && `${s.ip} · `}Last active {formatRelative(s.lastSeenAt)}

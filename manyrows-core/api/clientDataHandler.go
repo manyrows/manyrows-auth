@@ -731,23 +731,25 @@ func (handler *RequestHandler) GetMySessions(w http.ResponseWriter, r *http.Requ
 	}
 
 	type sessionItem struct {
-		ID         string `json:"id"`
-		CreatedAt  string `json:"createdAt"`
-		LastSeenAt string `json:"lastSeenAt"`
-		UserAgent  string `json:"userAgent,omitempty"`
-		IP         string `json:"ip,omitempty"`
-		Current    bool   `json:"current"`
+		ID          string `json:"id"`
+		CreatedAt   string `json:"createdAt"`
+		LastSeenAt  string `json:"lastSeenAt"`
+		UserAgent   string `json:"userAgent,omitempty"`
+		DeviceLabel string `json:"deviceLabel,omitempty"`
+		IP          string `json:"ip,omitempty"`
+		Current     bool   `json:"current"`
 	}
 
 	items := make([]sessionItem, 0, len(sessions))
 	for _, s := range sessions {
 		items = append(items, sessionItem{
-			ID:         s.ID.String(),
-			CreatedAt:  s.CreatedAt.Format(time.RFC3339),
-			LastSeenAt: s.LastSeenAt.Format(time.RFC3339),
-			UserAgent:  s.UserAgent,
-			IP:         s.IP,
-			Current:    s.ID == ses.ID,
+			ID:          s.ID.String(),
+			CreatedAt:   s.CreatedAt.Format(time.RFC3339),
+			LastSeenAt:  s.LastSeenAt.Format(time.RFC3339),
+			UserAgent:   s.UserAgent,
+			DeviceLabel: deviceLabelFromUA(s.UserAgent),
+			IP:          s.IP,
+			Current:     s.ID == ses.ID,
 		})
 	}
 

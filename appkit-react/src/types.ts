@@ -126,6 +126,8 @@ export type AppKitSession = {
   createdAt: string;
   lastSeenAt: string;
   userAgent?: string;
+  /** Human-readable device label derived from the user agent, e.g. "Chrome on macOS". */
+  deviceLabel?: string;
   ip?: string;
   /** True for the session making the request. */
   current: boolean;
