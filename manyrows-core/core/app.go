@@ -280,6 +280,13 @@ type App struct {
 	PasswordMinZxcvbnScore  int  `json:"passwordMinZxcvbnScore"`
 	PasswordReusePrevention bool `json:"passwordReusePrevention"`
 
+	// Legal / consent gating (per-app). Empty consent_version or
+	// require_consent=false means signup consent is not enforced.
+	TermsURL       string `json:"termsUrl"`
+	PrivacyURL     string `json:"privacyUrl"`
+	ConsentVersion string `json:"consentVersion"`
+	RequireConsent bool   `json:"requireConsent"`
+
 	// CookieDomain overrides the workspace-level cookie domain for
 	// this specific app. Non-nil = use this value verbatim; nil =
 	// inherit Workspace.CookieDomain. Useful when one ManyRows
