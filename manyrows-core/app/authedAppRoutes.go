@@ -63,6 +63,7 @@ func registerAuthedAppRoutes(r chi.Router, h *api.RequestHandler, rpo *repo.Repo
 	r.Delete("/me/sessions/{sessionId}", h.DeleteMySession)
 	r.Get("/me/identities", h.GetMyIdentities)
 	r.Delete("/me/identities/{provider}", h.DeleteMyIdentity)
+	r.Get("/me/export", h.GetMyDataExport)
 	r.Post("/me/delete", h.DeleteMyAccount)
 	r.Post("/me/request-delete", h.RequestAccountDeletion)
 	r.Post("/me/request-email-change", h.ClientRequestEmailChange)

@@ -207,6 +207,8 @@ func setupClientAPIRouter(t *testing.T) *chi.Mux {
 			authed.Post("/me/request-delete", requestHandler.RequestAccountDeletion)
 			authed.Post("/me/request-email-change", requestHandler.ClientRequestEmailChange)
 			authed.Post("/me/verify-email-change", requestHandler.ClientVerifyEmailChange)
+			authed.Get("/me/identities", requestHandler.GetMyIdentities)
+			authed.Get("/me/export", requestHandler.GetMyDataExport)
 			// Sensitive-op routes — gated by requireSensitivePasswordOrCodeReauth.
 			// Wired here so the re-auth-contract integration tests below
 			// can exercise the body shape end-to-end.
