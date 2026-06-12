@@ -109,5 +109,5 @@ func (handler *RequestHandler) RequestAccountDeletion(w http.ResponseWriter, r *
 
 	_ = handler.repo.InsertAttempt(ctx, attemptPurposeClientAccountDelete, subject, ip)
 
-	utils.WriteJsonWithStatusCode(w, map[string]any{"ok": true}, http.StatusOK)
+	utils.WriteJson(w, map[string]any{"ok": true})
 }
