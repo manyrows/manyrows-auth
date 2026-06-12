@@ -262,6 +262,12 @@ type AppResource = {
   // Security → Sessions → Transport in the admin UI; the frontend
   // picks it up on the next page load.
   transportMode?: "local" | "bff" | "cookie";
+  // Legal consent gating. When requireConsent is true the prebuilt
+  // Auth UI renders a required checkbox before account creation.
+  requireConsent?: boolean;
+  termsUrl?: string;
+  privacyUrl?: string;
+  consentVersion?: string;
 };
 
 interface AppData {
@@ -1923,10 +1929,10 @@ export default function AppKit(props: AppKitProps) {
           )
         ) : authStatus === "unauthenticated" ? (
           props.hideAuthUI ? null :
-          <Auth workspaceBaseUrl={appBaseURL} cookieMode={cookieMode} onTokenPair={onTokenPairReceived} allowRegistration={app?.allowRegistration} appId={app?.id} googleOAuthClientId={app?.googleOAuthClientId} appleEnabled={app?.appleEnabled} microsoftEnabled={app?.microsoftEnabled} githubEnabled={app?.githubEnabled} kakaoEnabled={app?.kakaoEnabled} naverEnabled={app?.naverEnabled} externalIdps={app?.externalIdps} primaryAuthMethod={app?.primaryAuthMethod} passkeyEnabled={app?.passkeyEnabled} qrSignInEnabled={app?.qrSignInEnabled && !props.suppressQRSignIn} hideBranding={app?.hideBranding} require2fa={app?.require2fa} header={props.authHeader} labels={props.labels} initialScreen={props.initialScreen} loginHint={props.loginHint} onScreenChange={props.onScreenChange} embedded={props.embedded} />
+          <Auth workspaceBaseUrl={appBaseURL} cookieMode={cookieMode} onTokenPair={onTokenPairReceived} allowRegistration={app?.allowRegistration} appId={app?.id} googleOAuthClientId={app?.googleOAuthClientId} appleEnabled={app?.appleEnabled} microsoftEnabled={app?.microsoftEnabled} githubEnabled={app?.githubEnabled} kakaoEnabled={app?.kakaoEnabled} naverEnabled={app?.naverEnabled} externalIdps={app?.externalIdps} primaryAuthMethod={app?.primaryAuthMethod} passkeyEnabled={app?.passkeyEnabled} qrSignInEnabled={app?.qrSignInEnabled && !props.suppressQRSignIn} hideBranding={app?.hideBranding} require2fa={app?.require2fa} header={props.authHeader} labels={props.labels} initialScreen={props.initialScreen} loginHint={props.loginHint} onScreenChange={props.onScreenChange} embedded={props.embedded} requireConsent={app?.requireConsent} termsUrl={app?.termsUrl} privacyUrl={app?.privacyUrl} consentVersion={app?.consentVersion} />
         ) : !appData ? (
           props.hideAuthUI ? null :
-          <Auth workspaceBaseUrl={appBaseURL} cookieMode={cookieMode} onTokenPair={onTokenPairReceived} allowRegistration={app?.allowRegistration} appId={app?.id} googleOAuthClientId={app?.googleOAuthClientId} appleEnabled={app?.appleEnabled} microsoftEnabled={app?.microsoftEnabled} githubEnabled={app?.githubEnabled} kakaoEnabled={app?.kakaoEnabled} naverEnabled={app?.naverEnabled} externalIdps={app?.externalIdps} primaryAuthMethod={app?.primaryAuthMethod} passkeyEnabled={app?.passkeyEnabled} qrSignInEnabled={app?.qrSignInEnabled && !props.suppressQRSignIn} hideBranding={app?.hideBranding} require2fa={app?.require2fa} header={props.authHeader} labels={props.labels} initialScreen={props.initialScreen} loginHint={props.loginHint} onScreenChange={props.onScreenChange} embedded={props.embedded} />
+          <Auth workspaceBaseUrl={appBaseURL} cookieMode={cookieMode} onTokenPair={onTokenPairReceived} allowRegistration={app?.allowRegistration} appId={app?.id} googleOAuthClientId={app?.googleOAuthClientId} appleEnabled={app?.appleEnabled} microsoftEnabled={app?.microsoftEnabled} githubEnabled={app?.githubEnabled} kakaoEnabled={app?.kakaoEnabled} naverEnabled={app?.naverEnabled} externalIdps={app?.externalIdps} primaryAuthMethod={app?.primaryAuthMethod} passkeyEnabled={app?.passkeyEnabled} qrSignInEnabled={app?.qrSignInEnabled && !props.suppressQRSignIn} hideBranding={app?.hideBranding} require2fa={app?.require2fa} header={props.authHeader} labels={props.labels} initialScreen={props.initialScreen} loginHint={props.loginHint} onScreenChange={props.onScreenChange} embedded={props.embedded} requireConsent={app?.requireConsent} termsUrl={app?.termsUrl} privacyUrl={app?.privacyUrl} consentVersion={app?.consentVersion} />
         ) : totpSetupNeeded ? (
           <TOTPSetupGate
             workspaceBaseURL={appBaseURL}

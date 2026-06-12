@@ -388,6 +388,10 @@ export default function Auth(props: {
   loginHint?: string;
   onScreenChange?: (screen: "login" | "register" | "forgot-password") => void;
   embedded?: boolean;
+  requireConsent?: boolean;
+  termsUrl?: string;
+  privacyUrl?: string;
+  consentVersion?: string;
 }) {
   const L = React.useMemo(() => ({ ...DEFAULT_LABELS, ...props.labels }), [props.labels]);
   const baseUrl = props.workspaceBaseUrl;
@@ -444,6 +448,7 @@ export default function Auth(props: {
   const [useBackupCode, setUseBackupCode] = React.useState(false);
   const [pendingTokens, setPendingTokens] = React.useState<TokenPairResponse | null>(null);
   const [keepSignedIn, setKeepSignedIn] = React.useState(true);
+  const [consentChecked, setConsentChecked] = React.useState(false);
 
   // Pre-session TOTP enrollment state. Populated when an upstream
   // sign-in (OTP/password/OAuth/magic-link) hands back a setup
@@ -1327,7 +1332,9 @@ export default function Auth(props: {
       const baseConf = { withCredentials: cookieMode, responseType: "json" as const };
       const res = await axios.post<TokenPairResponse>(
         url,
-        { email: emailTrimmed, code: codeTrimmed, appId: props.appId, rememberMe: keepSignedIn },
+        { email: emailTrimmed, code: codeTrimmed, appId: props.appId, rememberMe: keepSignedIn,
+          consentAccepted: props.requireConsent ? consentChecked : undefined,
+          consentVersion: props.requireConsent ? props.consentVersion : undefined },
         await withDPoPHeader("POST", url, baseConf, { cookieMode }) as any
       );
       const data = res.data as any;
@@ -1840,7 +1847,7 @@ export default function Auth(props: {
                     onKeyDown={(e) => {
                       if (e.key === "Enter") {
                         e.preventDefault();
-                        if (!loading && codeOk) void onVerifyRegisterCode();
+                        if (!loading && codeOk && !(props.requireConsent === true && !consentChecked)) void onVerifyRegisterCode();
                       }
                     }}
                   />
@@ -1850,6 +1857,17 @@ export default function Auth(props: {
                     <p className="ak-field-helper ak-field-helper-error">{L.codeMustBe6Digits}</p>
                   ) : null}
                 </div>
+                {props.requireConsent ? (
+                  <label className="ak-field" style={{ display: "flex", gap: 8, alignItems: "flex-start", cursor: "pointer" }}>
+                    <input type="checkbox" checked={consentChecked} onChange={(e) => setConsentChecked(e.target.checked)} disabled={loading} style={{ marginTop: 3, flexShrink: 0 }} />
+                    <span className="ak-body2">
+                      I agree to the{" "}
+                      {props.termsUrl ? <a href={props.termsUrl} target="_blank" rel="noopener noreferrer">Terms</a> : "Terms"}
+                      {" "}and{" "}
+                      {props.privacyUrl ? <a href={props.privacyUrl} target="_blank" rel="noopener noreferrer">Privacy Policy</a> : "Privacy Policy"}
+                    </span>
+                  </label>
+                ) : null}
                 <button
                   className="ak-btn ak-btn-text ak-btn-full"
                   disabled={loading}
@@ -2098,7 +2116,7 @@ export default function Auth(props: {
                 </button>
               ) : null
             ) : view === "registerCode" ? (
-              <button className="ak-btn ak-btn-contained ak-btn-lg ak-btn-full" disabled={loading || !codeOk} onClick={onVerifyRegisterCode}>
+              <button className="ak-btn ak-btn-contained ak-btn-lg ak-btn-full" disabled={loading || !codeOk || (props.requireConsent === true && !consentChecked)} onClick={onVerifyRegisterCode}>
                 {loading ? L.creatingAccount : L.createAccount}
                 {loading && <Spinner size={18} white />}
               </button>
