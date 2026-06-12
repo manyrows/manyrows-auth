@@ -79,6 +79,10 @@ var translations = map[string]map[string]string{
 		"email_change.subject": "Verify your new {brand} email address",
 		"email_change.body":    "Hi,\n\nYou requested to change your {brand} account email to this address.\n\nYour verification code is:\n\n%s\n\nThis code expires in 15 minutes.\nIf you didn't request this, you can ignore this email.\n",
 
+		// Account deletion (workspace/app user — passwordless)
+		"workspace.account_delete.subject": "Your account deletion code for %s",
+		"workspace.account_delete.body":    "Your account deletion confirmation code for %s is:\n\n%s\n\nThis code expires in 15 minutes.\nIf you didn't request this, you can ignore this email — your account will not be deleted.",
+
 		// Email change (workspace/app user)
 		"workspace.email_change.subject": "Your email change code for %s",
 		"workspace.email_change.body":    "Your email change verification code for %s is:\n\n%s\n\nThis code expires in 15 minutes.\nIf you didn't request this, you can ignore this email.",
