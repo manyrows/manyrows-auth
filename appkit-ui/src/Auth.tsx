@@ -1862,17 +1862,6 @@ export default function Auth(props: {
                     <p className="ak-field-helper ak-field-helper-error">{L.codeMustBe6Digits}</p>
                   ) : null}
                 </div>
-                {props.requireConsent ? (
-                  <label style={{ display: "flex", flexDirection: "row", gap: 8, alignItems: "center", cursor: "pointer" }}>
-                    <input type="checkbox" checked={consentChecked} onChange={(e) => setConsentChecked(e.target.checked)} disabled={loading} style={{ flexShrink: 0 }} />
-                    <span className="ak-body2">
-                      I agree to the{" "}
-                      {props.termsUrl ? <a href={props.termsUrl} target="_blank" rel="noopener noreferrer">Terms</a> : "Terms"}
-                      {" "}and{" "}
-                      {props.privacyUrl ? <a href={props.privacyUrl} target="_blank" rel="noopener noreferrer">Privacy Policy</a> : "Privacy Policy"}
-                    </span>
-                  </label>
-                ) : null}
                 <button
                   className="ak-btn ak-btn-text ak-btn-full"
                   disabled={loading}
@@ -2115,7 +2104,7 @@ export default function Auth(props: {
               // OAuth-only: no email-driven register flow, so suppress the
               // Continue button. Sign-up happens via the OAuth row below.
               !oauthOnly ? (
-                <button className="ak-btn ak-btn-contained ak-btn-lg ak-btn-full" disabled={loading || !emailOk} onClick={onRequestRegisterCode}>
+                <button className="ak-btn ak-btn-contained ak-btn-lg ak-btn-full" disabled={loading || !emailOk || (props.requireConsent === true && !consentChecked)} onClick={onRequestRegisterCode}>
                   {loading ? L.sending : L.continueButton}
                   {loading && <Spinner size={18} white />}
                 </button>
@@ -2277,21 +2266,23 @@ export default function Auth(props: {
                     </button>
                   )}
                 </div>
-
-                {props.requireConsent && view === "register" && (
-                  <label style={{ display: "flex", flexDirection: "row", gap: 8, alignItems: "center", cursor: "pointer" }}>
-                    <input type="checkbox" checked={consentChecked} onChange={(e) => setConsentChecked(e.target.checked)} style={{ flexShrink: 0 }} />
-                    <span className="ak-body2">
-                      I agree to the{" "}
-                      {props.termsUrl ? <a href={props.termsUrl} target="_blank" rel="noopener noreferrer">Terms</a> : "Terms"}
-                      {" "}and{" "}
-                      {props.privacyUrl ? <a href={props.privacyUrl} target="_blank" rel="noopener noreferrer">Privacy Policy</a> : "Privacy Policy"}
-                    </span>
-                  </label>
-                )}
               </div>
             </div>
           </Collapse>
+
+          {props.requireConsent && view === "register" && (
+            <div className="ak-card-actions">
+              <label style={{ display: "flex", flexDirection: "row", gap: 8, alignItems: "center", cursor: "pointer" }}>
+                <input type="checkbox" checked={consentChecked} onChange={(e) => setConsentChecked(e.target.checked)} style={{ flexShrink: 0 }} />
+                <span className="ak-body2">
+                  I agree to the{" "}
+                  {props.termsUrl ? <a href={props.termsUrl} target="_blank" rel="noopener noreferrer">Terms</a> : "Terms"}
+                  {" "}and{" "}
+                  {props.privacyUrl ? <a href={props.privacyUrl} target="_blank" rel="noopener noreferrer">Privacy Policy</a> : "Privacy Policy"}
+                </span>
+              </label>
+            </div>
+          )}
 
           {/* Footer band — registration link, or auto-provision hint
               when there's no separate sign-up form to send users to.
