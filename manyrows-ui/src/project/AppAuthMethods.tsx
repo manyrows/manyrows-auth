@@ -90,6 +90,10 @@ export type App = {
   passwordMinLength: number;
   passwordMinZxcvbnScore: number;
   passwordReusePrevention: boolean;
+  requireConsent?: boolean;
+  termsUrl?: string;
+  privacyUrl?: string;
+  consentVersion?: string;
   cookieDomain?: string | null;
   sessionTtlMinutes?: number | null;
   idleTimeoutMinutes?: number | null;
