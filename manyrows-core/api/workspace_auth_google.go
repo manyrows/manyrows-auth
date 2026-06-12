@@ -124,8 +124,9 @@ func (handler *RequestHandler) WorkspaceLoginGoogle(w http.ResponseWriter, r *ht
 	}
 
 	// Implicit (ID-token) flow: no /authorize round-trip, so no prelogin
-	// session id to honor — always a fresh-session login.
-	handler.completeGoogleLogin(w, r, ws, ctxApp, tokenInfo, ip, req.RememberMe, nil)
+	// session id to honor — always a fresh-session login. No consent params
+	// since there was no authorize step to carry them from.
+	handler.completeGoogleLogin(w, r, ws, ctxApp, tokenInfo, ip, req.RememberMe, nil, false, "")
 }
 
 // completeGoogleLogin is the shared logic for both the implicit (ID token) and
@@ -140,6 +141,7 @@ func (handler *RequestHandler) completeGoogleLogin(
 	ws *core.Workspace, ctxApp *core.App,
 	tokenInfo *googleauth.TokenInfo, ip string, rememberMe bool,
 	preloginSessionID *uuid.UUID,
+	consentAccepted bool, consentVersion string,
 ) {
 	handler.completeTier1OAuthLogin(w, r, ws, ctxApp, tokenInfo.Email, ip, rememberMe, tier1OAuthLoginOpts{
 		AuthMethod:        core.AuthMethodGoogle,
@@ -148,6 +150,8 @@ func (handler *RequestHandler) completeGoogleLogin(
 		AttemptPurpose:    "google_oauth",
 		WebhookMethod:     "google",
 		PreloginSessionID: preloginSessionID,
+		ConsentAccepted:   consentAccepted,
+		ConsentVersion:    consentVersion,
 	})
 }
 
@@ -274,7 +278,7 @@ func (handler *RequestHandler) processGoogleCallback(w http.ResponseWriter, r *h
 	}
 
 	// Verify CSRF state and confirm app ID matches
-	stateAppID, _, preloginSesID, _, err := auth.VerifyOAuthStateAny(r.Context(), handler.repo, handler.tokenVerifyKeys(), state, "google")
+	stateAppID, _, preloginSesID, consentAccepted, consentVersion, _, err := auth.VerifyOAuthStateAny(r.Context(), handler.repo, handler.tokenVerifyKeys(), state, "google")
 	if err != nil {
 		WriteError(w, r, "error.invalidCredentials", http.StatusUnauthorized)
 		return
@@ -347,5 +351,5 @@ func (handler *RequestHandler) processGoogleCallback(w http.ResponseWriter, r *h
 	// Auth-code flow defaults to rememberMe=false; the redirect-based handoff
 	// would need rememberMe baked into the signed state token to preserve a
 	// checkbox value across the round trip. ID-token flow honors it directly.
-	handler.completeGoogleLogin(w, r, ws, ctxApp, tokenInfo, ip, false, preloginSesID)
+	handler.completeGoogleLogin(w, r, ws, ctxApp, tokenInfo, ip, false, preloginSesID, consentAccepted, consentVersion)
 }

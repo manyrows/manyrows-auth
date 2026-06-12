@@ -29,17 +29,22 @@ var ErrOAuthStateNotFoundOrConsumed = errors.New("oauth state not found or alrea
 // Carried across the provider round-trip so the callback can honor /
 // guard against an existing session — see the column comment in
 // migration 00008.
-func (r *Repo) InsertOAuthState(ctx context.Context, jti, appID uuid.UUID, provider string, openerOrigin string, preloginSessionID *uuid.UUID, expiresAt time.Time) error {
+//
+// consentAccepted and consentVersion carry the user's consent signal
+// from the AppKit authorize request; available at callback time so
+// completeTier1OAuthLogin can enforce and record consent (see migration
+// 00046 and Task F4b).
+func (r *Repo) InsertOAuthState(ctx context.Context, jti, appID uuid.UUID, provider string, openerOrigin string, preloginSessionID *uuid.UUID, consentAccepted bool, consentVersion string, expiresAt time.Time) error {
 	const q = `
-insert into oauth_states (jti, app_id, provider, opener_origin, prelogin_session_id, expires_at)
-values ($1, $2, $3, nullif($4, ''), $5, $6);
+insert into oauth_states (jti, app_id, provider, opener_origin, prelogin_session_id, consent_accepted, consent_version, expires_at)
+values ($1, $2, $3, nullif($4, ''), $5, $6, $7, $8);
 `
-	_, err := r.db.Pool().Exec(ctx, q, jti, appID, provider, openerOrigin, preloginSessionID, expiresAt.UTC())
+	_, err := r.db.Pool().Exec(ctx, q, jti, appID, provider, openerOrigin, preloginSessionID, consentAccepted, consentVersion, expiresAt.UTC())
 	return err
 }
 
 // ConsumeOAuthState atomically marks an OAuth state row as consumed and
-// returns (app_id, provider, opener_origin, prelogin_session_id).
+// returns (app_id, provider, opener_origin, prelogin_session_id, consent_accepted, consent_version).
 // Single-use is enforced by the "consumed_at IS NULL" predicate
 // combined with the primary-key on jti — concurrent callers can't both
 // succeed regardless of how many backend instances are running.
@@ -51,29 +56,31 @@ values ($1, $2, $3, nullif($4, ''), $5, $6);
 //
 // Expired rows (expires_at < now()) are also rejected so a slow attacker
 // can't exploit a long-tail replay.
-func (r *Repo) ConsumeOAuthState(ctx context.Context, jti uuid.UUID) (uuid.UUID, string, string, *uuid.UUID, error) {
+func (r *Repo) ConsumeOAuthState(ctx context.Context, jti uuid.UUID) (uuid.UUID, string, string, *uuid.UUID, bool, string, error) {
 	const q = `
 update oauth_states
    set consumed_at = now()
  where jti = $1
    and consumed_at is null
    and expires_at > now()
-returning app_id, provider, coalesce(opener_origin, ''), prelogin_session_id;
+returning app_id, provider, coalesce(opener_origin, ''), prelogin_session_id, consent_accepted, coalesce(consent_version, '');
 `
 	var (
 		appID        uuid.UUID
 		provider     string
 		openerOrigin string
 		preloginSes  *uuid.UUID
+		consentAcc   bool
+		consentVer   string
 	)
-	err := r.db.Pool().QueryRow(ctx, q, jti).Scan(&appID, &provider, &openerOrigin, &preloginSes)
+	err := r.db.Pool().QueryRow(ctx, q, jti).Scan(&appID, &provider, &openerOrigin, &preloginSes, &consentAcc, &consentVer)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return uuid.Nil, "", "", nil, ErrOAuthStateNotFoundOrConsumed
+			return uuid.Nil, "", "", nil, false, "", ErrOAuthStateNotFoundOrConsumed
 		}
-		return uuid.Nil, "", "", nil, err
+		return uuid.Nil, "", "", nil, false, "", err
 	}
-	return appID, provider, openerOrigin, preloginSes, nil
+	return appID, provider, openerOrigin, preloginSes, consentAcc, consentVer, nil
 }
 
 // PeekOAuthStateOpenerOrigin reads opener_origin without consuming the

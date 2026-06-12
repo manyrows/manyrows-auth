@@ -94,7 +94,7 @@ func (handler *RequestHandler) processKakaoCallback(w http.ResponseWriter, r *ht
 		return
 	}
 
-	stateAppID, _, preloginSesID, _, err := auth.VerifyOAuthStateAny(r.Context(), handler.repo, handler.tokenVerifyKeys(), state, "kakao")
+	stateAppID, _, preloginSesID, consentAccepted, consentVersion, _, err := auth.VerifyOAuthStateAny(r.Context(), handler.repo, handler.tokenVerifyKeys(), state, "kakao")
 	if err != nil || stateAppID != ctxApp.ID {
 		WriteError(w, r, "error.invalidCredentials", http.StatusUnauthorized)
 		return
@@ -174,7 +174,7 @@ func (handler *RequestHandler) processKakaoCallback(w http.ResponseWriter, r *ht
 		return
 	}
 
-	handler.completeKakaoLogin(w, r, ws, ctxApp, tokenInfo, ip, false, preloginSesID)
+	handler.completeKakaoLogin(w, r, ws, ctxApp, tokenInfo, ip, false, preloginSesID, consentAccepted, consentVersion)
 }
 
 // completeKakaoLogin mirrors completeMicrosoftLogin / completeGoogleLogin:
@@ -184,6 +184,7 @@ func (handler *RequestHandler) completeKakaoLogin(
 	ws *core.Workspace, ctxApp *core.App,
 	tokenInfo *kakaoauth.TokenInfo, ip string, rememberMe bool,
 	preloginSessionID *uuid.UUID,
+	consentAccepted bool, consentVersion string,
 ) {
 	handler.completeTier1OAuthLogin(w, r, ws, ctxApp, tokenInfo.Email, ip, rememberMe, tier1OAuthLoginOpts{
 		AuthMethod:        core.AuthMethodKakao,
@@ -192,5 +193,7 @@ func (handler *RequestHandler) completeKakaoLogin(
 		AttemptPurpose:    "kakao_oauth",
 		WebhookMethod:     "kakao",
 		PreloginSessionID: preloginSessionID,
+		ConsentAccepted:   consentAccepted,
+		ConsentVersion:    consentVersion,
 	})
 }

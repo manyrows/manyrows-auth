@@ -201,7 +201,9 @@ func (handler *RequestHandler) workspaceOAuthAuthorize(
 		preloginSessionID = &sid
 	}
 
-	state, err := auth.SignOAuthState(r.Context(), handler.repo, handler.totpKey, ctxApp.ID, opts.Provider, openerOrigin, preloginSessionID, opts.StateTTL)
+	consentAccepted := strings.EqualFold(strings.TrimSpace(r.URL.Query().Get("consentAccepted")), "true")
+	consentVersion := strings.TrimSpace(r.URL.Query().Get("consentVersion"))
+	state, err := auth.SignOAuthState(r.Context(), handler.repo, handler.totpKey, ctxApp.ID, opts.Provider, openerOrigin, preloginSessionID, consentAccepted, consentVersion, opts.StateTTL)
 	if err != nil {
 		log.Err(err).Msgf("could not sign %s oauth state", opts.Provider)
 		WriteError(w, r, "error.internalError", http.StatusInternalServerError)

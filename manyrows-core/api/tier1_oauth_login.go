@@ -77,6 +77,13 @@ type tier1OAuthLoginOpts struct {
 	// no-op for the popup flow without this, since that callback
 	// carries no bearer/cookie of its own).
 	PreloginSessionID *uuid.UUID
+
+	// ConsentAccepted and ConsentVersion carry the user's consent signal
+	// from the AppKit authorize request, threaded through the oauth_states
+	// row. Used by completeTier1OAuthLogin to enforce and record consent
+	// on new-user signup when the app requires it (Task F4b).
+	ConsentAccepted bool
+	ConsentVersion  string
 }
 
 // completeTier1OAuthLogin runs the post-exchange half of a Tier-1

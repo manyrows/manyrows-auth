@@ -36,8 +36,8 @@ var (
 // by string equality against repo.ErrOAuthStateNotFoundOrConsumed —
 // callers in api translate that to ErrOAuthStateReused.
 type OAuthStateStore interface {
-	InsertOAuthState(ctx context.Context, jti, appID uuid.UUID, provider string, openerOrigin string, preloginSessionID *uuid.UUID, expiresAt time.Time) error
-	ConsumeOAuthState(ctx context.Context, jti uuid.UUID) (uuid.UUID, string, string, *uuid.UUID, error)
+	InsertOAuthState(ctx context.Context, jti, appID uuid.UUID, provider string, openerOrigin string, preloginSessionID *uuid.UUID, consentAccepted bool, consentVersion string, expiresAt time.Time) error
+	ConsumeOAuthState(ctx context.Context, jti uuid.UUID) (uuid.UUID, string, string, *uuid.UUID, bool, string, error)
 	PeekOAuthStateOpenerOrigin(ctx context.Context, jti uuid.UUID) (string, error)
 }
 
@@ -73,6 +73,8 @@ func SignOAuthState(
 	provider string,
 	openerOrigin string,
 	preloginSessionID *uuid.UUID,
+	consentAccepted bool,
+	consentVersion string,
 	ttl time.Duration,
 ) (string, error) {
 	jti, err := uuid.NewV4()
@@ -81,7 +83,7 @@ func SignOAuthState(
 	}
 	expiresAt := time.Now().UTC().Add(ttl)
 
-	if err := store.InsertOAuthState(ctx, jti, appID, provider, openerOrigin, preloginSessionID, expiresAt); err != nil {
+	if err := store.InsertOAuthState(ctx, jti, appID, provider, openerOrigin, preloginSessionID, consentAccepted, consentVersion, expiresAt); err != nil {
 		return "", err
 	}
 
@@ -113,13 +115,13 @@ func VerifyOAuthState(
 	key []byte,
 	token string,
 	expectedProvider string,
-) (uuid.UUID, string, *uuid.UUID, error) {
+) (uuid.UUID, string, *uuid.UUID, bool, string, error) {
 	data, err := base64.RawURLEncoding.DecodeString(token)
 	if err != nil {
-		return uuid.Nil, "", nil, ErrOAuthStateInvalid
+		return uuid.Nil, "", nil, false, "", ErrOAuthStateInvalid
 	}
 	if len(data) != stateTokenLen {
-		return uuid.Nil, "", nil, ErrOAuthStateInvalid
+		return uuid.Nil, "", nil, false, "", ErrOAuthStateInvalid
 	}
 
 	payload := data[:40]
@@ -129,21 +131,21 @@ func VerifyOAuthState(
 	mac.Write(payload)
 	expected := mac.Sum(nil)
 	if !hmac.Equal(sig, expected) {
-		return uuid.Nil, "", nil, ErrOAuthStateInvalid
+		return uuid.Nil, "", nil, false, "", ErrOAuthStateInvalid
 	}
 
 	expiresUnix := binary.BigEndian.Uint64(payload[32:40])
 	if time.Now().UTC().Unix() > int64(expiresUnix) {
-		return uuid.Nil, "", nil, ErrOAuthStateExpired
+		return uuid.Nil, "", nil, false, "", ErrOAuthStateExpired
 	}
 
 	appID, err := uuid.FromBytes(payload[0:16])
 	if err != nil {
-		return uuid.Nil, "", nil, ErrOAuthStateInvalid
+		return uuid.Nil, "", nil, false, "", ErrOAuthStateInvalid
 	}
 	jti, err := uuid.FromBytes(payload[16:32])
 	if err != nil {
-		return uuid.Nil, "", nil, ErrOAuthStateInvalid
+		return uuid.Nil, "", nil, false, "", ErrOAuthStateInvalid
 	}
 
 	// Atomic single-use claim. If the row doesn't exist, has already been
@@ -151,22 +153,22 @@ func VerifyOAuthState(
 	// the store returns its "not found or consumed" sentinel. We translate
 	// that to ErrOAuthStateReused so callers don't have to know about
 	// repo's sentinel.
-	storedAppID, storedProvider, openerOrigin, preloginSessionID, err := store.ConsumeOAuthState(ctx, jti)
+	storedAppID, storedProvider, openerOrigin, preloginSessionID, consentAccepted, consentVersion, err := store.ConsumeOAuthState(ctx, jti)
 	if err != nil {
 		if err.Error() == errOAuthStateNotFoundOrConsumed.Error() {
-			return uuid.Nil, "", nil, ErrOAuthStateReused
+			return uuid.Nil, "", nil, false, "", ErrOAuthStateReused
 		}
-		return uuid.Nil, "", nil, err
+		return uuid.Nil, "", nil, false, "", err
 	}
 
 	// Defence in depth: the signed token's app_id must match the row, and
 	// the row's provider must match the expected provider. Either mismatch
 	// means a tampered/cross-provider token landed here.
 	if storedAppID != appID || storedProvider != expectedProvider {
-		return uuid.Nil, "", nil, ErrOAuthStateInvalid
+		return uuid.Nil, "", nil, false, "", ErrOAuthStateInvalid
 	}
 
-	return appID, openerOrigin, preloginSessionID, nil
+	return appID, openerOrigin, preloginSessionID, consentAccepted, consentVersion, nil
 }
 
 // VerifyOAuthStateAny tries each key in order (current first, then previous
@@ -185,24 +187,24 @@ func VerifyOAuthStateAny(
 	keys [][]byte,
 	token string,
 	expectedProvider string,
-) (uuid.UUID, string, *uuid.UUID, []byte, error) {
+) (uuid.UUID, string, *uuid.UUID, bool, string, []byte, error) {
 	var lastErr error
 	for _, k := range keys {
-		appID, openerOrigin, preloginSesID, err := VerifyOAuthState(ctx, store, k, token, expectedProvider)
+		appID, openerOrigin, preloginSesID, consentAccepted, consentVersion, err := VerifyOAuthState(ctx, store, k, token, expectedProvider)
 		if err == nil {
-			return appID, openerOrigin, preloginSesID, k, nil
+			return appID, openerOrigin, preloginSesID, consentAccepted, consentVersion, k, nil
 		}
 		lastErr = err
 		// ErrOAuthStateInvalid usually means the HMAC didn't match this key;
 		// other errors (expired, reused, store failures) are definitive — stop.
 		if !errors.Is(err, ErrOAuthStateInvalid) {
-			return uuid.Nil, "", nil, nil, err
+			return uuid.Nil, "", nil, false, "", nil, err
 		}
 	}
 	if lastErr == nil {
 		lastErr = ErrOAuthStateInvalid
 	}
-	return uuid.Nil, "", nil, nil, lastErr
+	return uuid.Nil, "", nil, false, "", nil, lastErr
 }
 
 // PeekOAuthStateOpenerOriginAny — list variant of PeekOAuthStateOpenerOrigin.

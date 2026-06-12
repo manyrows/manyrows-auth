@@ -93,7 +93,7 @@ func (handler *RequestHandler) processNaverCallback(w http.ResponseWriter, r *ht
 		return
 	}
 
-	stateAppID, _, preloginSesID, _, err := auth.VerifyOAuthStateAny(r.Context(), handler.repo, handler.tokenVerifyKeys(), state, "naver")
+	stateAppID, _, preloginSesID, consentAccepted, consentVersion, _, err := auth.VerifyOAuthStateAny(r.Context(), handler.repo, handler.tokenVerifyKeys(), state, "naver")
 	if err != nil || stateAppID != ctxApp.ID {
 		WriteError(w, r, "error.invalidCredentials", http.StatusUnauthorized)
 		return
@@ -171,7 +171,7 @@ func (handler *RequestHandler) processNaverCallback(w http.ResponseWriter, r *ht
 		return
 	}
 
-	handler.completeNaverLogin(w, r, ws, ctxApp, tokenInfo, ip, false, preloginSesID)
+	handler.completeNaverLogin(w, r, ws, ctxApp, tokenInfo, ip, false, preloginSesID, consentAccepted, consentVersion)
 }
 
 // completeNaverLogin mirrors completeKakaoLogin / completeMicrosoftLogin:
@@ -181,6 +181,7 @@ func (handler *RequestHandler) completeNaverLogin(
 	ws *core.Workspace, ctxApp *core.App,
 	tokenInfo *naverauth.TokenInfo, ip string, rememberMe bool,
 	preloginSessionID *uuid.UUID,
+	consentAccepted bool, consentVersion string,
 ) {
 	handler.completeTier1OAuthLogin(w, r, ws, ctxApp, tokenInfo.Email, ip, rememberMe, tier1OAuthLoginOpts{
 		AuthMethod:        core.AuthMethodNaver,
@@ -189,5 +190,7 @@ func (handler *RequestHandler) completeNaverLogin(
 		AttemptPurpose:    "naver_oauth",
 		WebhookMethod:     "naver",
 		PreloginSessionID: preloginSessionID,
+		ConsentAccepted:   consentAccepted,
+		ConsentVersion:    consentVersion,
 	})
 }

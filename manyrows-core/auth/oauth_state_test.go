@@ -20,12 +20,14 @@ type fakeOAuthStateStore struct {
 }
 
 type oauthStateRow struct {
-	appID        uuid.UUID
-	provider     string
-	openerOrigin string
-	preloginSes  *uuid.UUID
-	expiresAt    time.Time
-	consumed     bool
+	appID           uuid.UUID
+	provider        string
+	openerOrigin    string
+	preloginSes     *uuid.UUID
+	consentAccepted bool
+	consentVersion  string
+	expiresAt       time.Time
+	consumed        bool
 }
 
 var errFakeNotFoundOrConsumed = errors.New("oauth state not found or already consumed")
@@ -34,31 +36,33 @@ func newFakeStore() *fakeOAuthStateStore {
 	return &fakeOAuthStateStore{rows: map[uuid.UUID]oauthStateRow{}, insertOK: true}
 }
 
-func (f *fakeOAuthStateStore) InsertOAuthState(_ context.Context, jti, appID uuid.UUID, provider, openerOrigin string, preloginSessionID *uuid.UUID, expiresAt time.Time) error {
+func (f *fakeOAuthStateStore) InsertOAuthState(_ context.Context, jti, appID uuid.UUID, provider, openerOrigin string, preloginSessionID *uuid.UUID, consentAccepted bool, consentVersion string, expiresAt time.Time) error {
 	if !f.insertOK {
 		return errors.New("insert failed")
 	}
 	f.rows[jti] = oauthStateRow{
-		appID:        appID,
-		provider:     provider,
-		openerOrigin: openerOrigin,
-		preloginSes:  preloginSessionID,
-		expiresAt:    expiresAt,
+		appID:           appID,
+		provider:        provider,
+		openerOrigin:    openerOrigin,
+		preloginSes:     preloginSessionID,
+		consentAccepted: consentAccepted,
+		consentVersion:  consentVersion,
+		expiresAt:       expiresAt,
 	}
 	return nil
 }
 
-func (f *fakeOAuthStateStore) ConsumeOAuthState(_ context.Context, jti uuid.UUID) (uuid.UUID, string, string, *uuid.UUID, error) {
+func (f *fakeOAuthStateStore) ConsumeOAuthState(_ context.Context, jti uuid.UUID) (uuid.UUID, string, string, *uuid.UUID, bool, string, error) {
 	row, ok := f.rows[jti]
 	if !ok || row.consumed {
-		return uuid.Nil, "", "", nil, errFakeNotFoundOrConsumed
+		return uuid.Nil, "", "", nil, false, "", errFakeNotFoundOrConsumed
 	}
 	if time.Now().UTC().After(row.expiresAt) {
-		return uuid.Nil, "", "", nil, errFakeNotFoundOrConsumed
+		return uuid.Nil, "", "", nil, false, "", errFakeNotFoundOrConsumed
 	}
 	row.consumed = true
 	f.rows[jti] = row
-	return row.appID, row.provider, row.openerOrigin, row.preloginSes, nil
+	return row.appID, row.provider, row.openerOrigin, row.preloginSes, row.consentAccepted, row.consentVersion, nil
 }
 
 func (f *fakeOAuthStateStore) PeekOAuthStateOpenerOrigin(_ context.Context, jti uuid.UUID) (string, error) {
@@ -83,7 +87,7 @@ func TestOAuthState_RoundTrip(t *testing.T) {
 	appID := uuid.Must(uuid.NewV4())
 	ctx := context.Background()
 
-	tok, err := SignOAuthState(ctx, store, key, appID, "google", "https://app.example.com", nil, time.Minute)
+	tok, err := SignOAuthState(ctx, store, key, appID, "google", "https://app.example.com", nil, false, "", time.Minute)
 	if err != nil {
 		t.Fatalf("SignOAuthState: %v", err)
 	}
@@ -91,7 +95,7 @@ func TestOAuthState_RoundTrip(t *testing.T) {
 		t.Fatal("empty token")
 	}
 
-	gotApp, gotOrigin, _, err := VerifyOAuthState(ctx, store, key, tok, "google")
+	gotApp, gotOrigin, _, _, _, err := VerifyOAuthState(ctx, store, key, tok, "google")
 	if err != nil {
 		t.Fatalf("VerifyOAuthState: %v", err)
 	}
@@ -109,14 +113,14 @@ func TestOAuthState_Replay(t *testing.T) {
 	appID := uuid.Must(uuid.NewV4())
 	ctx := context.Background()
 
-	tok, err := SignOAuthState(ctx, store, key, appID, "github", "", nil, time.Minute)
+	tok, err := SignOAuthState(ctx, store, key, appID, "github", "", nil, false, "", time.Minute)
 	if err != nil {
 		t.Fatalf("sign: %v", err)
 	}
-	if _, _, _, err := VerifyOAuthState(ctx, store, key, tok, "github"); err != nil {
+	if _, _, _, _, _, err := VerifyOAuthState(ctx, store, key, tok, "github"); err != nil {
 		t.Fatalf("first verify: %v", err)
 	}
-	_, _, _, err = VerifyOAuthState(ctx, store, key, tok, "github")
+	_, _, _, _, _, err = VerifyOAuthState(ctx, store, key, tok, "github")
 	if !errors.Is(err, ErrOAuthStateReused) {
 		t.Fatalf("replay: want ErrOAuthStateReused, got %v", err)
 	}
@@ -128,7 +132,7 @@ func TestOAuthState_TamperedHMAC(t *testing.T) {
 	appID := uuid.Must(uuid.NewV4())
 	ctx := context.Background()
 
-	tok, err := SignOAuthState(ctx, store, key, appID, "apple", "", nil, time.Minute)
+	tok, err := SignOAuthState(ctx, store, key, appID, "apple", "", nil, false, "", time.Minute)
 	if err != nil {
 		t.Fatalf("sign: %v", err)
 	}
@@ -141,7 +145,7 @@ func TestOAuthState_TamperedHMAC(t *testing.T) {
 	raw[len(raw)-1] ^= 0x01
 	bad := base64.RawURLEncoding.EncodeToString(raw)
 
-	_, _, _, err = VerifyOAuthState(ctx, store, key, bad, "apple")
+	_, _, _, _, _, err = VerifyOAuthState(ctx, store, key, bad, "apple")
 	if !errors.Is(err, ErrOAuthStateInvalid) {
 		t.Fatalf("tampered: want ErrOAuthStateInvalid, got %v", err)
 	}
@@ -153,7 +157,7 @@ func TestOAuthState_TamperedAppID(t *testing.T) {
 	appID := uuid.Must(uuid.NewV4())
 	ctx := context.Background()
 
-	tok, err := SignOAuthState(ctx, store, key, appID, "microsoft", "", nil, time.Minute)
+	tok, err := SignOAuthState(ctx, store, key, appID, "microsoft", "", nil, false, "", time.Minute)
 	if err != nil {
 		t.Fatalf("sign: %v", err)
 	}
@@ -162,7 +166,7 @@ func TestOAuthState_TamperedAppID(t *testing.T) {
 	bad := base64.RawURLEncoding.EncodeToString(raw)
 
 	// HMAC will fail first, so this still maps to ErrOAuthStateInvalid.
-	_, _, _, err = VerifyOAuthState(ctx, store, key, bad, "microsoft")
+	_, _, _, _, _, err = VerifyOAuthState(ctx, store, key, bad, "microsoft")
 	if !errors.Is(err, ErrOAuthStateInvalid) {
 		t.Fatalf("appID-tampered: want ErrOAuthStateInvalid, got %v", err)
 	}
@@ -175,11 +179,11 @@ func TestOAuthState_Expired(t *testing.T) {
 	ctx := context.Background()
 
 	// Negative TTL → token expires before VerifyOAuthState looks at it.
-	tok, err := SignOAuthState(ctx, store, key, appID, "google", "", nil, -time.Second)
+	tok, err := SignOAuthState(ctx, store, key, appID, "google", "", nil, false, "", -time.Second)
 	if err != nil {
 		t.Fatalf("sign: %v", err)
 	}
-	_, _, _, err = VerifyOAuthState(ctx, store, key, tok, "google")
+	_, _, _, _, _, err = VerifyOAuthState(ctx, store, key, tok, "google")
 	if !errors.Is(err, ErrOAuthStateExpired) {
 		t.Fatalf("expired: want ErrOAuthStateExpired, got %v", err)
 	}
@@ -191,13 +195,13 @@ func TestOAuthState_ProviderMismatch(t *testing.T) {
 	appID := uuid.Must(uuid.NewV4())
 	ctx := context.Background()
 
-	tok, err := SignOAuthState(ctx, store, key, appID, "google", "", nil, time.Minute)
+	tok, err := SignOAuthState(ctx, store, key, appID, "google", "", nil, false, "", time.Minute)
 	if err != nil {
 		t.Fatalf("sign: %v", err)
 	}
 	// Same token, wrong expectedProvider — defends against an attacker
 	// swapping a Google state into the GitHub callback.
-	_, _, _, err = VerifyOAuthState(ctx, store, key, tok, "github")
+	_, _, _, _, _, err = VerifyOAuthState(ctx, store, key, tok, "github")
 	if !errors.Is(err, ErrOAuthStateInvalid) {
 		t.Fatalf("provider-mismatch: want ErrOAuthStateInvalid, got %v", err)
 	}
@@ -210,11 +214,11 @@ func TestOAuthState_WrongKey(t *testing.T) {
 	appID := uuid.Must(uuid.NewV4())
 	ctx := context.Background()
 
-	tok, err := SignOAuthState(ctx, store, other, appID, "google", "", nil, time.Minute)
+	tok, err := SignOAuthState(ctx, store, other, appID, "google", "", nil, false, "", time.Minute)
 	if err != nil {
 		t.Fatalf("sign: %v", err)
 	}
-	_, _, _, err = VerifyOAuthState(ctx, store, key, tok, "google")
+	_, _, _, _, _, err = VerifyOAuthState(ctx, store, key, tok, "google")
 	if !errors.Is(err, ErrOAuthStateInvalid) {
 		t.Fatalf("wrong key: want ErrOAuthStateInvalid, got %v", err)
 	}
@@ -233,7 +237,7 @@ func TestOAuthState_MalformedInput(t *testing.T) {
 	}
 	for name, tok := range cases {
 		t.Run(name, func(t *testing.T) {
-			_, _, _, err := VerifyOAuthState(ctx, store, key, tok, "google")
+			_, _, _, _, _, err := VerifyOAuthState(ctx, store, key, tok, "google")
 			if !errors.Is(err, ErrOAuthStateInvalid) {
 				t.Fatalf("want ErrOAuthStateInvalid, got %v", err)
 			}
@@ -244,7 +248,7 @@ func TestOAuthState_MalformedInput(t *testing.T) {
 func TestOAuthState_InsertFails(t *testing.T) {
 	store := newFakeStore()
 	store.insertOK = false
-	_, err := SignOAuthState(context.Background(), store, newKey(), uuid.Must(uuid.NewV4()), "google", "", nil, time.Minute)
+	_, err := SignOAuthState(context.Background(), store, newKey(), uuid.Must(uuid.NewV4()), "google", "", nil, false, "", time.Minute)
 	if err == nil || !strings.Contains(err.Error(), "insert failed") {
 		t.Fatalf("want insert error, got %v", err)
 	}
@@ -256,7 +260,7 @@ func TestPeekOAuthStateOpenerOrigin(t *testing.T) {
 	appID := uuid.Must(uuid.NewV4())
 	ctx := context.Background()
 
-	tok, err := SignOAuthState(ctx, store, key, appID, "apple", "https://opener.example", nil, time.Minute)
+	tok, err := SignOAuthState(ctx, store, key, appID, "apple", "https://opener.example", nil, false, "", time.Minute)
 	if err != nil {
 		t.Fatalf("sign: %v", err)
 	}
@@ -264,7 +268,7 @@ func TestPeekOAuthStateOpenerOrigin(t *testing.T) {
 		t.Errorf("peek opener: got %q want %q", got, "https://opener.example")
 	}
 	// Peek does NOT consume — verify the row is still claimable.
-	if _, _, _, err := VerifyOAuthState(ctx, store, key, tok, "apple"); err != nil {
+	if _, _, _, _, _, err := VerifyOAuthState(ctx, store, key, tok, "apple"); err != nil {
 		t.Fatalf("verify after peek: %v", err)
 	}
 	// After consume, peek returns "".
@@ -283,7 +287,7 @@ func TestPeekOAuthStateOpenerOrigin_BadInput(t *testing.T) {
 		}
 	}
 	// Tampered HMAC also returns "".
-	good, _ := SignOAuthState(ctx, store, key, uuid.Must(uuid.NewV4()), "google", "x", nil, time.Minute)
+	good, _ := SignOAuthState(ctx, store, key, uuid.Must(uuid.NewV4()), "google", "x", nil, false, "", time.Minute)
 	raw, _ := base64.RawURLEncoding.DecodeString(good)
 	raw[len(raw)-1] ^= 0x01
 	if got := PeekOAuthStateOpenerOrigin(ctx, store, key, base64.RawURLEncoding.EncodeToString(raw)); got != "" {

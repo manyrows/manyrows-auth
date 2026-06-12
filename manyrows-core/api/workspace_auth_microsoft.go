@@ -99,7 +99,7 @@ func (handler *RequestHandler) processMicrosoftCallback(w http.ResponseWriter, r
 		return
 	}
 
-	stateAppID, _, preloginSesID, _, err := auth.VerifyOAuthStateAny(r.Context(), handler.repo, handler.tokenVerifyKeys(), state, "microsoft")
+	stateAppID, _, preloginSesID, consentAccepted, consentVersion, _, err := auth.VerifyOAuthStateAny(r.Context(), handler.repo, handler.tokenVerifyKeys(), state, "microsoft")
 	if err != nil || stateAppID != ctxApp.ID {
 		WriteError(w, r, "error.invalidCredentials", http.StatusUnauthorized)
 		return
@@ -173,7 +173,7 @@ func (handler *RequestHandler) processMicrosoftCallback(w http.ResponseWriter, r
 		return
 	}
 
-	handler.completeMicrosoftLogin(w, r, ws, ctxApp, tokenInfo, ip, false, preloginSesID)
+	handler.completeMicrosoftLogin(w, r, ws, ctxApp, tokenInfo, ip, false, preloginSesID, consentAccepted, consentVersion)
 }
 
 // completeMicrosoftLogin mirrors completeAppleLogin / completeGoogleLogin:
@@ -184,6 +184,7 @@ func (handler *RequestHandler) completeMicrosoftLogin(
 	ws *core.Workspace, ctxApp *core.App,
 	tokenInfo *microsoftauth.TokenInfo, ip string, rememberMe bool,
 	preloginSessionID *uuid.UUID,
+	consentAccepted bool, consentVersion string,
 ) {
 	handler.completeTier1OAuthLogin(w, r, ws, ctxApp, tokenInfo.Email, ip, rememberMe, tier1OAuthLoginOpts{
 		AuthMethod:        core.AuthMethodMicrosoft,
@@ -192,5 +193,7 @@ func (handler *RequestHandler) completeMicrosoftLogin(
 		AttemptPurpose:    "microsoft_oauth",
 		WebhookMethod:     "microsoft",
 		PreloginSessionID: preloginSessionID,
+		ConsentAccepted:   consentAccepted,
+		ConsentVersion:    consentVersion,
 	})
 }

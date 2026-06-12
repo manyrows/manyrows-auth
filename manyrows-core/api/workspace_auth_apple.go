@@ -241,7 +241,7 @@ func (handler *RequestHandler) processAppleCallback(w http.ResponseWriter, r *ht
 		return
 	}
 
-	stateAppID, _, preloginSesID, _, err := auth.VerifyOAuthStateAny(r.Context(), handler.repo, handler.tokenVerifyKeys(), state, "apple")
+	stateAppID, _, preloginSesID, consentAccepted, consentVersion, _, err := auth.VerifyOAuthStateAny(r.Context(), handler.repo, handler.tokenVerifyKeys(), state, "apple")
 	if err != nil || stateAppID != ctxApp.ID {
 		WriteError(w, r, "error.invalidCredentials", http.StatusUnauthorized)
 		return
@@ -319,7 +319,7 @@ func (handler *RequestHandler) processAppleCallback(w http.ResponseWriter, r *ht
 		return
 	}
 
-	handler.completeAppleLogin(w, r, ws, ctxApp, tokenInfo, ip, false, preloginSesID)
+	handler.completeAppleLogin(w, r, ws, ctxApp, tokenInfo, ip, false, preloginSesID, consentAccepted, consentVersion)
 }
 
 // completeAppleLogin mirrors completeGoogleLogin: lookup-or-create user,
@@ -331,6 +331,7 @@ func (handler *RequestHandler) completeAppleLogin(
 	ws *core.Workspace, ctxApp *core.App,
 	tokenInfo *appleauth.TokenInfo, ip string, rememberMe bool,
 	preloginSessionID *uuid.UUID,
+	consentAccepted bool, consentVersion string,
 ) {
 	// Apple's private-relay addresses are always @privaterelay.appleid.com;
 	// they can never match a customer's AllowedEmailDomains, so skip that
@@ -344,5 +345,7 @@ func (handler *RequestHandler) completeAppleLogin(
 		WebhookMethod:     "apple",
 		SkipDomainCheck:   func() bool { return skipDomain },
 		PreloginSessionID: preloginSessionID,
+		ConsentAccepted:   consentAccepted,
+		ConsentVersion:    consentVersion,
 	})
 }

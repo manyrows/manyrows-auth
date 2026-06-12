@@ -150,11 +150,11 @@ func TestExternalIDPState_SignVerifyRoundTrip(t *testing.T) {
 	key := []byte("test-oauth-state-hmac-key-0123456789")
 	providerKey := core.ExternalIDPProviderKey(uuid.Must(uuid.NewV4()))
 
-	state, err := auth.SignOAuthState(ctx, testEnv.Repo, key, app.ID, providerKey, "https://app.example", nil, time.Minute)
+	state, err := auth.SignOAuthState(ctx, testEnv.Repo, key, app.ID, providerKey, "https://app.example", nil, false, "", time.Minute)
 	if err != nil {
 		t.Fatalf("SignOAuthState with %q provider failed (oauth_states CHECK?): %v", providerKey, err)
 	}
-	gotApp, origin, _, err := auth.VerifyOAuthState(ctx, testEnv.Repo, key, state, providerKey)
+	gotApp, origin, _, _, _, err := auth.VerifyOAuthState(ctx, testEnv.Repo, key, state, providerKey)
 	if err != nil {
 		t.Fatalf("VerifyOAuthState: %v", err)
 	}
@@ -217,6 +217,25 @@ func TestExternalIDP_DeleteLeavesIdentityOrphanedNotCascaded(t *testing.T) {
 	}
 	if u, _ := testEnv.Repo.GetUserByID(ctx, user.ID); u == nil {
 		t.Fatal("user must not be affected by provider deletion")
+	}
+}
+
+// TestOAuthState_ConsentRoundTrip signs with consentAccepted=true + consentVersion="v1"
+// and asserts VerifyOAuthState returns them (round-trip through DB).
+func TestOAuthState_ConsentRoundTrip(t *testing.T) {
+	ctx := context.Background()
+	appID := utils.NewUUID()
+	key := []byte("0123456789012345678901234567890123456789012345678901234567890123")
+	token, err := auth.SignOAuthState(ctx, testEnv.Repo, key, appID, "google", "https://opener.example", nil, true, "v1", 5*time.Minute)
+	if err != nil {
+		t.Fatalf("sign: %v", err)
+	}
+	gotApp, _, _, accepted, version, err := auth.VerifyOAuthState(ctx, testEnv.Repo, key, token, "google")
+	if err != nil {
+		t.Fatalf("verify: %v", err)
+	}
+	if gotApp != appID || !accepted || version != "v1" {
+		t.Fatalf("consent did not round-trip: app=%v accepted=%v version=%q", gotApp, accepted, version)
 	}
 }
 

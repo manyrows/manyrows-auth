@@ -161,7 +161,9 @@ func (handler *RequestHandler) WorkspaceExternalIDPAuthorize(w http.ResponseWrit
 		preloginSessionID = &sid
 	}
 
-	state, err := auth.SignOAuthState(r.Context(), handler.repo, handler.totpKey, app.ID, idp.ProviderKey(), openerOrigin, preloginSessionID, externalIDPStateTTL)
+	consentAccepted := strings.EqualFold(strings.TrimSpace(r.URL.Query().Get("consentAccepted")), "true")
+	consentVersion := strings.TrimSpace(r.URL.Query().Get("consentVersion"))
+	state, err := auth.SignOAuthState(r.Context(), handler.repo, handler.totpKey, app.ID, idp.ProviderKey(), openerOrigin, preloginSessionID, consentAccepted, consentVersion, externalIDPStateTTL)
 	if err != nil {
 		reqLog(r.Context()).Err(err).Msg("external idp authorize: sign state failed")
 		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
@@ -236,7 +238,7 @@ func (handler *RequestHandler) processExternalIDPCallback(w http.ResponseWriter,
 		return
 	}
 
-	stateAppID, _, preloginSesID, matchedKey, err := auth.VerifyOAuthStateAny(r.Context(), handler.repo, handler.tokenVerifyKeys(), state, idp.ProviderKey())
+	stateAppID, _, preloginSesID, consentAccepted, consentVersion, matchedKey, err := auth.VerifyOAuthStateAny(r.Context(), handler.repo, handler.tokenVerifyKeys(), state, idp.ProviderKey())
 	if err != nil || stateAppID != app.ID {
 		WriteError(w, r, "error.invalidCredentials", http.StatusUnauthorized)
 		return
@@ -328,5 +330,7 @@ func (handler *RequestHandler) processExternalIDPCallback(w http.ResponseWriter,
 		AttemptPurpose:    "external_idp_oauth",
 		WebhookMethod:     idp.Slug,
 		PreloginSessionID: preloginSesID,
+		ConsentAccepted:   consentAccepted,
+		ConsentVersion:    consentVersion,
 	})
 }

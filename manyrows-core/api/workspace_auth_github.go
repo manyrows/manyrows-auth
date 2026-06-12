@@ -92,7 +92,7 @@ func (handler *RequestHandler) processGithubCallback(w http.ResponseWriter, r *h
 		return
 	}
 
-	stateAppID, _, preloginSesID, _, err := auth.VerifyOAuthStateAny(r.Context(), handler.repo, handler.tokenVerifyKeys(), state, "github")
+	stateAppID, _, preloginSesID, consentAccepted, consentVersion, _, err := auth.VerifyOAuthStateAny(r.Context(), handler.repo, handler.tokenVerifyKeys(), state, "github")
 	if err != nil || stateAppID != ctxApp.ID {
 		WriteError(w, r, "error.invalidCredentials", http.StatusUnauthorized)
 		return
@@ -164,7 +164,7 @@ func (handler *RequestHandler) processGithubCallback(w http.ResponseWriter, r *h
 		return
 	}
 
-	handler.completeGithubLogin(w, r, ws, ctxApp, tokenInfo, ip, false, preloginSesID)
+	handler.completeGithubLogin(w, r, ws, ctxApp, tokenInfo, ip, false, preloginSesID, consentAccepted, consentVersion)
 }
 
 // completeGithubLogin mirrors completeMicrosoftLogin. GitHub's
@@ -175,6 +175,7 @@ func (handler *RequestHandler) completeGithubLogin(
 	ws *core.Workspace, ctxApp *core.App,
 	tokenInfo *githubauth.TokenInfo, ip string, rememberMe bool,
 	preloginSessionID *uuid.UUID,
+	consentAccepted bool, consentVersion string,
 ) {
 	handler.completeTier1OAuthLogin(w, r, ws, ctxApp, tokenInfo.Email, ip, rememberMe, tier1OAuthLoginOpts{
 		AuthMethod:        core.AuthMethodGithub,
@@ -183,5 +184,7 @@ func (handler *RequestHandler) completeGithubLogin(
 		AttemptPurpose:    "github_oauth",
 		WebhookMethod:     "github",
 		PreloginSessionID: preloginSessionID,
+		ConsentAccepted:   consentAccepted,
+		ConsentVersion:    consentVersion,
 	})
 }
