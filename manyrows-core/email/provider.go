@@ -2,6 +2,7 @@ package email
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"strconv"
@@ -50,6 +51,28 @@ func (consoleProvider) Send(e *Email) error {
 	fmt.Println(e.Body)
 	fmt.Println("--------------------------------------------------")
 	return nil
+}
+
+// =====================================================================
+// failProvider is selected in production when no email transport is
+// configured. It refuses to send — logging the subject only (never the
+// recipient or the body, which carries OTP/reset codes / magic links) —
+// so a misconfigured prod install fails loudly instead of leaking secrets
+// to stdout.
+// =====================================================================
+
+type failProvider struct{}
+
+func (failProvider) Name() string { return "none" }
+
+func (failProvider) Send(e *Email) error {
+	subject := ""
+	if e != nil {
+		subject = e.Subject
+	}
+	log.Error().Str("subject", subject).
+		Msg("email: no transport configured — refusing to send (set MANYROWS_SMTP_* or per-workspace SMTP)")
+	return errors.New("email: no transport configured")
 }
 
 // =====================================================================
@@ -173,11 +196,11 @@ func pickProvider(isDev bool, store SecretsStore) Provider {
 	if strings.TrimSpace(os.Getenv("CLOUDMAILIN_SMTP_URL")) != "" {
 		client, err := cloudmailin.NewClient()
 		if err != nil {
-			log.Err(err).Msg("CLOUDMAILIN_SMTP_URL set but client init failed; falling back to console")
-			return consoleProvider{}
+			log.Err(err).Msg("CLOUDMAILIN_SMTP_URL set but client init failed; refusing to fall back to stdout")
+			return failProvider{}
 		}
 		return cloudmailinProvider{client: client}
 	}
-	log.Warn().Msg("no email provider configured — falling back to console output. Set MANYROWS_SMTP_* to actually deliver mail.")
-	return consoleProvider{}
+	log.Error().Msg("no email provider configured — refusing to deliver mail via stdout. Set MANYROWS_SMTP_* or configure per-workspace SMTP.")
+	return failProvider{}
 }

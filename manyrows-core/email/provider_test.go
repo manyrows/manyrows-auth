@@ -1,7 +1,10 @@
 package email
 
 import (
+	"bytes"
 	"context"
+	"os"
+	"strings"
 	"testing"
 )
 
@@ -47,17 +50,17 @@ func TestPickProvider_CloudmailinWhenSMTPUnset(t *testing.T) {
 	t.Setenv("CLOUDMAILIN_SMTP_URL", "smtp://user:pass@host:25/")
 	got := pickProvider(false, nil).Name()
 	// Client init can fail in CI without a real URL — accept either
-	// "cloudmailin" (success) or "console" (init-fail fallback) but
+	// "cloudmailin" (success) or "none" (init-fail fallback) but
 	// reject "smtp" since we never set SMTP_HOST.
-	if got != "cloudmailin" && got != "console" {
-		t.Errorf("expected cloudmailin (or console fallback); got %q", got)
+	if got != "cloudmailin" && got != "none" {
+		t.Errorf("expected cloudmailin (or none fallback); got %q", got)
 	}
 }
 
-func TestPickProvider_NothingConfiguredFallsToConsole(t *testing.T) {
+func TestPickProvider_NothingConfiguredFallsToNone(t *testing.T) {
 	resetEmailEnv(t)
-	if got := pickProvider(false, nil).Name(); got != "console" {
-		t.Errorf("nothing configured should fall back to console; got %q", got)
+	if got := pickProvider(false, nil).Name(); got != "none" {
+		t.Errorf("nothing configured in prod should return failProvider (none); got %q", got)
 	}
 }
 
@@ -173,13 +176,35 @@ func TestService_Reload_SwapsProvider(t *testing.T) {
 	resetEmailEnv(t)
 	store := &fakeStore{values: map[string]string{}}
 	svc := NewEmailService(false, store)
-	if svc.provider.Name() != "console" {
-		t.Fatalf("expected console initially; got %s", svc.provider.Name())
+	if svc.provider.Name() != "none" {
+		t.Fatalf("expected none initially (no transport in prod); got %s", svc.provider.Name())
 	}
 	store.values["smtp_host"] = "smtp.acme.com"
 	svc.Reload()
 	if svc.provider.Name() != "smtp" {
 		t.Errorf("expected smtp after store update; got %s", svc.provider.Name())
+	}
+}
+
+func TestFailProvider_DoesNotPrintBody(t *testing.T) {
+	// Capture stdout.
+	old := os.Stdout
+	rPipe, wPipe, _ := os.Pipe()
+	os.Stdout = wPipe
+
+	secret := "SECRET-OTP-123456"
+	err := failProvider{}.Send(&Email{To: "u@example.com", From: "f@example.com", Subject: "Your login code", Body: "code: " + secret})
+
+	wPipe.Close()
+	os.Stdout = old
+	var buf bytes.Buffer
+	_, _ = buf.ReadFrom(rPipe)
+
+	if err == nil {
+		t.Fatal("failProvider.Send must return an error")
+	}
+	if strings.Contains(buf.String(), secret) {
+		t.Fatalf("failProvider leaked body to stdout: %q", buf.String())
 	}
 }
 
