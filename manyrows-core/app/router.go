@@ -311,6 +311,7 @@ func (a *AppService) initRouter() error {
 			r.Put("/external-idps/{idpId}", requestHandler.HandleUpdateExternalIDP)
 			r.Delete("/external-idps/{idpId}", requestHandler.HandleDeleteExternalIDP)
 			r.Put("/password-policy", requestHandler.HandleUpdateAppPasswordPolicy)
+			r.Put("/consent-config", requestHandler.HandleUpdateAppConsentConfig)
 			r.Put("/cookie-domain", requestHandler.HandleUpdateAppCookieDomain)
 			r.Put("/transport-mode", requestHandler.HandleUpdateAppTransportMode)
 			r.Put("/session-cookie-samesite", requestHandler.HandleUpdateAppSessionCookieSameSite)

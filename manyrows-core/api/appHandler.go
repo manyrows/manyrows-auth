@@ -433,6 +433,12 @@ type AppResource struct {
 	// ExternalIDPs are the enabled generic OIDC/OAuth2 providers; AppKit
 	// renders one sign-in button per entry.
 	ExternalIDPs []ExternalIDPPublic `json:"externalIdps,omitempty"`
+	// Consent fields — populated when the app requires legal-consent acceptance
+	// at signup. Empty/false means no enforcement (the default).
+	TermsURL       string `json:"termsUrl,omitempty"`
+	PrivacyURL     string `json:"privacyUrl,omitempty"`
+	ConsentVersion string `json:"consentVersion,omitempty"`
+	RequireConsent bool   `json:"requireConsent,omitempty"`
 }
 
 func (handler *RequestHandler) HandleGetAppForAppKit(w http.ResponseWriter, r *http.Request) {
@@ -541,6 +547,10 @@ func (handler *RequestHandler) HandleGetAppForAppKit(w http.ResponseWriter, r *h
 		QRSignInEnabled:           a.QRSignInEnabled,
 		TransportMode:             transportMode,
 		ExternalIDPs:              externalIDPs,
+		TermsURL:                  a.TermsURL,
+		PrivacyURL:                a.PrivacyURL,
+		ConsentVersion:            a.ConsentVersion,
+		RequireConsent:            a.RequireConsent,
 	}
 
 	utils.WriteJsonWithStatusCode(w, ap, http.StatusOK)

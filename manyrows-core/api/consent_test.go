@@ -184,3 +184,26 @@ func TestSignup_ConsentNotRequired_NoEnforcement(t *testing.T) {
 		t.Fatalf("want 200, got %d: %s", rr.Code, rr.Body.String())
 	}
 }
+
+func TestBootstrap_ExposesConsentConfig(t *testing.T) {
+	// setupClientAPIRouter mounts GET /x/{slug}/apps/{appId} -> HandleGetAppForAppKit
+	router := setupClientAPIRouter(t)
+	ctx := context.Background()
+	acc := testEnv.CreateTestAccount(t, "boot-"+GenerateUniqueSlug("t")+"@example.com")
+	ws := testEnv.CreateTestWorkspace(t, acc, "Boot WS", GenerateUniqueSlug("ws"))
+	app := testEnv.CreateTestApp(t, ws, acc)
+	_, _ = testEnv.DB.Pool().Exec(ctx,
+		`UPDATE apps SET require_consent=true, consent_version='v2', terms_url='https://t', privacy_url='https://p' WHERE id=$1`, app.ID)
+
+	req := httptest.NewRequest(http.MethodGet, "/x/"+ws.Slug+"/apps/"+app.ID.String(), nil)
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d: %s", rr.Code, rr.Body.String())
+	}
+	var out map[string]any
+	_ = json.Unmarshal(rr.Body.Bytes(), &out)
+	if out["requireConsent"] != true || out["consentVersion"] != "v2" || out["termsUrl"] != "https://t" || out["privacyUrl"] != "https://p" {
+		t.Fatalf("bootstrap missing consent config: %v", out)
+	}
+}

@@ -449,6 +449,31 @@ func (r *Repo) UpdateAppPasswordPolicy(ctx context.Context, workspaceID, project
 	return out, nil
 }
 
+// UpdateAppConsentConfig sets the per-app legal-consent settings.
+func (r *Repo) UpdateAppConsentConfig(ctx context.Context, workspaceID, projectID, appID uuid.UUID, termsURL, privacyURL, consentVersion string, requireConsent bool) (core.App, error) {
+	q := `
+		update apps
+		set terms_url = $4,
+		    privacy_url = $5,
+		    consent_version = $6,
+		    require_consent = $7,
+		    updated_at = now()
+		where id = $1 and workspace_id = $2 and project_id = $3
+		returning ` + appColumnsReturning
+	var out core.App
+	err := scanAppFull(r.db.Pool().QueryRow(ctx, q,
+		appID, workspaceID, projectID,
+		termsURL, privacyURL, consentVersion, requireConsent,
+	), &out)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return core.App{}, ErrNotFound
+		}
+		return core.App{}, err
+	}
+	return out, nil
+}
+
 // AppGoogleConfigUpdate carries the Google sign-in toggle + credentials.
 // ClientSecretEncrypted: nil = keep current, []byte{} = clear, non-empty = set.
 type AppGoogleConfigUpdate struct {
