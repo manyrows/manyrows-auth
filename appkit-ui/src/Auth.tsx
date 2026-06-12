@@ -2147,7 +2147,7 @@ export default function Auth(props: {
                   </div>
                 )}
 
-                {props.requireConsent && view === "register" && (
+                {props.requireConsent && (
                   <label className="ak-field" style={{ display: "flex", gap: 8, alignItems: "flex-start", cursor: "pointer" }}>
                     <input type="checkbox" checked={consentChecked} onChange={(e) => setConsentChecked(e.target.checked)} style={{ marginTop: 3, flexShrink: 0 }} />
                     <span className="ak-body2">
