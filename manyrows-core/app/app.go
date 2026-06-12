@@ -162,16 +162,16 @@ func NewAppService() (*AppService, error) {
 	if envPin := app.config.GetSuperAdminEmailPin(); envPin != "" {
 		normalised, vr := auth.ValidateEmail(envPin)
 		if !vr.Ok() {
-			log.Warn().Str("env_pin", envPin).Msg("MANYROWS_SUPER_ADMIN_EMAIL is malformed; ignored")
+			log.Warn().Str("env_pin", utils.MaskEmail(envPin)).Msg("MANYROWS_SUPER_ADMIN_EMAIL is malformed; ignored")
 		} else if stored, err := repoInstance.PutSystemSecret(bootCtx, "super_admin_email", normalised); err != nil {
 			log.Err(err).Msg("super-admin pin: PutSystemSecret failed (continuing without pin)")
 		} else if stored != normalised {
 			log.Warn().
-				Str("env_pin", normalised).
-				Str("stored", stored).
+				Str("env_pin", utils.MaskEmail(normalised)).
+				Str("stored", utils.MaskEmail(stored)).
 				Msg("MANYROWS_SUPER_ADMIN_EMAIL conflicts with existing system_secrets row; using stored value")
 		} else {
-			log.Info().Str("email", normalised).Msg("super-admin email pinned from env")
+			log.Info().Str("email", utils.MaskEmail(normalised)).Msg("super-admin email pinned from env")
 		}
 	}
 	if v, err := repoInstance.GetSystemSecret(bootCtx, "super_admin_email"); err == nil && v != "" {

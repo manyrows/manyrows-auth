@@ -9,6 +9,7 @@ import (
 	"github.com/rs/zerolog/log"
 
 	"manyrows-core/core"
+	"manyrows-core/utils"
 )
 
 // clientAuthAccessLog emits one structured stdout line per client end-user
@@ -53,7 +54,7 @@ func clientAuthAccessLog() func(http.Handler) http.Handler {
 				Str("method", r.Method).
 				Int("status", ww.Status()).
 				Dur("duration", time.Since(start)).
-				Str("ip", getClientIP(r))
+				Str("ip", utils.LogIP(getClientIP(r)))
 			if rid != "" {
 				evt = evt.Str("request_id", rid)
 			}

@@ -8,6 +8,8 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/rs/zerolog/log"
+
+	"manyrows-core/utils"
 )
 
 // serverAccessLogFields holds the identity of a server-to-server request for
@@ -79,7 +81,7 @@ func serverAccessLogMiddleware() func(next http.Handler) http.Handler {
 				Str("path", r.URL.Path).
 				Int("status", ww.Status()).
 				Dur("duration", time.Since(start)).
-				Str("ip", getClientIP(r))
+				Str("ip", utils.LogIP(getClientIP(r)))
 
 			if rid := middleware.GetReqID(ctx); rid != "" {
 				evt = evt.Str("request_id", rid)
@@ -88,7 +90,7 @@ func serverAccessLogMiddleware() func(next http.Handler) http.Handler {
 				evt = evt.Str("route", rc.RoutePattern())
 			}
 			if q := r.URL.RawQuery; q != "" {
-				evt = evt.Str("query", q)
+				evt = evt.Str("query", utils.QueryString(q))
 			}
 			if fields.apiKeyID != "" {
 				evt = evt.Str("api_key_id", fields.apiKeyID).Str("api_key_name", fields.apiKeyName)

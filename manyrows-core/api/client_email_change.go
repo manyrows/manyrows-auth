@@ -457,7 +457,7 @@ func (handler *RequestHandler) ClientVerifyEmailChange(w http.ResponseWriter, r 
 		Body:    fmt.Sprintf(email.T("en", "workspace.email_change.notice.body"), emailNameNotice),
 	}
 	if err := handler.sendWorkspaceEmail(ctx, ws.ID, noticeEmail); err != nil {
-		log.Err(err).Str("old_email", oldEmail).Msg("email-change notice to old address failed (non-fatal)")
+		log.Err(err).Str("old_email", utils.MaskEmail(oldEmail)).Msg("email-change notice to old address failed (non-fatal)")
 	}
 
 	// Invalidate all sessions except current

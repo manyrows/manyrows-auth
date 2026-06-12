@@ -376,7 +376,7 @@ func (handler *RequestHandler) VerifyEmailChange(w http.ResponseWriter, r *http.
 	// pivots deeper. Best-effort: swap is already committed, so a
 	// transient SMTP failure logs and moves on.
 	if err := handler.emailService.SendEmailChangeNotice(oldEmail, "en"); err != nil {
-		log.Err(err).Str("old_email", oldEmail).Msg("email-change notice to old address failed (non-fatal)")
+		log.Err(err).Str("old_email", utils.MaskEmail(oldEmail)).Msg("email-change notice to old address failed (non-fatal)")
 	}
 
 	utils.WriteJson(w, map[string]any{"ok": true, "newEmail": otp.NewEmail})

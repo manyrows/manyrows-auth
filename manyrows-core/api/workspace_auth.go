@@ -44,19 +44,7 @@ func toClientSessionResource(s *core.ClientSession) *core.ClientSessionResource 
 	}
 }
 
-func maskEmail(s string) string {
-	s = strings.TrimSpace(strings.ToLower(s))
-	parts := strings.SplitN(s, "@", 2)
-	if len(parts) != 2 || parts[0] == "" {
-		return "***"
-	}
-	local := parts[0]
-	domain := parts[1]
-	if len(local) == 1 {
-		return local + "***@" + domain
-	}
-	return string(local[0]) + "***" + string(local[len(local)-1]) + "@" + domain
-}
+func maskEmail(s string) string { return utils.MaskEmail(s) }
 
 // =====================
 // OTP helpers
@@ -95,7 +83,7 @@ func (handler *RequestHandler) ensureDefaultRole(ctx context.Context, app *core.
 	if len(existing) > 0 {
 		return
 	}
-	reqLog(ctx).Info().Str("app", app.ID.String()).Str("email", user.Email).Str("appId", appID.String()).Msg("Assigning default role to user on login")
+	reqLog(ctx).Info().Str("app", app.ID.String()).Str("email", utils.MaskEmail(user.Email)).Str("appId", appID.String()).Msg("Assigning default role to user on login")
 	if err := handler.repo.ReplaceUserRoles(ctx, repo.ReplaceUserRolesParams{
 		ProjectID: app.ProjectID,
 		AppID:     appID,

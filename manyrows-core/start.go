@@ -14,6 +14,7 @@ import (
 	"manyrows-core/crypto"
 	"manyrows-core/db"
 	"manyrows-core/encmigrate"
+	"manyrows-core/utils"
 
 	"github.com/rs/zerolog/log"
 )
@@ -98,7 +99,7 @@ func runResetAdminTOTP(email string) error {
 		return err
 	}
 
-	log.Info().Str("email", email).Msg("reset-admin-2fa: 2FA cleared — sign in with the account password, then re-enrol")
+	log.Info().Str("email", utils.MaskEmail(email)).Msg("reset-admin-2fa: 2FA cleared — sign in with the account password, then re-enrol")
 	return nil
 }
 

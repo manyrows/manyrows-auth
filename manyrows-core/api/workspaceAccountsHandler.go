@@ -357,7 +357,7 @@ func (handler *RequestHandler) HandleCreateWorkspaceAccount(w http.ResponseWrite
 		if loadedApp.AppURL == nil || *loadedApp.AppURL == "" {
 			inviteErr = "App URL is not configured for this app — set it in app settings to send invite emails."
 		} else if err := handler.sendUserInviteEmail(ctx, ws.ID, email, loadedApp.DisplayName(), *loadedApp.AppURL, GetLanguageFromRequest(r)); err != nil {
-			log.Error().Err(err).Str("email", email).Msg("failed to send invite email")
+			log.Error().Err(err).Str("email", utils.MaskEmail(email)).Msg("failed to send invite email")
 			inviteErr = err.Error()
 		} else {
 			inviteSent = true
@@ -474,7 +474,7 @@ func (handler *RequestHandler) HandleBulkImportWorkspaceAccounts(w http.Response
 				Reason: "internal error",
 				Row:    i + 1,
 			})
-			log.Error().Err(err).Str("email", email).Msg("failed to create user during bulk import")
+			log.Error().Err(err).Str("email", utils.MaskEmail(email)).Msg("failed to create user during bulk import")
 			continue
 		}
 
@@ -485,7 +485,7 @@ func (handler *RequestHandler) HandleBulkImportWorkspaceAccounts(w http.Response
 				Reason: "membership creation failed",
 				Row:    i + 1,
 			})
-			log.Error().Err(err).Str("email", email).Msg("failed to create app membership during bulk import")
+			log.Error().Err(err).Str("email", utils.MaskEmail(email)).Msg("failed to create app membership during bulk import")
 			continue
 		}
 
@@ -502,7 +502,7 @@ func (handler *RequestHandler) HandleBulkImportWorkspaceAccounts(w http.Response
 				Reason: "role assignment failed",
 				Row:    i + 1,
 			})
-			log.Error().Err(err).Str("email", email).Msg("failed to assign roles during bulk import")
+			log.Error().Err(err).Str("email", utils.MaskEmail(email)).Msg("failed to assign roles during bulk import")
 			continue
 		}
 

@@ -576,7 +576,7 @@ func (handler *RequestHandler) ServerBatchCreateUsers(w http.ResponseWriter, r *
 		}
 		user, created, err := handler.provisionUser(r, project, app, email, req.EmailVerified, roleIDs)
 		if err != nil {
-			log.Err(err).Str("email", email).Msg("ServerBatchCreateUsers: provision failed")
+			log.Err(err).Str("email", utils.MaskEmail(email)).Msg("ServerBatchCreateUsers: provision failed")
 			results = append(results, ServerBatchUserResult{Email: email, Error: "error.internalError"})
 			continue
 		}

@@ -143,7 +143,7 @@ func (handler *RequestHandler) completeTier1OAuthLogin(
 	if opts.ProviderSubject == "" {
 		reqLog(r.Context()).Warn().
 			Str("provider", opts.WebhookMethod).
-			Str("email", email).
+			Str("email", utils.MaskEmail(email)).
 			Msg("OAuth login completed without a provider subject - identity will not be linked")
 	}
 

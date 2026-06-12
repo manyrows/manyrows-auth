@@ -307,7 +307,7 @@ func (handler *RequestHandler) AdminRegister(w http.ResponseWriter, r *http.Requ
 	// shouldn't roll back the now-committed account.
 	if firstAdminClaimed {
 		core.SetSuperAdminEmail(toEmail)
-		log.Info().Str("email", toEmail).Msg("first-admin claimed super-admin role")
+		log.Info().Str("email", utils.MaskEmail(toEmail)).Msg("first-admin claimed super-admin role")
 
 		// Auto-validate the first admin's email. There's nobody else
 		// to verify against, and the operator may not have SMTP
