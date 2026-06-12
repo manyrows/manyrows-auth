@@ -157,6 +157,17 @@ func (r *Repo) DeleteExpiredEmailChangeRequests(ctx context.Context, now time.Ti
 	return tag.RowsAffected(), nil
 }
 
+// DeleteExpiredAccountDeleteRequests removes passwordless-deletion
+// confirmation requests past their TTL.
+func (r *Repo) DeleteExpiredAccountDeleteRequests(ctx context.Context, now time.Time) (int64, error) {
+	const q = `delete from account_delete_requests where expires_at < $1;`
+	tag, err := r.db.Pool().Exec(ctx, q, now)
+	if err != nil {
+		return 0, err
+	}
+	return tag.RowsAffected(), nil
+}
+
 // DeleteExpiredAdminSessions removes admin session rows past their TTL.
 func (r *Repo) DeleteExpiredAdminSessions(ctx context.Context, now time.Time) (int64, error) {
 	const q = `delete from sessions where expires_at < $1;`

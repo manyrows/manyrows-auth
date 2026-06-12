@@ -191,6 +191,9 @@ func (j *Janitor) sweep(ctx context.Context) {
 	step("email_change_requests", func() (int64, error) {
 		return j.repo.DeleteExpiredEmailChangeRequests(ctx, now)
 	})
+	step("account_delete_requests", func() (int64, error) {
+		return j.repo.DeleteExpiredAccountDeleteRequests(ctx, now)
+	})
 	step("sessions", func() (int64, error) {
 		return j.repo.DeleteExpiredAdminSessions(ctx, now)
 	})
