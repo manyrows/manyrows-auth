@@ -15,9 +15,10 @@ import (
 // Provider sends an Email. The system-level Service holds exactly
 // one — picked at construction time based on env vars — and routes
 // every Send through it. Self-hosters pick SMTP (any provider —
-// Postmark, SES, Mailgun, etc.); dev / unconfigured installs pick
-// console (logs the email body to stdout so flows are still
-// testable end-to-end).
+// Postmark, SES, Mailgun, etc.); local dev picks console (logs the
+// full email body to stdout so flows are testable end-to-end).
+// Production installs with no transport configured get failProvider,
+// which refuses to send and never prints to stdout.
 //
 // Per-workspace custom SMTP (Service.SendWithCustomSMTP) bypasses
 // this — that's a separate code path workspaces use to send their
@@ -180,12 +181,12 @@ func (c cloudmailinProvider) Send(e *Email) error {
 
 // pickProvider chooses the system-level email transport. Order:
 //
-//  1. dev / no-config: console (always usable, logs to stdout).
+//  1. isDev=true: console (logs full body to stdout — dev only).
 //  2. SMTP configured via env or store: SMTP (any provider).
-//  3. CLOUDMAILIN_SMTP_URL set: cloudmailin client (internal path).
-//  4. Otherwise: console with a warning (operator probably forgot
-//     to configure email; emails still land in the log so flows
-//     are testable, just won't actually leave the box).
+//  3. CLOUDMAILIN_SMTP_URL set: cloudmailin client (internal path);
+//     if client init fails, returns failProvider (no stdout leak).
+//  4. Otherwise (production, no transport): failProvider — refuses to
+//     send and logs subject only; never prints body to stdout.
 func pickProvider(isDev bool, store SecretsStore) Provider {
 	if isDev {
 		return consoleProvider{}

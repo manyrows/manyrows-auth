@@ -6,6 +6,9 @@ import (
 	"os"
 	"strings"
 	"testing"
+
+	"github.com/rs/zerolog"
+	"github.com/rs/zerolog/log"
 )
 
 // resetEmailEnv unsets every env var pickProvider reads so tests
@@ -192,19 +195,29 @@ func TestFailProvider_DoesNotPrintBody(t *testing.T) {
 	rPipe, wPipe, _ := os.Pipe()
 	os.Stdout = wPipe
 
+	// Also redirect zerolog so a future log.Error().Str("body", ...) regression
+	// is caught here rather than silently leaking secrets to the log stream.
+	var logBuf bytes.Buffer
+	prevLogger := log.Logger
+	log.Logger = zerolog.New(&logBuf)
+	defer func() { log.Logger = prevLogger }()
+
 	secret := "SECRET-OTP-123456"
 	err := failProvider{}.Send(&Email{To: "u@example.com", From: "f@example.com", Subject: "Your login code", Body: "code: " + secret})
 
 	wPipe.Close()
 	os.Stdout = old
-	var buf bytes.Buffer
-	_, _ = buf.ReadFrom(rPipe)
+	var stdoutBuf bytes.Buffer
+	_, _ = stdoutBuf.ReadFrom(rPipe)
 
 	if err == nil {
 		t.Fatal("failProvider.Send must return an error")
 	}
-	if strings.Contains(buf.String(), secret) {
-		t.Fatalf("failProvider leaked body to stdout: %q", buf.String())
+	if strings.Contains(stdoutBuf.String(), secret) {
+		t.Fatalf("failProvider leaked body to stdout: %q", stdoutBuf.String())
+	}
+	if strings.Contains(logBuf.String(), secret) {
+		t.Fatalf("failProvider leaked body to zerolog output: %q", logBuf.String())
 	}
 }
 

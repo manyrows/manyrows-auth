@@ -156,6 +156,11 @@ func (s *Service) Send(email *Email) error {
 // sendDev is kept around for the per-workspace SMTP path, which logs
 // the email when isDev is set instead of dialling the provided SMTP
 // server. The system-level send path now goes through s.provider.
+//
+// Intentionally prints the full email body (including OTP/reset codes
+// and magic links) to stdout — this is LOCAL DEV convenience only.
+// sendDev is only ever reached when IsDev is true (see SendWithCustomSMTP).
+// The production no-transport path uses failProvider, which never prints.
 func (s *Service) sendDev(email *Email) error {
 	return consoleProvider{}.Send(email)
 }
