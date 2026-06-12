@@ -449,6 +449,10 @@ export default function Auth(props: {
   const [pendingTokens, setPendingTokens] = React.useState<TokenPairResponse | null>(null);
   const [keepSignedIn, setKeepSignedIn] = React.useState(true);
   const [consentChecked, setConsentChecked] = React.useState(false);
+  // OAuth signup consent gate — only the register view requires it. Existing
+  // users signing in via OAuth from the sign-in view don't need consent, so
+  // their provider buttons must NOT be gated (or they'd be dead-ended).
+  const oauthConsentBlocked = props.requireConsent === true && view === "register" && !consentChecked;
 
   // Pre-session TOTP enrollment state. Populated when an upstream
   // sign-in (OTP/password/OAuth/magic-link) hands back a setup
@@ -1859,8 +1863,8 @@ export default function Auth(props: {
                   ) : null}
                 </div>
                 {props.requireConsent ? (
-                  <label className="ak-field" style={{ display: "flex", gap: 8, alignItems: "flex-start", cursor: "pointer" }}>
-                    <input type="checkbox" checked={consentChecked} onChange={(e) => setConsentChecked(e.target.checked)} disabled={loading} style={{ marginTop: 3, flexShrink: 0 }} />
+                  <label style={{ display: "flex", flexDirection: "row", gap: 8, alignItems: "center", cursor: "pointer" }}>
+                    <input type="checkbox" checked={consentChecked} onChange={(e) => setConsentChecked(e.target.checked)} disabled={loading} style={{ flexShrink: 0 }} />
                     <span className="ak-body2">
                       I agree to the{" "}
                       {props.termsUrl ? <a href={props.termsUrl} target="_blank" rel="noopener noreferrer">Terms</a> : "Terms"}
@@ -2147,18 +2151,6 @@ export default function Auth(props: {
                   </div>
                 )}
 
-                {props.requireConsent && (
-                  <label className="ak-field" style={{ display: "flex", gap: 8, alignItems: "flex-start", cursor: "pointer" }}>
-                    <input type="checkbox" checked={consentChecked} onChange={(e) => setConsentChecked(e.target.checked)} style={{ marginTop: 3, flexShrink: 0 }} />
-                    <span className="ak-body2">
-                      I agree to the{" "}
-                      {props.termsUrl ? <a href={props.termsUrl} target="_blank" rel="noopener noreferrer">Terms</a> : "Terms"}
-                      {" "}and{" "}
-                      {props.privacyUrl ? <a href={props.privacyUrl} target="_blank" rel="noopener noreferrer">Privacy Policy</a> : "Privacy Policy"}
-                    </span>
-                  </label>
-                )}
-
                 <div className="ak-oauth-row">
                   {view !== "register" && props.passkeyEnabled && isPasskeySupported() && (
                     <button
@@ -2176,7 +2168,7 @@ export default function Auth(props: {
                   {showGoogle && (
                     <button
                       className="ak-btn ak-btn-outlined"
-                      disabled={googleLoading || (props.requireConsent === true && !consentChecked)}
+                      disabled={googleLoading || oauthConsentBlocked}
                       onClick={onGoogleClick}
                       style={{ borderColor: "var(--ak-color-divider)", color: "var(--ak-color-text)" }}
                       aria-label={L.signInWithGoogle}
@@ -2189,7 +2181,7 @@ export default function Auth(props: {
                   {showApple && (
                     <button
                       className="ak-btn ak-btn-outlined"
-                      disabled={appleLoading || (props.requireConsent === true && !consentChecked)}
+                      disabled={appleLoading || oauthConsentBlocked}
                       onClick={onAppleClick}
                       style={{ borderColor: "var(--ak-color-divider)", color: "var(--ak-color-text)" }}
                       aria-label={L.signInWithApple}
@@ -2202,7 +2194,7 @@ export default function Auth(props: {
                   {showMicrosoft && (
                     <button
                       className="ak-btn ak-btn-outlined"
-                      disabled={microsoftLoading || (props.requireConsent === true && !consentChecked)}
+                      disabled={microsoftLoading || oauthConsentBlocked}
                       onClick={onMicrosoftClick}
                       style={{ borderColor: "var(--ak-color-divider)", color: "var(--ak-color-text)" }}
                       aria-label={L.signInWithMicrosoft}
@@ -2215,7 +2207,7 @@ export default function Auth(props: {
                   {showGithub && (
                     <button
                       className="ak-btn ak-btn-outlined"
-                      disabled={githubLoading || (props.requireConsent === true && !consentChecked)}
+                      disabled={githubLoading || oauthConsentBlocked}
                       onClick={onGithubClick}
                       style={{ borderColor: "var(--ak-color-divider)", color: "var(--ak-color-text)" }}
                       aria-label={L.signInWithGithub}
@@ -2228,7 +2220,7 @@ export default function Auth(props: {
                   {showKakao && (
                     <button
                       className="ak-btn ak-btn-outlined"
-                      disabled={kakaoLoading || (props.requireConsent === true && !consentChecked)}
+                      disabled={kakaoLoading || oauthConsentBlocked}
                       onClick={onKakaoClick}
                       style={{ backgroundColor: "#FEE500", borderColor: "#FEE500", color: "rgba(0,0,0,0.85)" }}
                       aria-label={L.signInWithKakao}
@@ -2241,7 +2233,7 @@ export default function Auth(props: {
                   {showNaver && (
                     <button
                       className="ak-btn ak-btn-outlined"
-                      disabled={naverLoading || (props.requireConsent === true && !consentChecked)}
+                      disabled={naverLoading || oauthConsentBlocked}
                       onClick={onNaverClick}
                       style={{ backgroundColor: "#03C75A", borderColor: "#03C75A", color: "#FFFFFF" }}
                       aria-label={L.signInWithNaver}
@@ -2255,7 +2247,7 @@ export default function Auth(props: {
                     <button
                       key={idp.slug}
                       className="ak-btn ak-btn-outlined"
-                      disabled={externalLoadingSlug === idp.slug || (props.requireConsent === true && !consentChecked)}
+                      disabled={externalLoadingSlug === idp.slug || oauthConsentBlocked}
                       onClick={() => onExternalClick(idp.slug)}
                       style={{ borderColor: "var(--ak-color-divider)", color: "var(--ak-color-text)" }}
                       aria-label={`Sign in with ${idp.displayName}`}
@@ -2285,6 +2277,18 @@ export default function Auth(props: {
                     </button>
                   )}
                 </div>
+
+                {props.requireConsent && view === "register" && (
+                  <label style={{ display: "flex", flexDirection: "row", gap: 8, alignItems: "center", cursor: "pointer" }}>
+                    <input type="checkbox" checked={consentChecked} onChange={(e) => setConsentChecked(e.target.checked)} style={{ flexShrink: 0 }} />
+                    <span className="ak-body2">
+                      I agree to the{" "}
+                      {props.termsUrl ? <a href={props.termsUrl} target="_blank" rel="noopener noreferrer">Terms</a> : "Terms"}
+                      {" "}and{" "}
+                      {props.privacyUrl ? <a href={props.privacyUrl} target="_blank" rel="noopener noreferrer">Privacy Policy</a> : "Privacy Policy"}
+                    </span>
+                  </label>
+                )}
               </div>
             </div>
           </Collapse>
