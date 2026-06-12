@@ -39,7 +39,6 @@ export {
   useConfigValue,
   useToken,
   useAuthFetch,
-  useUpdateProfile,
   useSetPassword,
   useIdentities,
   useDisconnectIdentity,

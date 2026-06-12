@@ -6,41 +6,6 @@ import { authedJson } from "./shared";
 import type { AppKitIdentity, AppKitUserField } from "../types";
 
 /**
- * Returns a function to update the current user's profile.
- * After updating, call `refresh()` to reload the snapshot with the new values.
- *
- * ```tsx
- * const updateProfile = useUpdateProfile();
- * await updateProfile({ displayName: "Jane Doe" });
- * ```
- */
-export function useUpdateProfile(): (update: { displayName: string }) => Promise<void> {
-  const { snapshot } = useAppKit();
-  const token = snapshot?.jwtToken;
-  const baseURL = snapshot?.appBaseURL;
-
-  return useCallback(async (update: { displayName: string }) => {
-    if (!token || !baseURL) {
-      throw new Error("Not authenticated");
-    }
-
-    const res = await fetch(`${baseURL}/a/profile/display-name`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify({ displayName: update.displayName }),
-    });
-
-    if (!res.ok) {
-      const body = await res.json().catch(() => ({}));
-      throw new Error(body?.issues?.[0]?.message || body?.error || "Failed to update profile");
-    }
-  }, [token, baseURL]);
-}
-
-/**
  * Returns a function to change the signed-in user's password.
  *
  * Pass `currentPassword` for the password-change path. The server requires

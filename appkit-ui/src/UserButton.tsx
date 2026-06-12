@@ -46,7 +46,7 @@ interface UserButtonProps {
 }
 
 export function UserButton({ size = "medium" }: UserButtonProps) {
-  const { appData, logout, refresh, appBaseURL, jwtToken } = useManyRowsAppKit();
+  const { appData, logout, appBaseURL, jwtToken } = useManyRowsAppKit();
   const theme = useAppKitTheme();
   const [open, setOpen] = React.useState(false);
   const [loggingOut, setLoggingOut] = React.useState(false);
@@ -100,7 +100,6 @@ export function UserButton({ size = "medium" }: UserButtonProps) {
         loggingOut={loggingOut}
         workspaceBaseURL={appBaseURL}
         jwtToken={jwtToken}
-        onNameUpdated={refresh}
       />
     </>
   );
@@ -114,7 +113,6 @@ interface ProfileDialogProps {
   loggingOut: boolean;
   workspaceBaseURL: string;
   jwtToken: string | null;
-  onNameUpdated: () => void;
 }
 
 function ProfileDialog({
@@ -125,16 +123,10 @@ function ProfileDialog({
   loggingOut,
   workspaceBaseURL,
   jwtToken,
-  onNameUpdated,
 }: ProfileDialogProps) {
   const { showSuccess } = useToast();
   const theme = useAppKitTheme();
   const dialogRef = React.useRef<HTMLDialogElement>(null);
-
-  const [editing, setEditing] = React.useState(false);
-  const [editName, setEditName] = React.useState(account?.name || "");
-  const [saving, setSaving] = React.useState(false);
-  const [error, setError] = React.useState<string | null>(null);
 
   const [hasPassword, setHasPassword] = React.useState(false);
   const [passwordSection, setPasswordSection] = React.useState(false);
@@ -206,9 +198,6 @@ function ProfileDialog({
   // Reset state when opening
   React.useEffect(() => {
     if (open) {
-      setEditName(account?.name || "");
-      setEditing(false);
-      setError(null);
       setPasswordSection(false);
       setNewPassword("");
       setConfirmPassword("");
@@ -231,7 +220,7 @@ function ProfileDialog({
           .catch(() => {});
       }
     }
-  }, [open, account?.name, jwtToken, workspaceBaseURL, authHeaders]);
+  }, [open, jwtToken, workspaceBaseURL, authHeaders]);
 
   // Close on backdrop click
   const handleDialogClick = (e: React.MouseEvent<HTMLDialogElement>) => {
@@ -333,46 +322,6 @@ function ProfileDialog({
     }
   }, [totpUri]);
 
-  const handleSave = async () => {
-    const trimmed = editName.trim();
-    if (!trimmed) {
-      setError("Display name is required");
-      return;
-    }
-    if (trimmed.length > 200) {
-      setError("Display name is too long");
-      return;
-    }
-    if (trimmed === account?.name) {
-      setEditing(false);
-      return;
-    }
-
-    setSaving(true);
-    setError(null);
-
-    try {
-      await axios.post(
-        `${workspaceBaseURL}/a/profile/display-name`,
-        { displayName: trimmed },
-        {
-          headers: {
-            Authorization: `Bearer ${jwtToken}`,
-            "Content-Type": "application/json",
-          },
-        }
-      );
-      setEditing(false);
-      onNameUpdated();
-      showSuccess("Display name updated");
-    } catch (err: any) {
-      const msg = extractErr(err, "Failed to update name");
-      setError(msg);
-    } finally {
-      setSaving(false);
-    }
-  };
-
   const handleSetPassword = async () => {
     const pw = newPassword.trim();
     if (pw.length < 10) {
@@ -396,17 +345,6 @@ function ProfileDialog({
       setPasswordError(extractErr(err, "Failed to set password"));
     } finally {
       setPasswordLoading(false);
-    }
-  };
-
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter") {
-      e.preventDefault();
-      handleSave();
-    } else if (e.key === "Escape") {
-      setEditing(false);
-      setEditName(account?.name || "");
-      setError(null);
     }
   };
 
@@ -447,57 +385,13 @@ function ProfileDialog({
 
           <hr className="ak-divider" />
 
-          {error && (
-            <div className="ak-alert ak-alert-error" role="alert">
-              <span className="ak-alert-content">{error}</span>
-              <button className="ak-alert-close" onClick={() => setError(null)} aria-label="Close">
-                <Icon name="close" size={12} />
-              </button>
-            </div>
-          )}
-
           {/* Account details */}
           <div className="ak-stack ak-gap-4">
             <div>
-              <div className="ak-stack-row ak-items-center ak-justify-between" style={{ marginBottom: 4 }}>
+              <div style={{ marginBottom: 4 }}>
                 <span className="ak-caption ak-text-secondary ak-font-bold">Display Name</span>
-                {!editing && (
-                  <button
-                    className="ak-icon-btn ak-icon-btn-sm"
-                    onClick={() => setEditing(true)}
-                    style={{ padding: 2 }}
-                    aria-label="Edit display name"
-                  >
-                    <Icon name="edit" size={12} />
-                  </button>
-                )}
               </div>
-              {editing ? (
-                <div className="ak-stack-row ak-gap-2 ak-items-start">
-                  <div className="ak-field">
-                    <input
-                      className={`ak-field-input ak-field-input-sm${error ? " ak-field-input-error" : ""}`}
-                      value={editName}
-                      onChange={(e) => setEditName(e.target.value)}
-                      onKeyDown={handleKeyDown}
-                      disabled={saving}
-                      autoFocus
-                      placeholder="Enter display name"
-                    />
-                  </div>
-                  <button
-                    className="ak-icon-btn ak-icon-btn-sm ak-icon-btn-primary"
-                    onClick={handleSave}
-                    disabled={saving}
-                    style={{ marginTop: 4 }}
-                    aria-label="Save display name"
-                  >
-                    {saving ? <Spinner size={18} /> : <Icon name="check" />}
-                  </button>
-                </div>
-              ) : (
-                <p className="ak-body1">{account?.name || "—"}</p>
-              )}
+              <p className="ak-body1">{account?.name || "—"}</p>
             </div>
             <div>
               <span className="ak-caption ak-text-secondary ak-font-bold">Email</span>

@@ -308,19 +308,6 @@ The returned function is memoized and updates when the token changes.
 
 ---
 
-### `useUpdateProfile()`
-
-Returns a function to update the current user's profile (e.g. display name). Takes an object for future extensibility.
-
-**Returns: `(update: { displayName: string }) => Promise<void>`**
-
-```tsx
-const updateProfile = useUpdateProfile();
-await updateProfile({ displayName: "Jane Doe" });
-```
-
----
-
 ### `useSetPassword()`
 
 Returns a function to change the signed-in user's password. Pass `currentPassword` for the change-password path — required whenever the user already has a password set.

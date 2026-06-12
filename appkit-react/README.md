@@ -56,7 +56,6 @@ import {
   useConfigValue,  // single config: useConfigValue("api-url", "default")
   useToken,        // JWT token for API calls
   useAuthFetch,    // fetch wrapper with automatic Bearer token
-  useUpdateProfile,// update the signed-in user's name/email
   useSetPassword,  // set or change the signed-in user's password
 } from "@manyrows/appkit-react";
 ```

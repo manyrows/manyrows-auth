@@ -15,7 +15,6 @@ export {
   useAuthFetch,
 } from "./hooks/snapshot";
 export {
-  useUpdateProfile,
   useSetPassword,
   useIdentities,
   useDisconnectIdentity,
