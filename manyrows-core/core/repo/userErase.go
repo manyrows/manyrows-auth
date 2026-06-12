@@ -3,30 +3,62 @@ package repo
 import (
 	"context"
 	"errors"
+	"strings"
 
 	"github.com/gofrs/uuid/v5"
 	"github.com/jackc/pgx/v5"
 )
 
-// scrubResidualPII runs the three anonymize/scrub statements that remove a
-// user's residual personal data not covered by the users-row cascade. Caller
-// supplies a live tx; the statements are ordered so auth_logs anonymization
-// runs before the users row is deleted (the FK is ON DELETE SET NULL, which
-// would otherwise null subject_user_id and lose the link).
+// scrubResidualPII removes a user's residual personal data not covered by the
+// users-row cascade. Caller supplies a live tx. auth_logs anonymization runs
+// before the users row is deleted (the FK is ON DELETE SET NULL, which would
+// otherwise null subject_user_id and lose the link).
 func scrubResidualPII(ctx context.Context, tx pgx.Tx, userID uuid.UUID, email string, wsID uuid.UUID) error {
-	// 1. Anonymize auth_logs: null direct identifiers, keep event skeleton.
+	// Collect prior email addresses from this user's email-change history.
+	// Failed-login rows carry email_attempted but no subject_user_id, so a row
+	// logged under a FORMER address would otherwise survive erasure. Read the
+	// metadata before the UPDATE below nulls it. The rows cursor MUST be fully
+	// drained + closed before the next Exec on this tx.
+	emails := []string{strings.ToLower(strings.TrimSpace(email))}
+	rows, err := tx.Query(ctx, `
+SELECT DISTINCT lower(e) AS e FROM (
+    SELECT metadata->>'old_email' AS e FROM auth_logs
+      WHERE subject_user_id = $1 AND metadata->>'old_email' IS NOT NULL
+    UNION
+    SELECT metadata->>'new_email' AS e FROM auth_logs
+      WHERE subject_user_id = $1 AND metadata->>'new_email' IS NOT NULL
+) s WHERE e IS NOT NULL AND e <> '';`, userID)
+	if err != nil {
+		return err
+	}
+	for rows.Next() {
+		var e string
+		if err := rows.Scan(&e); err != nil {
+			rows.Close()
+			return err
+		}
+		emails = append(emails, e)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return err
+	}
+
+	// 1. Anonymize auth_logs: null direct identifiers, keep the event skeleton.
 	if _, err := tx.Exec(ctx, `
 UPDATE auth_logs
    SET email_attempted = NULL, ip = NULL, user_agent = NULL, actor_label = NULL, metadata = NULL
  WHERE workspace_id = $1
    AND ( subject_user_id = $2
-         OR lower(email_attempted) = lower($3)
-         OR lower(actor_label) = lower($3) );`,
-		wsID, userID, email); err != nil {
+         OR lower(email_attempted) = ANY($3)
+         OR lower(actor_label) = ANY($3) );`,
+		wsID, userID, emails); err != nil {
 		return err
 	}
 
-	// 2. Scrub webhook delivery payloads that carry this user's email.
+	// 2. Scrub webhook delivery payloads that carry this user's email. Keyed on
+	// the payload userId; payloads without one (e.g. org-invite events) are not
+	// this user's to scrub here and are intentionally out of scope.
 	if _, err := tx.Exec(ctx, `
 UPDATE webhook_deliveries
    SET payload = payload - 'email' - 'oldEmail' - 'newEmail'
@@ -35,17 +67,18 @@ UPDATE webhook_deliveries
 		return err
 	}
 
-	// 3. Delete rate-limit attempt rows keyed by this email.
-	if _, err := tx.Exec(ctx, `DELETE FROM attempts WHERE lower(subject) = lower($1);`, email); err != nil {
-		return err
-	}
+	// NOTE: rate-limit `attempts` rows are intentionally NOT deleted here.
+	// attempts.subject is a bare email with no tenant column, so a global
+	// DELETE would reset rate-limit/lockout state for the same email in OTHER
+	// tenants. Those rows (email + ip) age out under the janitor's 7-day TTL,
+	// a bounded storage-limitation control.
 	return nil
 }
 
 // EraseUser performs a GDPR-complete erasure of a user in one transaction:
-// anonymize residual auth_logs, scrub webhook payloads, drop attempts, then
-// DELETE the users row (existing FK cascade clears sessions, tokens, MFA,
-// passkeys, identities, org memberships, password history, field values).
+// anonymize residual auth_logs, scrub webhook payloads, then DELETE the users
+// row (existing FK cascade clears sessions, tokens, MFA, passkeys, identities,
+// org memberships, password history, field values).
 func (r *Repo) EraseUser(ctx context.Context, userID uuid.UUID, email string, wsID uuid.UUID) error {
 	tx, err := r.db.Pool().Begin(ctx)
 	if err != nil {
