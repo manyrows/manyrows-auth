@@ -14,6 +14,8 @@ import (
 	"time"
 
 	"github.com/rs/zerolog/log"
+
+	"manyrows-core/utils"
 )
 
 // SMTP network timeouts for the custom/system relay path. These sends run
@@ -142,7 +144,7 @@ func (s *Service) Send(email *Email) error {
 		// would reject and we'd find out via vague logs later). Most
 		// likely cause: operator forgot to set MANYROWS_FROM_EMAIL.
 		log.Error().
-			Str("to", email.To).
+			Str("to", utils.MaskEmail(email.To)).
 			Str("subject", email.Subject).
 			Msg("email: refused to send — From is empty; set MANYROWS_FROM_EMAIL")
 		return errors.New("email: From not configured; set MANYROWS_FROM_EMAIL")

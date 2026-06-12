@@ -169,8 +169,8 @@ func (handler *RequestHandler) AdminRegister(w http.ResponseWriter, r *http.Requ
 	// password-hash to keep the rejection cheap.
 	if needsFirstAdmin && pinnedEmail != "" && !strings.EqualFold(pinnedEmail, toEmail) {
 		log.Warn().
-			Str("attempted", toEmail).
-			Str("pinned", pinnedEmail).
+			Str("attempted", utils.MaskEmail(toEmail)).
+			Str("pinned", utils.MaskEmail(pinnedEmail)).
 			Msg("admin register: email doesn't match pinned super-admin; rejecting")
 		WriteError(w, r, "error.registrationDisabled", http.StatusForbidden)
 		return
@@ -286,8 +286,8 @@ func (handler *RequestHandler) AdminRegister(w http.ResponseWriter, r *http.Requ
 			// no row and won). Reject this request; deferred Rollback
 			// undoes our account insert.
 			log.Warn().
-				Str("attempted", toEmail).
-				Str("winner", stored).
+				Str("attempted", utils.MaskEmail(toEmail)).
+				Str("winner", utils.MaskEmail(stored)).
 				Msg("first-admin race lost — rejecting registration")
 			WriteError(w, r, "error.registrationDisabled", http.StatusForbidden)
 			return
