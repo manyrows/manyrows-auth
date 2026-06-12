@@ -78,7 +78,7 @@ type dataExport struct {
 func (handler *RequestHandler) GetMyDataExport(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
-	ses, identity, ws, app, _, ok := handler.requireActiveClientSessionApp(w, r)
+	_, identity, ws, app, _, ok := handler.requireActiveClientSessionApp(w, r)
 	if !ok {
 		return
 	}
@@ -189,10 +189,11 @@ func (handler *RequestHandler) GetMyDataExport(w http.ResponseWriter, r *http.Re
 			WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 			return
 		}
-		out.Organizations = orgs
+		out.Organizations = append(out.Organizations, orgs...)
 	}
 
 	// Auth-log history — page through until exhausted or the safety cap.
+	// OFFSET paging across round-trips can duplicate or skip a row if auth_logs change mid-export; acceptable for a point-in-time export.
 	const pageSize = 200
 	for page := 0; len(out.AuthLogs) < dataExportAuthLogCap; page++ {
 		userID := u.ID
@@ -231,8 +232,6 @@ func (handler *RequestHandler) GetMyDataExport(w http.ResponseWriter, r *http.Re
 		out.AuthLogsTruncated = true
 		log.Warn().Str("user_id", u.ID.String()).Msg("GetMyDataExport: auth log export hit cap; truncated")
 	}
-
-	_ = ses // session already validated; not needed further
 
 	filename := fmt.Sprintf("my-data-%s-%s.json", ws.Slug, time.Now().UTC().Format("2006-01-02"))
 	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", filename))
