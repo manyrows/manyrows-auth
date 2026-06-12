@@ -635,7 +635,7 @@ func (handler *RequestHandler) ServerRemoveUser(w http.ResponseWriter, r *http.R
 	// Orphan prune: delete the identity only if the user now belongs to no
 	// app. The guard lives in the DELETE predicate, so it's atomic against a
 	// concurrent re-add.
-	identityDeleted, err := handler.repo.DeleteUserIfOrphanInPool(ctx, userID, app.UserPoolID)
+	identityDeleted, err := handler.repo.EraseUserIfOrphanInPool(ctx, userID, app.UserPoolID, email, app.WorkspaceID)
 	if err != nil {
 		log.Err(err).Msg("ServerRemoveUser: orphan prune failed")
 		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
