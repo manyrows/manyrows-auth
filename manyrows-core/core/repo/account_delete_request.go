@@ -24,6 +24,7 @@ type AccountDeleteRequest struct {
 	CreatedAt time.Time
 }
 
+// IsActive returns true if the request has not expired.
 func (r *AccountDeleteRequest) IsActive(now time.Time) bool {
 	return now.Before(r.ExpiresAt)
 }
