@@ -199,6 +199,12 @@ type ListAuthLogsParams struct {
 	SubjectAccountID   *uuid.UUID
 	EmailAttemptedLike string
 
+	// SubjectEmailsExact, when set TOGETHER WITH SubjectUserID, widens the
+	// subject filter to "(subject_user_id = $ OR lower(email_attempted) = ANY($))"
+	// — exact lowercased match, used by the GDPR self-export to also include
+	// the user's email-only (null-subject) rows. Values must be lowercased.
+	SubjectEmailsExact []string
+
 	// Correlation filters — given by the UI's "show this session" /
 	// "show this request" affordances on a row drilldown.
 	SessionID *uuid.UUID
@@ -308,7 +314,9 @@ func buildAuthLogWhere(p ListAuthLogsParams) (string, []any) {
 	if len(p.ActorTypes) > 0 {
 		add("actor_type = ANY(?)", asTextArray(actorTypesToStrings(p.ActorTypes)))
 	}
-	if p.SubjectUserID != nil {
+	if p.SubjectUserID != nil && len(p.SubjectEmailsExact) > 0 {
+		add("(subject_user_id = ? OR lower(email_attempted) = ANY(?))", *p.SubjectUserID, p.SubjectEmailsExact)
+	} else if p.SubjectUserID != nil {
 		add("subject_user_id = ?", *p.SubjectUserID)
 	}
 	if p.SubjectAccountID != nil {

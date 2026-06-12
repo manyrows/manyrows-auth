@@ -194,14 +194,21 @@ func (handler *RequestHandler) GetMyDataExport(w http.ResponseWriter, r *http.Re
 
 	// Auth-log history — page through until exhausted or the safety cap.
 	// OFFSET paging across round-trips can duplicate or skip a row if auth_logs change mid-export; acceptable for a point-in-time export.
+	emailHistory, err := handler.repo.CollectUserEmailHistory(ctx, u.ID, u.Email)
+	if err != nil {
+		log.Err(err).Msg("GetMyDataExport: email history failed")
+		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
+		return
+	}
 	const pageSize = 200
 	for page := 0; len(out.AuthLogs) < dataExportAuthLogCap; page++ {
 		userID := u.ID
 		logs, _, err := handler.repo.ListAuthLogs(ctx, repo.ListAuthLogsParams{
-			WorkspaceID:   ws.ID,
-			SubjectUserID: &userID,
-			Page:          page,
-			PageSize:      pageSize,
+			WorkspaceID:        ws.ID,
+			SubjectUserID:      &userID,
+			SubjectEmailsExact: emailHistory,
+			Page:               page,
+			PageSize:           pageSize,
 		})
 		if err != nil {
 			log.Err(err).Msg("GetMyDataExport: auth logs failed")

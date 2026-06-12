@@ -198,6 +198,59 @@ func TestGetMyDataExport_PrivacyProperties(t *testing.T) {
 	}
 }
 
+func TestGetMyDataExport_IncludesEmailOnlyRows(t *testing.T) {
+	r := setupClientAPIRouter(t)
+	ctx := context.Background()
+	emailAddr := "eo-" + GenerateUniqueSlug("t") + "@example.com"
+	acc := testEnv.CreateTestAccount(t, emailAddr)
+	ws := testEnv.CreateTestWorkspace(t, acc, "EO WS", GenerateUniqueSlug("ws"))
+	app := testEnv.CreateTestApp(t, ws, acc)
+	user, _, err := testEnv.GetOrCreateUserWithMembership(ctx, emailAddr, app, core.UserSourceInvited)
+	if err != nil {
+		t.Fatalf("user: %v", err)
+	}
+	_, token := createTestClientSessionForApp(t, ws, acc, app)
+	t.Cleanup(func() { _, _ = testEnv.DB.Pool().Exec(ctx, "DELETE FROM users WHERE id=$1", user.ID) })
+
+	// A failed-login row keyed ONLY by email (no subject_user_id) — the caller's email.
+	_, _ = testEnv.DB.Pool().Exec(ctx, `
+		INSERT INTO auth_logs (id, workspace_id, app_id, event, outcome, actor_type, email_attempted, user_agent)
+		VALUES ($1,$2,$3,'login.failed','failed','self',$4,'EMAIL-ONLY-AGENT')`,
+		utils.NewUUID(), ws.ID, app.ID, emailAddr)
+	// A different user's email-only row — must NOT be exported.
+	_, _ = testEnv.DB.Pool().Exec(ctx, `
+		INSERT INTO auth_logs (id, workspace_id, app_id, event, outcome, actor_type, email_attempted, user_agent)
+		VALUES ($1,$2,$3,'login.failed','failed','self',$4,'OTHER-EMAIL-AGENT')`,
+		utils.NewUUID(), ws.ID, app.ID, "someone-else-"+GenerateUniqueSlug("x")+"@example.com")
+
+	req := httptest.NewRequest(http.MethodGet, exportPath(ws, app), nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	rr := httptest.NewRecorder()
+	r.ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("got %d: %s", rr.Code, rr.Body.String())
+	}
+	var out map[string]any
+	_ = json.Unmarshal(rr.Body.Bytes(), &out)
+	logs, _ := out["authLogs"].([]any)
+	var hasMine, hasOther bool
+	for _, e := range logs {
+		m, _ := e.(map[string]any)
+		if m["userAgent"] == "EMAIL-ONLY-AGENT" {
+			hasMine = true
+		}
+		if m["userAgent"] == "OTHER-EMAIL-AGENT" {
+			hasOther = true
+		}
+	}
+	if !hasMine {
+		t.Fatalf("export missing the caller's email-only auth log")
+	}
+	if hasOther {
+		t.Fatalf("export leaked another user's email-only auth log")
+	}
+}
+
 func TestGetMyDataExport_Unauthenticated(t *testing.T) {
 	r := setupClientAPIRouter(t)
 	emailAddr := "exp2-" + GenerateUniqueSlug("t") + "@example.com"
