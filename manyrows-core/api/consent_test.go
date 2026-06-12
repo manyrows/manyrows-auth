@@ -139,6 +139,40 @@ func TestSignup_ConsentAccepted_CreatesUserAndRecords(t *testing.T) {
 	}
 }
 
+func TestSignup_ConsentVersionMismatch_Rejected(t *testing.T) {
+	router, ws, app, emailAddr, code := consentSignupSetup(t, true, "v1")
+	body, _ := json.Marshal(map[string]any{"email": emailAddr, "code": code, "appId": app.ID, "consentAccepted": true, "consentVersion": "v0"})
+	req := httptest.NewRequest(http.MethodPost, consentVerifyPath(ws, app), bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("want 400, got %d: %s", rr.Code, rr.Body.String())
+	}
+	var cnt int
+	_ = testEnv.DB.Pool().QueryRow(context.Background(), "SELECT count(*) FROM users WHERE email=$1", emailAddr).Scan(&cnt)
+	if cnt != 0 {
+		t.Fatalf("user created despite version mismatch")
+	}
+}
+
+func TestSignup_ConsentRequiredButVersionUnset_Blocks(t *testing.T) {
+	router, ws, app, emailAddr, code := consentSignupSetup(t, true, "")
+	body, _ := json.Marshal(map[string]any{"email": emailAddr, "code": code, "appId": app.ID, "consentAccepted": true})
+	req := httptest.NewRequest(http.MethodPost, consentVerifyPath(ws, app), bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("want 400, got %d: %s", rr.Code, rr.Body.String())
+	}
+	var cnt int
+	_ = testEnv.DB.Pool().QueryRow(context.Background(), "SELECT count(*) FROM users WHERE email=$1", emailAddr).Scan(&cnt)
+	if cnt != 0 {
+		t.Fatalf("user created despite missing consent_version in app config")
+	}
+}
+
 func TestSignup_ConsentNotRequired_NoEnforcement(t *testing.T) {
 	router, ws, app, emailAddr, code := consentSignupSetup(t, false, "")
 	body, _ := json.Marshal(map[string]any{"email": emailAddr, "code": code, "appId": app.ID})
