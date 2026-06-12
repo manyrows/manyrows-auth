@@ -196,10 +196,12 @@ func isDigits(s string) bool {
 }
 
 type OTPVerifyRequest struct {
-	Email      string     `json:"email"`
-	Code       string     `json:"code"`
-	AppID      *uuid.UUID `json:"appId,omitempty"` // Optional: if provided, this is a registration flow
-	RememberMe bool       `json:"rememberMe,omitempty"`
+	Email           string     `json:"email"`
+	Code            string     `json:"code"`
+	AppID           *uuid.UUID `json:"appId,omitempty"` // Optional: if provided, this is a registration flow
+	RememberMe      bool       `json:"rememberMe,omitempty"`
+	ConsentAccepted bool       `json:"consentAccepted,omitempty"`
+	ConsentVersion  string     `json:"consentVersion,omitempty"`
 }
 
 type WorkspaceRegisterRequest struct {
@@ -740,6 +742,20 @@ func (handler *RequestHandler) WorkspaceLogin(w http.ResponseWriter, r *http.Req
 		return
 	}
 
+	// Consent gate: a brand-new pool user signing up must accept the app's
+	// current terms version when the app requires it. Existing users (and
+	// OAuth signups) are out of scope here.
+	if ctxApp.RequireConsent {
+		existing, _ := handler.repo.GetUserByEmail(r.Context(), toEmail, ctxApp)
+		if existing == nil {
+			accepted := req.ConsentAccepted && ctxApp.ConsentVersion != "" && req.ConsentVersion == ctxApp.ConsentVersion
+			if !accepted {
+				WriteError(w, r, "error.consentRequired", http.StatusBadRequest)
+				return
+			}
+		}
+	}
+
 	// Resolve identity. The OTP code proves email control; auto-create
 	// of the pool user and/or app_users membership is gated on
 	// ctxApp.AllowRegistration. Body req.AppID used to flip a separate
@@ -863,6 +879,11 @@ func (handler *RequestHandler) WorkspaceLogin(w http.ResponseWriter, r *http.Req
 			ActorLabel:    user.Email,
 			Metadata:      core.RegisterMetadata{Source: core.RegisterSourceSelfSignup},
 		})
+		if ctxApp.RequireConsent {
+			if err := handler.repo.InsertUserConsent(r.Context(), utils.NewUUID(), userID, ctxApp.ID, "terms", ctxApp.ConsentVersion, ip, ua); err != nil {
+				reqLog(r.Context()).Err(err).Msg("failed to record signup consent")
+			}
+		}
 	}
 	handler.writeAuthLogFromRequest(r, AuthLogInput{
 		WorkspaceID:   ws.ID,

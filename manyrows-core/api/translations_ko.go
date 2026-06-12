@@ -75,6 +75,7 @@ func init() {
 		"error.emailInvalid":           "잘못된 이메일 주소입니다",
 		"error.emailTaken":             "이미 사용 중인 이메일입니다",
 		"error.emailAlreadyRegistered": "이미 등록된 이메일입니다. 로그인해 주세요.",
+		"error.consentRequired":        "계정을 만들려면 이용약관과 개인정보처리방침에 동의해야 합니다.",
 		"error.passwordRequired":       "비밀번호를 입력해 주세요",
 		"error.passwordTooShort":       "비밀번호는 최소 %[1]d자 이상이어야 합니다",
 		"error.passwordTooWeak":        "비밀번호가 너무 취약합니다. 추측하기 어려운 비밀번호를 사용해 주세요(흔한 단어, 키보드 패턴, 개인정보를 피하세요).",

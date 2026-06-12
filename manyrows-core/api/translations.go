@@ -78,6 +78,7 @@ var apiTranslations = map[string]map[string]string{
 		"error.emailInvalid":           "Invalid email address",
 		"error.emailTaken":             "Email is already in use",
 		"error.emailAlreadyRegistered": "This email is already registered. Sign in instead.",
+		"error.consentRequired":        "You must accept the Terms and Privacy Policy to create an account.",
 		"error.passwordRequired":       "Password is required",
 		"error.passwordTooShort":       "Password must be at least %[1]d characters",
 		"error.passwordTooWeak":        "Password is too weak. Pick something less guessable (avoid common words, keyboard patterns, and personal info).",
