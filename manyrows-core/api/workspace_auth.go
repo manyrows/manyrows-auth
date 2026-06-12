@@ -1651,36 +1651,6 @@ func (handler *RequestHandler) WorkspaceSetPassword(w http.ResponseWriter, r *ht
 	utils.WriteJson(w, map[string]any{"ok": true})
 }
 
-type WorkspaceUpdateDisplayNameRequest struct {
-	DisplayName string `json:"displayName"`
-}
-
-// WorkspaceUpdateDisplayName is a no-op handler kept for backward compatibility.
-// The new User model does not have a display_name field.
-// POST /x/{slug}/a/profile/display-name (requires auth)
-func (handler *RequestHandler) WorkspaceUpdateDisplayName(w http.ResponseWriter, r *http.Request) {
-	_, ok := core.WorkspaceFromContext(r.Context())
-	if !ok {
-		WriteError(w, r, "error.unauthorized", http.StatusUnauthorized)
-		return
-	}
-
-	ses, ok := core.ClientSessionFromContext(r.Context())
-	if !ok || ses == nil {
-		WriteError(w, r, "error.unauthorized", http.StatusUnauthorized)
-		return
-	}
-
-	// Consume the request body but don't act on it
-	var req WorkspaceUpdateDisplayNameRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		WriteError(w, r, "error.invalidJson", http.StatusBadRequest)
-		return
-	}
-
-	utils.WriteJson(w, map[string]any{"ok": true})
-}
-
 type WorkspaceForgotPasswordRequest struct {
 	Email string    `json:"email"`
 	AppID uuid.UUID `json:"appId"`

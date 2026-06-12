@@ -23,7 +23,6 @@ func registerAuthedAppRoutes(r chi.Router, h *api.RequestHandler, rpo *repo.Repo
 	r.Use(appMiddleware(rpo))
 
 	r.Post("/logout", h.WorkspaceLogout)
-	r.Post("/profile/display-name", h.WorkspaceUpdateDisplayName)
 	r.Post("/set-password", h.WorkspaceSetPassword)
 	r.Post("/totp/setup", h.HandleWorkspaceTOTPSetup)
 	r.Post("/totp/enable", h.HandleWorkspaceTOTPEnable)

@@ -198,7 +198,6 @@ func setupClientAPIRouter(t *testing.T) *chi.Mux {
 			authed.Get("/me", requestHandler.GetAppMe)
 			authed.Get("/check-permission", requestHandler.CheckPermission)
 			authed.Get("/runtime", requestHandler.GetAppData)
-			authed.Post("/profile/display-name", requestHandler.WorkspaceUpdateDisplayName)
 			authed.Post("/set-password", requestHandler.WorkspaceSetPassword)
 			authed.Get("/me/sessions", requestHandler.GetMySessions)
 			authed.Delete("/me/sessions", requestHandler.DeleteMyOtherSessions)
@@ -4791,111 +4790,6 @@ func TestWorkspaceResetPassword_ShortPassword(t *testing.T) {
 
 	if rr.Code != http.StatusBadRequest {
 		t.Errorf("expected status %d, got %d: %s", http.StatusBadRequest, rr.Code, rr.Body.String())
-	}
-}
-
-// =====================
-// Profile Update Tests
-// =====================
-
-func TestWorkspaceUpdateDisplayName_Success(t *testing.T) {
-	router := setupClientAPIRouter(t)
-
-	emailAddr := "wsprofile-" + GenerateUniqueSlug("test") + "@example.com"
-	acc := testEnv.CreateTestAccount(t, emailAddr)
-	ws := testEnv.CreateTestWorkspace(t, acc, "Test WS", GenerateUniqueSlug("ws"))
-	app := testEnv.CreateTestApp(t, ws, acc)
-
-	fixtures := &TestFixtures{Account: acc, Workspace: ws}
-	defer testEnv.CleanupTestData(t, fixtures)
-
-	// Create a workspace account and session
-	clientSes, accessToken := createTestClientSessionForApp(t, ws, acc, app)
-	_ = clientSes
-
-	body := map[string]any{
-		"displayName": "New Display Name",
-	}
-	bodyBytes, _ := json.Marshal(body)
-
-	req := httptest.NewRequest(http.MethodPost, "/x/"+ws.Slug+"/apps/"+app.ID.String()+"/a/profile/display-name", bytes.NewReader(bodyBytes))
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+accessToken)
-
-	rr := httptest.NewRecorder()
-	router.ServeHTTP(rr, req)
-
-	if rr.Code != http.StatusOK {
-		t.Errorf("expected status %d, got %d: %s", http.StatusOK, rr.Code, rr.Body.String())
-		return
-	}
-
-	var resp map[string]any
-	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
-		t.Fatalf("failed to parse response: %v", err)
-	}
-
-	if resp["ok"] != true {
-		t.Error("expected ok to be true")
-	}
-}
-
-func TestWorkspaceUpdateDisplayName_Empty(t *testing.T) {
-	router := setupClientAPIRouter(t)
-
-	emailAddr := "wsprofile-empty-" + GenerateUniqueSlug("test") + "@example.com"
-	acc := testEnv.CreateTestAccount(t, emailAddr)
-	ws := testEnv.CreateTestWorkspace(t, acc, "Test WS", GenerateUniqueSlug("ws"))
-	app := testEnv.CreateTestApp(t, ws, acc)
-
-	fixtures := &TestFixtures{Account: acc, Workspace: ws}
-	defer testEnv.CleanupTestData(t, fixtures)
-
-	clientSes, accessToken := createTestClientSessionForApp(t, ws, acc, app)
-	_ = clientSes
-
-	body := map[string]any{
-		"displayName": "",
-	}
-	bodyBytes, _ := json.Marshal(body)
-
-	req := httptest.NewRequest(http.MethodPost, "/x/"+ws.Slug+"/apps/"+app.ID.String()+"/a/profile/display-name", bytes.NewReader(bodyBytes))
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+accessToken)
-
-	rr := httptest.NewRecorder()
-	router.ServeHTTP(rr, req)
-
-	// The handler is a no-op that always returns ok (display name is now stored client-side)
-	if rr.Code != http.StatusOK {
-		t.Errorf("expected status %d, got %d: %s", http.StatusOK, rr.Code, rr.Body.String())
-	}
-}
-
-func TestWorkspaceUpdateDisplayName_Unauthenticated(t *testing.T) {
-	router := setupClientAPIRouter(t)
-
-	emailAddr := "wsprofile-unauth-" + GenerateUniqueSlug("test") + "@example.com"
-	acc := testEnv.CreateTestAccount(t, emailAddr)
-	ws := testEnv.CreateTestWorkspace(t, acc, "Test WS", GenerateUniqueSlug("ws"))
-	app := testEnv.CreateTestApp(t, ws, acc)
-
-	fixtures := &TestFixtures{Account: acc, Workspace: ws}
-	defer testEnv.CleanupTestData(t, fixtures)
-
-	body := map[string]any{
-		"displayName": "New Name",
-	}
-	bodyBytes, _ := json.Marshal(body)
-
-	req := httptest.NewRequest(http.MethodPost, "/x/"+ws.Slug+"/apps/"+app.ID.String()+"/a/profile/display-name", bytes.NewReader(bodyBytes))
-	req.Header.Set("Content-Type", "application/json")
-
-	rr := httptest.NewRecorder()
-	router.ServeHTTP(rr, req)
-
-	if rr.Code != http.StatusUnauthorized {
-		t.Errorf("expected status %d, got %d", http.StatusUnauthorized, rr.Code)
 	}
 }
 
