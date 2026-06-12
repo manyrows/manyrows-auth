@@ -683,6 +683,7 @@ export default function Auth(props: {
           withCredentials: false,
           params: {
             openerOrigin: window.location.origin,
+            ...(props.requireConsent ? { consentAccepted: String(consentChecked), consentVersion: props.consentVersion ?? "" } : {}),
           },
         },
       );
@@ -747,7 +748,7 @@ export default function Auth(props: {
       cfg.setLoading(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [baseUrl, expectedPopupOrigin, props.appId, keepSignedIn]);
+  }, [baseUrl, expectedPopupOrigin, props.appId, keepSignedIn, consentChecked, props.requireConsent, props.consentVersion]);
 
   const onGoogleClick = () => runPopupOAuth({
     provider: "google",
@@ -2146,6 +2147,18 @@ export default function Auth(props: {
                   </div>
                 )}
 
+                {props.requireConsent && view === "register" && (
+                  <label className="ak-field" style={{ display: "flex", gap: 8, alignItems: "flex-start", cursor: "pointer" }}>
+                    <input type="checkbox" checked={consentChecked} onChange={(e) => setConsentChecked(e.target.checked)} style={{ marginTop: 3, flexShrink: 0 }} />
+                    <span className="ak-body2">
+                      I agree to the{" "}
+                      {props.termsUrl ? <a href={props.termsUrl} target="_blank" rel="noopener noreferrer">Terms</a> : "Terms"}
+                      {" "}and{" "}
+                      {props.privacyUrl ? <a href={props.privacyUrl} target="_blank" rel="noopener noreferrer">Privacy Policy</a> : "Privacy Policy"}
+                    </span>
+                  </label>
+                )}
+
                 <div className="ak-oauth-row">
                   {view !== "register" && props.passkeyEnabled && isPasskeySupported() && (
                     <button
@@ -2163,7 +2176,7 @@ export default function Auth(props: {
                   {showGoogle && (
                     <button
                       className="ak-btn ak-btn-outlined"
-                      disabled={googleLoading}
+                      disabled={googleLoading || (props.requireConsent === true && !consentChecked)}
                       onClick={onGoogleClick}
                       style={{ borderColor: "var(--ak-color-divider)", color: "var(--ak-color-text)" }}
                       aria-label={L.signInWithGoogle}
@@ -2176,7 +2189,7 @@ export default function Auth(props: {
                   {showApple && (
                     <button
                       className="ak-btn ak-btn-outlined"
-                      disabled={appleLoading}
+                      disabled={appleLoading || (props.requireConsent === true && !consentChecked)}
                       onClick={onAppleClick}
                       style={{ borderColor: "var(--ak-color-divider)", color: "var(--ak-color-text)" }}
                       aria-label={L.signInWithApple}
@@ -2189,7 +2202,7 @@ export default function Auth(props: {
                   {showMicrosoft && (
                     <button
                       className="ak-btn ak-btn-outlined"
-                      disabled={microsoftLoading}
+                      disabled={microsoftLoading || (props.requireConsent === true && !consentChecked)}
                       onClick={onMicrosoftClick}
                       style={{ borderColor: "var(--ak-color-divider)", color: "var(--ak-color-text)" }}
                       aria-label={L.signInWithMicrosoft}
@@ -2202,7 +2215,7 @@ export default function Auth(props: {
                   {showGithub && (
                     <button
                       className="ak-btn ak-btn-outlined"
-                      disabled={githubLoading}
+                      disabled={githubLoading || (props.requireConsent === true && !consentChecked)}
                       onClick={onGithubClick}
                       style={{ borderColor: "var(--ak-color-divider)", color: "var(--ak-color-text)" }}
                       aria-label={L.signInWithGithub}
@@ -2215,7 +2228,7 @@ export default function Auth(props: {
                   {showKakao && (
                     <button
                       className="ak-btn ak-btn-outlined"
-                      disabled={kakaoLoading}
+                      disabled={kakaoLoading || (props.requireConsent === true && !consentChecked)}
                       onClick={onKakaoClick}
                       style={{ backgroundColor: "#FEE500", borderColor: "#FEE500", color: "rgba(0,0,0,0.85)" }}
                       aria-label={L.signInWithKakao}
@@ -2228,7 +2241,7 @@ export default function Auth(props: {
                   {showNaver && (
                     <button
                       className="ak-btn ak-btn-outlined"
-                      disabled={naverLoading}
+                      disabled={naverLoading || (props.requireConsent === true && !consentChecked)}
                       onClick={onNaverClick}
                       style={{ backgroundColor: "#03C75A", borderColor: "#03C75A", color: "#FFFFFF" }}
                       aria-label={L.signInWithNaver}
@@ -2242,7 +2255,7 @@ export default function Auth(props: {
                     <button
                       key={idp.slug}
                       className="ak-btn ak-btn-outlined"
-                      disabled={externalLoadingSlug === idp.slug}
+                      disabled={externalLoadingSlug === idp.slug || (props.requireConsent === true && !consentChecked)}
                       onClick={() => onExternalClick(idp.slug)}
                       style={{ borderColor: "var(--ak-color-divider)", color: "var(--ak-color-text)" }}
                       aria-label={`Sign in with ${idp.displayName}`}

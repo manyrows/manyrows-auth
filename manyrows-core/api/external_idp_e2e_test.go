@@ -21,6 +21,7 @@ import (
 	"manyrows-core/core"
 	"manyrows-core/crypto"
 	"manyrows-core/email"
+	"manyrows-core/utils"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/gofrs/uuid/v5"
@@ -377,6 +378,216 @@ func TestExternalIDP_E2E(t *testing.T) {
 		// factor is satisfied.
 		if strings.Contains(body, "accessToken") || strings.Contains(body, "refreshToken") {
 			t.Fatalf("no tokens may be issued before TOTP is satisfied, got: %s", body)
+		}
+	})
+}
+
+// TestExternalIDP_ConsentE2E verifies that completeTier1OAuthLogin enforces
+// and records consent on new-user OAuth signup when the app requires it.
+func TestExternalIDP_ConsentE2E(t *testing.T) {
+	ctx := context.Background()
+	cfg := GetTestConfig()
+	adminAuthService, err := auth.NewAuthService(cfg, testEnv.Repo)
+	if err != nil {
+		t.Fatalf("admin auth service: %v", err)
+	}
+	cas, err := client.NewAuthService(cfg, testEnv.Repo, nil)
+	if err != nil {
+		t.Fatalf("client auth service: %v", err)
+	}
+	h := api.NewRequestHandler(testEnv.Repo, adminAuthService, cas, email.NewEmailService(true, nil), cfg, nil, nil)
+
+	r := chi.NewRouter()
+	wsRouter := chi.NewRouter()
+	wsRouter.Use(func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+			ws, ok, err := testEnv.Repo.GetWorkspaceBySlug(req.Context(), chi.URLParam(req, "workspaceSlug"))
+			if err != nil || !ok {
+				http.Error(w, "no ws", http.StatusForbidden)
+				return
+			}
+			next.ServeHTTP(w, req.WithContext(core.WithWorkspace(req.Context(), ws)))
+		})
+	})
+	wsRouter.Route("/apps/{appId}", func(ar chi.Router) {
+		ar.Use(func(next http.Handler) http.Handler {
+			return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+				wsCtx, _ := core.WorkspaceFromContext(req.Context())
+				appID, perr := uuid.FromString(chi.URLParam(req, "appId"))
+				if perr != nil {
+					http.Error(w, "bad app id", http.StatusBadRequest)
+					return
+				}
+				app, aerr := testEnv.Repo.GetAppByID(req.Context(), appID)
+				if aerr != nil || app.WorkspaceID != wsCtx.ID || !app.Enabled {
+					http.Error(w, "no app", http.StatusNotFound)
+					return
+				}
+				next.ServeHTTP(w, req.WithContext(core.WithApp(req.Context(), &app)))
+			})
+		})
+		ar.Route("/auth", func(authR chi.Router) {
+			authR.Get("/idp/{providerSlug}/authorize", h.WorkspaceExternalIDPAuthorize)
+			authR.Get("/idp/{providerSlug}/callback", h.WorkspaceExternalIDPCallback)
+		})
+	})
+	r.Mount("/x/{workspaceSlug}", wsRouter)
+
+	acc := testEnv.CreateTestAccount(t, "e2e-consent-"+GenerateUniqueSlug("u")+"@example.com")
+	ws := testEnv.CreateTestWorkspace(t, acc, "E2E Consent WS", GenerateUniqueSlug("ws"))
+	app := testEnv.CreateTestApp(t, ws, acc)
+	app = allowReg(t, app, true)
+
+	openerOrigin := "https://consent-app.example"
+	if err := testEnv.Repo.InsertCorsOrigin(ctx, core.CorsOrigin{
+		ID: uuid.Must(uuid.NewV4()), AppID: app.ID, Origin: openerOrigin, CreatedAt: time.Now().UTC(),
+	}); err != nil {
+		t.Fatalf("seed cors origin: %v", err)
+	}
+
+	// Enable require_consent + set consent_version on the app.
+	if _, err := testEnv.DB.Pool().Exec(ctx,
+		"UPDATE apps SET require_consent = true, consent_version = 'v1' WHERE id = $1", app.ID,
+	); err != nil {
+		t.Fatalf("set require_consent: %v", err)
+	}
+
+	idp := newE2EMockIDP(t)
+	enc := crypto.NewMySecretEncryptor(cfg)
+	idpID := uuid.Must(uuid.NewV4())
+	secretEnc, err := enc.EncryptToBytesWithAAD([]byte("consent-secret"), crypto.AAD("external_idps", "client_secret_encrypted", idpID))
+	if err != nil {
+		t.Fatalf("encrypt secret: %v", err)
+	}
+	if err := testEnv.Repo.CreateExternalIDP(ctx, &core.ExternalIDP{
+		ID: idpID, AppID: app.ID, Slug: "mock-consent", DisplayName: "Mock Consent IdP", Enabled: true,
+		Mode: core.ExternalIDPModeOIDC, IssuerURL: idp.server.URL,
+		ClientID: "consent-client-1", ClientSecretEncrypted: secretEnc,
+	}); err != nil {
+		t.Fatalf("create provider: %v", err)
+	}
+	_ = utils.NewUUID() // ensure utils import is used
+
+	// authorizeAndCallbackWithConsent appends optional consent params to the
+	// authorize request URL, then drives the full authorize+callback flow.
+	authorizeAndCallbackWithConsent := func(t *testing.T, slug, signInEmail, sub string, emailVerified bool, consentAccepted string, consentVersion string) *httptest.ResponseRecorder {
+		t.Helper()
+		authzPath := "/x/" + ws.Slug + "/apps/" + app.ID.String() + "/auth/idp/" + slug + "/authorize"
+		cbPath := "/x/" + ws.Slug + "/apps/" + app.ID.String() + "/auth/idp/" + slug + "/callback"
+
+		authzQuery := "?openerOrigin=" + url.QueryEscape(openerOrigin)
+		if consentAccepted != "" {
+			authzQuery += "&consentAccepted=" + url.QueryEscape(consentAccepted) + "&consentVersion=" + url.QueryEscape(consentVersion)
+		}
+
+		authzRR := httptest.NewRecorder()
+		r.ServeHTTP(authzRR, httptest.NewRequest(http.MethodGet, authzPath+authzQuery, nil))
+		if authzRR.Code != http.StatusOK {
+			t.Fatalf("authorize: %d (%s)", authzRR.Code, authzRR.Body.String())
+		}
+		var authz struct {
+			URL   string `json:"url"`
+			State string `json:"state"`
+		}
+		if err := json.Unmarshal(authzRR.Body.Bytes(), &authz); err != nil {
+			t.Fatalf("authorize body: %v", err)
+		}
+		au, err := url.Parse(authz.URL)
+		if err != nil {
+			t.Fatalf("parse authorize url: %v", err)
+		}
+		nonce := au.Query().Get("nonce")
+		if nonce == "" {
+			t.Fatal("authorize URL missing nonce")
+		}
+
+		idp.claims = jwt.MapClaims{
+			"iss": idp.server.URL, "aud": "consent-client-1", "sub": sub,
+			"email": signInEmail, "email_verified": emailVerified, "nonce": nonce,
+			"exp": time.Now().Add(time.Hour).Unix(), "iat": time.Now().Add(-time.Minute).Unix(),
+		}
+
+		cbRR := httptest.NewRecorder()
+		r.ServeHTTP(cbRR, httptest.NewRequest(http.MethodGet, cbPath+"?code=auth-code&state="+url.QueryEscape(authz.State), nil))
+		if cbRR.Code != http.StatusOK {
+			t.Fatalf("callback HTTP status should be 200 (HTML wrapper), got %d", cbRR.Code)
+		}
+		return cbRR
+	}
+
+	// --- No consent → rejected, no user created ---
+	t.Run("no consent rejected for new user", func(t *testing.T) {
+		signInEmail := "e2e-noconsent-" + GenerateUniqueSlug("u") + "@example.com"
+		cbRR := authorizeAndCallbackWithConsent(t, "mock-consent", signInEmail, "sub-noconsent", true, "", "")
+		if !strings.Contains(cbRR.Body.String(), "consentRequired") {
+			t.Fatalf("missing consent must be rejected with consentRequired, got: %s", cbRR.Body.String())
+		}
+		if user, _ := testEnv.Repo.GetUserByEmail(ctx, signInEmail, app); user != nil {
+			t.Fatal("no user should be created when consent is missing")
+		}
+	})
+
+	// --- Wrong consent version → rejected, no user created ---
+	t.Run("wrong consent version rejected", func(t *testing.T) {
+		signInEmail := "e2e-wrongver-" + GenerateUniqueSlug("u") + "@example.com"
+		cbRR := authorizeAndCallbackWithConsent(t, "mock-consent", signInEmail, "sub-wrongver", true, "true", "v0")
+		if !strings.Contains(cbRR.Body.String(), "consentRequired") {
+			t.Fatalf("wrong version must be rejected with consentRequired, got: %s", cbRR.Body.String())
+		}
+		if user, _ := testEnv.Repo.GetUserByEmail(ctx, signInEmail, app); user != nil {
+			t.Fatal("no user should be created when consent version mismatches")
+		}
+	})
+
+	// --- Valid consent → user created + user_consents row exists ---
+	t.Run("valid consent accepted and recorded", func(t *testing.T) {
+		signInEmail := "e2e-consent-ok-" + GenerateUniqueSlug("u") + "@example.com"
+		cbRR := authorizeAndCallbackWithConsent(t, "mock-consent", signInEmail, "sub-consent-ok", true, "true", "v1")
+		if strings.Contains(cbRR.Body.String(), "consentRequired") {
+			t.Fatalf("valid consent must not be rejected, got: %s", cbRR.Body.String())
+		}
+		if strings.Contains(cbRR.Body.String(), "error") && !strings.Contains(cbRR.Body.String(), "accessToken") {
+			t.Logf("callback body: %s", cbRR.Body.String())
+		}
+		user, err := testEnv.Repo.GetUserByEmail(ctx, signInEmail, app)
+		if err != nil || user == nil {
+			t.Fatalf("user should have been created: user=%v err=%v", user, err)
+		}
+		t.Cleanup(func() { _, _ = testEnv.DB.Pool().Exec(ctx, "DELETE FROM users WHERE id=$1", user.ID) })
+
+		var consentCount int
+		if err := testEnv.DB.Pool().QueryRow(ctx,
+			"SELECT count(*) FROM user_consents WHERE user_id=$1 AND app_id=$2",
+			user.ID, app.ID,
+		).Scan(&consentCount); err != nil {
+			t.Fatalf("query user_consents: %v", err)
+		}
+		if consentCount == 0 {
+			t.Fatal("a user_consents row must be recorded after valid OAuth signup")
+		}
+	})
+
+	// --- Existing user + no consent → still succeeds (consent only required for new signups) ---
+	t.Run("existing user login without consent succeeds", func(t *testing.T) {
+		signInEmail := "e2e-existing-" + GenerateUniqueSlug("u") + "@example.com"
+		// First signup with consent to create the user.
+		cbRR1 := authorizeAndCallbackWithConsent(t, "mock-consent", signInEmail, "sub-existing", true, "true", "v1")
+		if strings.Contains(cbRR1.Body.String(), "consentRequired") {
+			t.Fatalf("first signup should succeed: %s", cbRR1.Body.String())
+		}
+		user, err := testEnv.Repo.GetUserByEmail(ctx, signInEmail, app)
+		if err != nil || user == nil {
+			t.Fatalf("user should have been created: %v %v", user, err)
+		}
+		t.Cleanup(func() { _, _ = testEnv.DB.Pool().Exec(ctx, "DELETE FROM users WHERE id=$1", user.ID) })
+
+		// Subsequent login without consent params should succeed.
+		cbRR2 := authorizeAndCallbackWithConsent(t, "mock-consent", signInEmail, "sub-existing", true, "", "")
+		if strings.Contains(cbRR2.Body.String(), "consentRequired") {
+			t.Fatalf("existing user must not be blocked by consent gate: %s", cbRR2.Body.String())
+		}
+		if !strings.Contains(cbRR2.Body.String(), "accessToken") {
+			t.Fatalf("existing user login must issue tokens: %s", cbRR2.Body.String())
 		}
 	})
 }

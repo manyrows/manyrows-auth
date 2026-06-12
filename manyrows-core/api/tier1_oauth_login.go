@@ -147,6 +147,29 @@ func (handler *RequestHandler) completeTier1OAuthLogin(
 		}
 	}
 
+	// Consent gate: a brand-new pool user signing up via OAuth must accept
+	// the app's current terms version when the app requires it. Existing
+	// users re-authenticating via OAuth are out of scope.
+	if ctxApp.RequireConsent {
+		existing, _ := handler.repo.GetUserByEmail(r.Context(), email, ctxApp)
+		if existing == nil {
+			accepted := opts.ConsentAccepted && ctxApp.ConsentVersion != "" && opts.ConsentVersion == ctxApp.ConsentVersion
+			if !accepted {
+				handler.writeAuthLogFromRequest(r, AuthLogInput{
+					WorkspaceID:    ws.ID,
+					AppID:          &ctxApp.ID,
+					Event:          core.AuthEventLoginFailed,
+					Method:         opts.AuthMethod,
+					Outcome:        core.AuthOutcomeFailed,
+					EmailAttempted: email,
+					ActorType:      core.AuthActorSelf,
+				})
+				WriteError(w, r, "error.consentRequired", http.StatusForbidden)
+				return
+			}
+		}
+	}
+
 	if opts.ProviderSubject == "" {
 		reqLog(r.Context()).Warn().
 			Str("provider", opts.WebhookMethod).
@@ -334,6 +357,11 @@ func (handler *RequestHandler) completeTier1OAuthLogin(
 			ActorLabel:    user.Email,
 			Metadata:      core.RegisterMetadata{Source: core.RegisterSourceSelfSignup},
 		})
+		if ctxApp.RequireConsent {
+			if err := handler.repo.InsertUserConsent(r.Context(), utils.NewUUID(), userID, ctxApp.ID, "terms", ctxApp.ConsentVersion, ip, ua); err != nil {
+				reqLog(r.Context()).Err(err).Msg("failed to record OAuth signup consent")
+			}
+		}
 	}
 	handler.writeAuthLogFromRequest(r, AuthLogInput{
 		WorkspaceID:   ws.ID,
