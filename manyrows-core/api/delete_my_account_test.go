@@ -152,3 +152,30 @@ func TestDeleteMyAccount_Code_Success(t *testing.T) {
 		t.Fatalf("user not erased")
 	}
 }
+
+func TestDeleteMyAccount_Forbidden_WhenDisabled(t *testing.T) {
+	r, ws, app, _, emailAddr, token := passwordDeleteSetup(t)
+	ctx := context.Background()
+
+	// Flip the app's allow_account_deletion flag off.
+	if _, err := testEnv.DB.Pool().Exec(ctx,
+		"UPDATE apps SET allow_account_deletion = false WHERE id = $1", app.ID,
+	); err != nil {
+		t.Fatalf("disable deletion flag: %v", err)
+	}
+
+	body, _ := json.Marshal(map[string]string{"password": "correct-password"})
+	req := httptest.NewRequest(http.MethodPost, deletePath(ws, app), bytes.NewReader(body))
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Content-Type", "application/json")
+	rr := httptest.NewRecorder()
+	r.ServeHTTP(rr, req)
+	if rr.Code != http.StatusForbidden {
+		t.Fatalf("expected 403, got %d: %s", rr.Code, rr.Body.String())
+	}
+	var cnt int
+	_ = testEnv.DB.Pool().QueryRow(ctx, "SELECT count(*) FROM users WHERE email = $1", emailAddr).Scan(&cnt)
+	if cnt != 1 {
+		t.Fatalf("user should still exist")
+	}
+}

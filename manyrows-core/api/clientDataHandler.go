@@ -1006,6 +1006,10 @@ func (handler *RequestHandler) DeleteMyAccount(w http.ResponseWriter, r *http.Re
 			WriteErrorMsg(w, r, "Confirmation code is required", http.StatusBadRequest)
 			return
 		}
+		if len(body.Code) != 6 || !isDigits(body.Code) {
+			WriteError(w, r, "error.invalidCode", http.StatusBadRequest)
+			return
+		}
 		if !handler.verifyAccountDeleteCode(w, r, identity.User.ID, body.Code) {
 			return // verifyAccountDeleteCode already wrote the response
 		}
