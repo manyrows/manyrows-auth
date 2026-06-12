@@ -943,91 +943,162 @@ func (handler *RequestHandler) UpdateMyUserFields(w http.ResponseWriter, r *http
 	utils.WriteJsonWithStatusCode(w, map[string]any{"fields": items}, http.StatusOK)
 }
 
-// DeleteMyAccount permanently deletes the current user's account.
-// POST /x/{workspaceSlug}/a/me/delete
-// Requires password confirmation in request body.
+// DeleteMyAccount permanently erases the current user's account (GDPR-complete).
+// POST /x/{workspaceSlug}/apps/{appId}/a/me/delete
+//
+// Password users confirm with { "password": "..." }.
+// Passwordless users confirm with { "code": "..." } (emailed OTP from
+// /me/request-delete). The resulting audit row carries NO email PII.
 //
 // Gated by app.AllowAccountDeletion — if the admin has flipped that
 // off in the General tab, the endpoint refuses regardless of what
 // the AppKit UI exposes. AppKit also hides the delete button when
 // the flag is false; this is the defense-in-depth check.
 func (handler *RequestHandler) DeleteMyAccount(w http.ResponseWriter, r *http.Request) {
-	ses, identity, _, ok := handler.requireActiveClientSession(w, r)
+	ctx := r.Context()
+	ses, identity, ws, ok := handler.requireActiveClientSession(w, r)
 	if !ok {
 		return
 	}
 
-	if app, appOk := core.AppFromContext(r.Context()); appOk && app != nil && !app.AllowAccountDeletion {
+	if app, appOk := core.AppFromContext(ctx); appOk && app != nil && !app.AllowAccountDeletion {
 		WriteError(w, r, "error.forbidden", http.StatusForbidden)
 		return
 	}
 
 	var body struct {
 		Password string `json:"password"`
+		Code     string `json:"code"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		WriteError(w, r, "error.invalidJson", http.StatusBadRequest)
 		return
 	}
 
-	if strings.TrimSpace(body.Password) == "" {
-		WriteErrorMsg(w, r, "Password is required", http.StatusBadRequest)
-		return
+	// Branch on whether the user has a password set.
+	if identity.User.PasswordSetAt != nil {
+		// Password confirmation path (unchanged behavior).
+		if strings.TrimSpace(body.Password) == "" {
+			WriteErrorMsg(w, r, "Password is required", http.StatusBadRequest)
+			return
+		}
+		var passwordHash string
+		err := handler.repo.DB().Pool().QueryRow(ctx,
+			`SELECT COALESCE(password_hash, '') FROM users WHERE id = $1`, identity.User.ID,
+		).Scan(&passwordHash)
+		if err != nil {
+			log.Err(err).Msg("DeleteMyAccount: failed to get password hash")
+			WriteError(w, r, "error.internalError", http.StatusInternalServerError)
+			return
+		}
+		if passwordHash == "" {
+			WriteErrorMsg(w, r, "Cannot delete account without a password. Set a password first.", http.StatusBadRequest)
+			return
+		}
+		okPw, vErr := passwordhash.Verify(passwordHash, body.Password)
+		if vErr != nil || !okPw {
+			WriteErrorMsg(w, r, "Incorrect password", http.StatusForbidden)
+			return
+		}
+	} else {
+		// Passwordless path: require an emailed confirmation code.
+		if strings.TrimSpace(body.Code) == "" {
+			WriteErrorMsg(w, r, "Confirmation code is required", http.StatusBadRequest)
+			return
+		}
+		if !handler.verifyAccountDeleteCode(w, r, identity.User.ID, body.Code) {
+			return // verifyAccountDeleteCode already wrote the response
+		}
 	}
 
-	// Verify password
-	var passwordHash string
-	err := handler.repo.DB().Pool().QueryRow(r.Context(),
-		`SELECT COALESCE(password_hash, '') FROM users WHERE id = $1`, identity.User.ID,
-	).Scan(&passwordHash)
-	if err != nil {
-		log.Err(err).Msg("DeleteMyAccount: failed to get password hash")
+	// Proof-of-erasure audit row — written BEFORE erase so the FK
+	// (subject_user_id → users.id ON DELETE SET NULL) is intact on INSERT.
+	// NO email PII (event + outcome only).
+	userID := identity.User.ID
+	handler.writeAuthLogFromRequest(r, AuthLogInput{
+		WorkspaceID:   ws.ID,
+		AppID:         ses.AppID,
+		Event:         core.AuthEventAccountDeleted,
+		Outcome:       core.AuthOutcomeSuccess,
+		SubjectUserID: &userID,
+		ActorType:     core.AuthActorSelf,
+		SessionID:     &ses.ID,
+	})
+
+	// Erase: full transactional erasure (anonymize logs, scrub webhooks,
+	// drop attempts, cascade-delete the user).
+	if err := handler.repo.EraseUser(ctx, identity.User.ID, identity.User.Email, ws.ID); err != nil {
+		log.Err(err).Msg("DeleteMyAccount: failed to erase user")
 		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 		return
 	}
 
-	if passwordHash == "" {
-		WriteErrorMsg(w, r, "Cannot delete account without a password. Set a password first.", http.StatusBadRequest)
-		return
-	}
-
-	ok, vErr := passwordhash.Verify(passwordHash, body.Password)
-	if vErr != nil || !ok {
-		WriteErrorMsg(w, r, "Incorrect password", http.StatusForbidden)
-		return
-	}
-
-	// Delete the user — cascades to user_field_values, user_roles, client_sessions, refresh_tokens
-	if err := handler.repo.DeleteUser(r.Context(), identity.User.ID); err != nil {
-		log.Err(err).Msg("DeleteMyAccount: failed to delete user")
-		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
-		return
-	}
-
-	// Fire webhook before session cleanup
+	// Fire webhook (the controller's legitimate delete notification; this
+	// single delivery ages out under the 30-day sweep).
 	if ses.AppID != nil {
-		if app, err := handler.repo.GetAppByID(r.Context(), *ses.AppID); err == nil {
+		if app, err := handler.repo.GetAppByID(ctx, *ses.AppID); err == nil {
 			handler.dispatchWebhook(app.ID, "user.delete", map[string]any{"userId": identity.User.ID, "email": identity.User.Email, "appId": app.ID})
 		}
 	}
 
-	if ws, ok := core.WorkspaceFromContext(r.Context()); ok && ws != nil {
-		userID := identity.User.ID
-		handler.writeAuthLogFromRequest(r, AuthLogInput{
-			WorkspaceID:    ws.ID,
-			AppID:          ses.AppID,
-			Event:          core.AuthEventAccountDeleted,
-			Outcome:        core.AuthOutcomeSuccess,
-			SubjectUserID:  &userID,
-			EmailAttempted: identity.User.Email,
-			ActorType:      core.AuthActorSelf,
-			ActorLabel:     identity.User.Email,
-			SessionID:      &ses.ID,
-		})
+	// Invalidate current session tokens (best effort; session row cascaded).
+	_ = handler.clientAuthService.RevokeAllSessionTokens(ctx, ses.ID)
+
+	utils.WriteJsonWithStatusCode(w, map[string]any{"ok": true}, http.StatusOK)
+}
+
+// verifyAccountDeleteCode validates the passwordless-deletion OTP for the user.
+// On any failure it writes the HTTP response and returns false. On success it
+// consumes the request and returns true.
+func (handler *RequestHandler) verifyAccountDeleteCode(w http.ResponseWriter, r *http.Request, userID uuid.UUID, code string) bool {
+	ctx := r.Context()
+	req, err := handler.repo.GetAccountDeleteRequest(ctx, userID)
+	if err != nil {
+		if errors.Is(err, repo.ErrAccountDeleteRequestNotFound) {
+			WriteErrorMsg(w, r, "No pending deletion request", http.StatusBadRequest)
+			return false
+		}
+		log.Err(err).Msg("verifyAccountDeleteCode: get request failed")
+		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
+		return false
 	}
-
-	// Invalidate current session tokens (best effort, session row already cascaded)
-	_ = handler.clientAuthService.RevokeAllSessionTokens(r.Context(), ses.ID)
-
-	w.WriteHeader(http.StatusNoContent)
+	if !req.IsActive(time.Now().UTC()) {
+		_ = handler.repo.DeleteAccountDeleteRequest(ctx, userID)
+		WriteErrorMsg(w, r, "Deletion request has expired", http.StatusBadRequest)
+		return false
+	}
+	if req.Attempts >= otpMaxAttempts {
+		_ = handler.repo.DeleteAccountDeleteRequest(ctx, userID)
+		WriteError(w, r, "error.invalidCode", http.StatusUnauthorized)
+		return false
+	}
+	peppers, err := handler.getOTPPeppers()
+	if err != nil {
+		log.Err(err).Msg("verifyAccountDeleteCode: missing pepper")
+		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
+		return false
+	}
+	match, err := otpHashMatches(req.ID, code, peppers, req.CodeHash)
+	if err != nil {
+		log.Err(err).Msg("verifyAccountDeleteCode: hash failed")
+		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
+		return false
+	}
+	if !match {
+		newAttempts, incErr := handler.repo.IncrementAccountDeleteRequestAttempts(ctx, userID)
+		if incErr != nil && !errors.Is(incErr, repo.ErrAccountDeleteRequestNotFound) {
+			log.Err(incErr).Msg("verifyAccountDeleteCode: increment failed")
+		}
+		if newAttempts >= otpMaxAttempts {
+			_ = handler.repo.DeleteAccountDeleteRequest(ctx, userID)
+		}
+		WriteError(w, r, "error.invalidCode", http.StatusUnauthorized)
+		return false
+	}
+	consumed, err := handler.repo.ConsumeAccountDeleteRequest(ctx, userID, req.ID)
+	if err != nil || !consumed {
+		WriteError(w, r, "error.invalidCode", http.StatusUnauthorized)
+		return false
+	}
+	return true
 }

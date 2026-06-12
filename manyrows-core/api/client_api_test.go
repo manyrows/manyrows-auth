@@ -203,6 +203,7 @@ func setupClientAPIRouter(t *testing.T) *chi.Mux {
 			authed.Get("/me/sessions", requestHandler.GetMySessions)
 			authed.Delete("/me/sessions", requestHandler.DeleteMyOtherSessions)
 			authed.Delete("/me/sessions/{sessionId}", requestHandler.DeleteMySession)
+			authed.Post("/me/delete", requestHandler.DeleteMyAccount)
 			authed.Post("/me/request-email-change", requestHandler.ClientRequestEmailChange)
 			authed.Post("/me/verify-email-change", requestHandler.ClientVerifyEmailChange)
 			// Sensitive-op routes — gated by requireSensitivePasswordOrCodeReauth.

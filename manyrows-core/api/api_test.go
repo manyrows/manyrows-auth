@@ -253,13 +253,14 @@ func (e *TestEnv) CreateTestApp(t *testing.T, ws *core.Workspace, acc *core.Acco
 	}
 
 	app := core.App{
-		ID:                utils.NewUUID(),
-		WorkspaceID:       ws.ID,
-		ProjectID:         proj.ID,
-		UserPoolID:        pool.ID,
-		Type:              "dev",
-		Enabled:           true,
-		PrimaryAuthMethod: core.PrimaryAuthMethodPassword,
+		ID:                   utils.NewUUID(),
+		WorkspaceID:          ws.ID,
+		ProjectID:            proj.ID,
+		UserPoolID:           pool.ID,
+		Type:                 "dev",
+		Enabled:              true,
+		PrimaryAuthMethod:    core.PrimaryAuthMethodPassword,
+		AllowAccountDeletion: true, // mirror DB default (DEFAULT true)
 	}
 	app, err = e.Repo.InsertApp(ctx, app)
 	if err != nil {
