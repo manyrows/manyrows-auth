@@ -75,6 +75,41 @@ UPDATE webhook_deliveries
 	return nil
 }
 
+// CollectUserEmailHistory returns the lowercased set of email addresses
+// associated with a user: their current email plus any prior addresses
+// recorded in email-change metadata on auth_logs. Used by erasure (which
+// addresses must be scrubbed) and the data export (which rows are theirs),
+// keeping the two in sync.
+// NOTE: the SQL below is intentionally duplicated from scrubResidualPII;
+// scrubResidualPII must run on a tx (in-transaction ordering), so it cannot
+// use this pool-based helper.
+func (r *Repo) CollectUserEmailHistory(ctx context.Context, userID uuid.UUID, currentEmail string) ([]string, error) {
+	emails := []string{strings.ToLower(strings.TrimSpace(currentEmail))}
+	rows, err := r.db.Pool().Query(ctx, `
+SELECT DISTINCT lower(e) AS e FROM (
+    SELECT metadata->>'old_email' AS e FROM auth_logs
+      WHERE subject_user_id = $1 AND metadata->>'old_email' IS NOT NULL
+    UNION
+    SELECT metadata->>'new_email' AS e FROM auth_logs
+      WHERE subject_user_id = $1 AND metadata->>'new_email' IS NOT NULL
+) s WHERE e IS NOT NULL AND e <> '';`, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var e string
+		if err := rows.Scan(&e); err != nil {
+			return nil, err
+		}
+		emails = append(emails, e)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return emails, nil
+}
+
 // EraseUser performs a GDPR-complete erasure of a user in one transaction:
 // anonymize residual auth_logs, scrub webhook payloads, then DELETE the users
 // row (existing FK cascade clears sessions, tokens, MFA, passkeys, identities,

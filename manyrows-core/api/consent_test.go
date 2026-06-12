@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -182,6 +183,38 @@ func TestSignup_ConsentNotRequired_NoEnforcement(t *testing.T) {
 	router.ServeHTTP(rr, req)
 	if rr.Code != http.StatusOK {
 		t.Fatalf("want 200, got %d: %s", rr.Code, rr.Body.String())
+	}
+}
+
+func TestCollectUserEmailHistory(t *testing.T) {
+	ctx := context.Background()
+	emailAddr := "hist-" + GenerateUniqueSlug("t") + "@example.com"
+	acc := testEnv.CreateTestAccount(t, emailAddr)
+	ws := testEnv.CreateTestWorkspace(t, acc, "Hist WS", GenerateUniqueSlug("ws"))
+	app := testEnv.CreateTestApp(t, ws, acc)
+	user, _, err := testEnv.GetOrCreateUserWithMembership(ctx, emailAddr, app, core.UserSourceInvited)
+	if err != nil {
+		t.Fatalf("user: %v", err)
+	}
+	t.Cleanup(func() { _, _ = testEnv.DB.Pool().Exec(ctx, "DELETE FROM users WHERE id=$1", user.ID) })
+
+	// Seed an email-change history row in auth_logs metadata.
+	oldEmail := "old-" + GenerateUniqueSlug("t") + "@example.com"
+	_, _ = testEnv.DB.Pool().Exec(ctx, `
+		INSERT INTO auth_logs (id, workspace_id, app_id, event, outcome, actor_type, subject_user_id, metadata)
+		VALUES ($1,$2,$3,'email.changed','success','self',$4, jsonb_build_object('old_email',$5::text,'new_email',$6::text))`,
+		utils.NewUUID(), ws.ID, app.ID, user.ID, oldEmail, emailAddr)
+
+	got, err := testEnv.Repo.CollectUserEmailHistory(ctx, user.ID, emailAddr)
+	if err != nil {
+		t.Fatalf("CollectUserEmailHistory: %v", err)
+	}
+	set := map[string]bool{}
+	for _, e := range got {
+		set[e] = true
+	}
+	if !set[strings.ToLower(emailAddr)] || !set[strings.ToLower(oldEmail)] {
+		t.Fatalf("expected current+old email, got %v", got)
 	}
 }
 
