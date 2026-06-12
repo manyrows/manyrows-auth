@@ -20,6 +20,7 @@ func TestAnonymizeIP(t *testing.T) {
 	cases := map[string]string{
 		"203.0.113.7":          "203.0.113.0",
 		"2001:db8:1:2:3:4:5:6": "2001:db8:1::",
+		"::ffff:203.0.113.7":   "203.0.113.0",
 		"not-an-ip":            "",
 		"":                     "",
 	}

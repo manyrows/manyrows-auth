@@ -44,8 +44,9 @@ func AnonymizeIP(ip string) string {
 	if err != nil {
 		return ""
 	}
+	addr = addr.Unmap()
 	bits := 24
-	if addr.Is6() && !addr.Is4In6() {
+	if addr.Is6() {
 		bits = 48
 	}
 	p, err := addr.Prefix(bits)
