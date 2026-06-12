@@ -411,7 +411,8 @@ func (r *Repo) GetUserByIDWithTOTP(ctx context.Context, id uuid.UUID) (*core.Use
 SELECT
   id, email, enabled,
   email_verified_at, password_set_at, source,
-  locked_until,
+  locked_until, last_login_at,
+  user_pool_id,
   totp_secret_encrypted, totp_enabled_at, totp_backup_codes_encrypted,
   created_at, updated_at
 FROM users
@@ -423,7 +424,8 @@ LIMIT 1;
 	err := r.db.Pool().QueryRow(ctx, q, id).Scan(
 		&u.ID, &u.Email, &u.Enabled,
 		&u.EmailVerifiedAt, &u.PasswordSetAt, &source,
-		&u.LockedUntil,
+		&u.LockedUntil, &u.LastLoginAt,
+		&u.UserPoolID,
 		&u.TOTPSecretEncrypted, &u.TOTPEnabledAt, &u.TOTPBackupCodesEncrypted,
 		&u.CreatedAt, &u.UpdatedAt,
 	)
