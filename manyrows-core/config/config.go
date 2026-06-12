@@ -558,6 +558,13 @@ func (conf *Config) GetTurnstileSecretKey() string {
 	return ""
 }
 
+// IsLogAnonymizeIPEnabled controls whether client IPs are truncated in
+// stdout logs (stored IPs are unaffected). Default ON (privacy-by-default);
+// set MANYROWS_LOG_ANONYMIZE_IP=false to log full IPs for debugging.
+func (conf *Config) IsLogAnonymizeIPEnabled() bool {
+	return envBool(conf.envPrefix+"LOG_ANONYMIZE_IP", true)
+}
+
 // envBool reads a boolean env var. Accepts "1", "true", "yes" (case-
 // insensitive) as truthy; everything else returns def. Trims
 // whitespace so MANYROWS_TURNSTILE_ENABLED=" true " still works.

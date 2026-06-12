@@ -13,6 +13,7 @@ import (
 	"manyrows-core/db"
 	"manyrows-core/email"
 	"manyrows-core/janitor"
+	"manyrows-core/utils"
 	"manyrows-core/webhook"
 	"net/http"
 	"os"
@@ -269,4 +270,5 @@ func initLogger(config *config2.Config) {
 	} else {
 		zerolog.SetGlobalLevel(level)
 	}
+	utils.SetAnonymizeIPInLogs(config.IsLogAnonymizeIPEnabled())
 }
