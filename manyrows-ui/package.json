@@ -13,6 +13,9 @@
   "dependencies": {
     "@emotion/react": "^11.14.0",
     "@emotion/styled": "^11.14.1",
+    "@fontsource/geist-mono": "^5.2.8",
+    "@fontsource/geist-sans": "^5.2.5",
+    "@fontsource/jetbrains-mono": "^5.2.8",
     "@mui/material": "^7.3.6",
     "@mui/x-charts": "^9.0.2",
     "@types/qrcode": "^1.5.6",
