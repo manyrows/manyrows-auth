@@ -25,6 +25,7 @@
   "auth.emailPressEnter": "Press Enter to continue.",
   "auth.password": "Password",
   "auth.forgotPassword": "Forgot password?",
+  "auth.rememberMe": "Keep me signed in",
   "auth.noAccount": "Don't have an account?",
   "auth.createAccount": "Create one",
   "auth.invalidCredentials": "Invalid email or password",

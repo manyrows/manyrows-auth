@@ -25,6 +25,7 @@
   "auth.emailPressEnter": "계속하려면 Enter 키를 누르세요.",
   "auth.password": "비밀번호",
   "auth.forgotPassword": "비밀번호를 잊으셨나요?",
+  "auth.rememberMe": "로그인 상태 유지",
   "auth.noAccount": "계정이 없으신가요?",
   "auth.createAccount": "계정 만들기",
   "auth.invalidCredentials": "이메일 또는 비밀번호가 올바르지 않습니다",

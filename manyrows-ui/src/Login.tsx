@@ -6,8 +6,10 @@ import {
   Card,
   CardActions,
   CardContent,
+  Checkbox,
   CircularProgress,
   Collapse,
+  FormControlLabel,
   Stack,
   TextField,
   Typography,
@@ -73,6 +75,7 @@ export default function Login(props: Props) {
   const [loading, setLoading] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [rememberMe, setRememberMe] = useState(true);
   const [errMsg, setErrMsg] = useState<string>("");
 
   // TOTP step
@@ -127,6 +130,7 @@ export default function Login(props: Props) {
         email: emailTrimmed,
         password: pwTrimmed,
         turnstileToken,
+        rememberMe,
       });
 
       try {
@@ -278,6 +282,17 @@ export default function Login(props: Props) {
                     autoComplete="current-password"
                     fullWidth
                     disabled={loading}
+                  />
+
+                  <FormControlLabel
+                    control={
+                      <Checkbox
+                        checked={rememberMe}
+                        onChange={(e) => setRememberMe(e.target.checked)}
+                        disabled={loading}
+                      />
+                    }
+                    label={t("auth.rememberMe")}
                   />
 
                   <Stack spacing={0.5}>
