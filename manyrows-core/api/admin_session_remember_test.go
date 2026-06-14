@@ -6,7 +6,12 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/go-chi/chi/v5"
+	"manyrows-core/api"
 	"manyrows-core/auth"
+	"manyrows-core/auth/client"
+	"manyrows-core/crypto"
+	"manyrows-core/email"
 )
 
 // TestSessionRepo_RememberMeRoundTrips pins that the remember_me column is
@@ -114,5 +119,46 @@ func TestDoLoginRemember_PersistsFlag(t *testing.T) {
 	}
 	if plain.RememberMe {
 		t.Fatal("DoLogin shim should default RememberMe=false")
+	}
+}
+
+// TestAdminLogin_RememberMePersisted pins that a non-2FA password login with
+// rememberMe:true mints a remembered session.
+func TestAdminLogin_RememberMePersisted(t *testing.T) {
+	testEnv.ClearRateLimitAttempts(t)
+
+	cfg := GetTestConfig()
+	adminAuth, _ := auth.NewAuthService(cfg, testEnv.Repo)
+	clientAuth, _ := client.NewAuthService(cfg, testEnv.Repo, nil)
+	emailSvc := email.NewEmailService(true, nil)
+	encryptor := crypto.NewMySecretEncryptor(cfg)
+	handler := api.NewRequestHandler(testEnv.Repo, adminAuth, clientAuth, emailSvc, cfg, encryptor, nil)
+
+	r := chi.NewRouter()
+	r.Post("/admin/auth/login", handler.AdminLogin)
+
+	password := "securepassword123"
+	acc := createAccountWithPassword(t, password)
+	defer testEnv.DB.Pool().Exec(context.Background(), "DELETE FROM sessions WHERE account_id = $1", acc.ID)
+	defer testEnv.DB.Pool().Exec(context.Background(), "DELETE FROM accounts WHERE id = $1", acc.ID)
+
+	loginReq := httptest.NewRequest(http.MethodPost, "/admin/auth/login",
+		jsonBody(t, map[string]any{"email": acc.Email, "password": password, "rememberMe": true}))
+	loginReq.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, loginReq)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("login: expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	var rm bool
+	if err := testEnv.DB.Pool().QueryRow(context.Background(),
+		`SELECT remember_me FROM sessions WHERE account_id = $1 ORDER BY created_at DESC LIMIT 1`,
+		acc.ID).Scan(&rm); err != nil {
+		t.Fatalf("read remember_me: %v", err)
+	}
+	if !rm {
+		t.Fatal("expected remember_me=true on the minted session")
 	}
 }

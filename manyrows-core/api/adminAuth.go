@@ -34,6 +34,7 @@ type AdminLoginPasswordRequest struct {
 	Email          string `json:"email"`
 	Password       string `json:"password"`
 	TurnstileToken string `json:"turnstileToken"`
+	RememberMe     bool   `json:"rememberMe"`
 }
 
 func normLower(s string) string {
@@ -460,7 +461,7 @@ func (handler *RequestHandler) AdminLogin(w http.ResponseWriter, r *http.Request
 
 	// If TOTP is enabled, return a challenge token instead of logging in
 	if acc2.HasTOTP() {
-		token := auth.SignTOTPChallenge(handler.totpKey, acc2.ID, 5*time.Minute)
+		token := auth.SignTOTPChallengeWithFlags(handler.totpKey, acc2.ID, 5*time.Minute, req.RememberMe)
 		utils.WriteJson(w, map[string]any{
 			"totpRequired":   true,
 			"challengeToken": token,
@@ -468,7 +469,7 @@ func (handler *RequestHandler) AdminLogin(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	if _, err := handler.adminAuthService.DoLogin(w, r, acc2); err != nil {
+	if _, err := handler.adminAuthService.DoLoginRemember(w, r, acc2, req.RememberMe); err != nil {
 		log.Err(err).Msg("Could not login admin")
 		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 		return
