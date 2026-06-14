@@ -28,6 +28,8 @@ type Session struct {
 
 	UserAgent string `db:"user_agent"`
 	IP        string `db:"ip"`
+
+	RememberMe bool `db:"remember_me"`
 }
 
 // TokenClaims is what we store in the encrypted cookie.

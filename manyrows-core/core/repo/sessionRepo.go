@@ -27,8 +27,9 @@ insert into sessions (
   token_secret_hash,
   token_prefix,
   user_agent,
-  ip
-) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10);
+  ip,
+  remember_me
+) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11);
 `
 
 	_, err := r.db.Pool().Exec(
@@ -44,6 +45,7 @@ insert into sessions (
 		s.TokenPrefix,
 		s.UserAgent,
 		s.IP,
+		s.RememberMe,
 	)
 	return err
 }
@@ -81,7 +83,8 @@ select
   token_secret_hash,
   token_prefix,
   user_agent,
-  ip
+  ip,
+  remember_me
 from sessions
 where token_id = $1
 limit 1;
@@ -99,6 +102,7 @@ limit 1;
 		&s.TokenPrefix,
 		&s.UserAgent,
 		&s.IP,
+		&s.RememberMe,
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
