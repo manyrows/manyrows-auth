@@ -167,17 +167,21 @@ func (a *Service) GetSession(r *http.Request) (*core.Session, error) {
 
 	// Idle timeout. GetSessionByToken already enforced the absolute TTL; this
 	// adds a sliding inactivity window so an idle admin (or a lifted cookie on
-	// an unattended console) is logged out well before the 30-day cap.
-	now := time.Now().UTC()
-	if now.Sub(sess.LastSeenAt) > adminIdleTimeout {
-		// Best-effort: drop the row so it doesn't linger until absolute expiry.
-		_ = a.repo.DeleteSessionByToken(r.Context(), claims.TokenID)
-		return nil, nil
-	}
-	// Advance the idle clock, throttled to avoid a write per request.
-	if now.Sub(sess.LastSeenAt) > adminIdleTouchInterval {
-		if _, err := a.repo.TouchSessionLastSeenByToken(r.Context(), claims.TokenID); err != nil {
-			log.Debug().Err(err).Msg("touch admin session last_seen failed (non-fatal)")
+	// an unattended console) is logged out well before the 30-day cap. Sessions
+	// minted with "remember me" opt out of the idle window and live to the
+	// absolute TTL.
+	if !sess.RememberMe {
+		now := time.Now().UTC()
+		if now.Sub(sess.LastSeenAt) > adminIdleTimeout {
+			// Best-effort: drop the row so it doesn't linger until absolute expiry.
+			_ = a.repo.DeleteSessionByToken(r.Context(), claims.TokenID)
+			return nil, nil
+		}
+		// Advance the idle clock, throttled to avoid a write per request.
+		if now.Sub(sess.LastSeenAt) > adminIdleTouchInterval {
+			if _, err := a.repo.TouchSessionLastSeenByToken(r.Context(), claims.TokenID); err != nil {
+				log.Debug().Err(err).Msg("touch admin session last_seen failed (non-fatal)")
+			}
 		}
 	}
 	return sess, nil
