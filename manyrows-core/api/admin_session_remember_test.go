@@ -2,11 +2,14 @@ package api_test
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/pquerna/otp/totp"
 	"manyrows-core/api"
 	"manyrows-core/auth"
 	"manyrows-core/auth/client"
@@ -119,6 +122,67 @@ func TestDoLoginRemember_PersistsFlag(t *testing.T) {
 	}
 	if plain.RememberMe {
 		t.Fatal("DoLogin shim should default RememberMe=false")
+	}
+}
+
+// TestAdminLoginTOTP_RememberMeRoundTrips pins that remember-me chosen at the
+// password step survives the 2FA round trip and lands on the minted session.
+func TestAdminLoginTOTP_RememberMeRoundTrips(t *testing.T) {
+	testEnv.ClearRateLimitAttempts(t)
+
+	cfg := GetTestConfig()
+	adminAuth, _ := auth.NewAuthService(cfg, testEnv.Repo)
+	clientAuth, _ := client.NewAuthService(cfg, testEnv.Repo, nil)
+	emailSvc := email.NewEmailService(true, nil)
+	encryptor := crypto.NewMySecretEncryptor(cfg)
+	handler := api.NewRequestHandler(testEnv.Repo, adminAuth, clientAuth, emailSvc, cfg, encryptor, nil)
+
+	r := chi.NewRouter()
+	r.Post("/admin/auth/login", handler.AdminLogin)
+	r.Post("/admin/auth/totp/verify", handler.AdminTOTPVerify)
+
+	password := "securepassword123"
+	acc := createAccountWithPassword(t, password)
+	defer testEnv.DB.Pool().Exec(context.Background(), "DELETE FROM sessions WHERE account_id = $1", acc.ID)
+	defer testEnv.DB.Pool().Exec(context.Background(), "DELETE FROM accounts WHERE id = $1", acc.ID)
+
+	secret, _ := enableTOTPForAccount(t, acc)
+
+	// Step 1: password login with rememberMe:true → challenge token.
+	loginRec := httptest.NewRecorder()
+	loginReq := httptest.NewRequest(http.MethodPost, "/admin/auth/login",
+		jsonBody(t, map[string]any{"email": acc.Email, "password": password, "rememberMe": true}))
+	loginReq.Header.Set("Content-Type", "application/json")
+	r.ServeHTTP(loginRec, loginReq)
+	if loginRec.Code != http.StatusOK {
+		t.Fatalf("login: expected 200, got %d: %s", loginRec.Code, loginRec.Body.String())
+	}
+	var loginResp map[string]any
+	json.NewDecoder(loginRec.Body).Decode(&loginResp)
+	challengeToken, _ := loginResp["challengeToken"].(string)
+	if challengeToken == "" {
+		t.Fatal("expected challengeToken")
+	}
+
+	// Step 2: verify TOTP → completes login.
+	code, _ := totp.GenerateCode(secret, time.Now())
+	verifyRec := httptest.NewRecorder()
+	verifyReq := httptest.NewRequest(http.MethodPost, "/admin/auth/totp/verify",
+		jsonBody(t, map[string]any{"challengeToken": challengeToken, "code": code}))
+	verifyReq.Header.Set("Content-Type", "application/json")
+	r.ServeHTTP(verifyRec, verifyReq)
+	if verifyRec.Code != http.StatusOK {
+		t.Fatalf("verify: expected 200, got %d: %s", verifyRec.Code, verifyRec.Body.String())
+	}
+
+	var rm bool
+	if err := testEnv.DB.Pool().QueryRow(context.Background(),
+		`SELECT remember_me FROM sessions WHERE account_id = $1 ORDER BY created_at DESC LIMIT 1`,
+		acc.ID).Scan(&rm); err != nil {
+		t.Fatalf("read remember_me: %v", err)
+	}
+	if !rm {
+		t.Fatal("expected remember_me=true after 2FA round trip")
 	}
 }
 

@@ -269,7 +269,7 @@ func (handler *RequestHandler) AdminTOTPVerify(w http.ResponseWriter, r *http.Re
 	// Without a per-subject cap, a multi-IP attacker who already cleared the
 	// password step gets the full per-IP budget against each IP for the same
 	// account; the per-subject cap bounds the total across IPs.
-	accountID, _, err := auth.VerifyTOTPChallengeAny(handler.tokenVerifyKeys(), req.ChallengeToken)
+	accountID, remember, err := auth.VerifyTOTPChallengeAny(handler.tokenVerifyKeys(), req.ChallengeToken)
 	if err != nil {
 		if errors.Is(err, auth.ErrTOTPChallengeExpired) {
 			WriteError(w, r, "error.totpChallengeExpired", http.StatusUnauthorized)
@@ -330,7 +330,7 @@ func (handler *RequestHandler) AdminTOTPVerify(w http.ResponseWriter, r *http.Re
 				_ = handler.repo.ClearAccountLockedUntil(r.Context(), acc.ID)
 			}
 
-			if _, err := handler.adminAuthService.DoLogin(w, r, acc); err != nil {
+			if _, err := handler.adminAuthService.DoLoginRemember(w, r, acc, remember); err != nil {
 				log.Err(err).Msg("failed to login after TOTP verify")
 				WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 				return
@@ -349,7 +349,7 @@ func (handler *RequestHandler) AdminTOTPVerify(w http.ResponseWriter, r *http.Re
 			_ = handler.repo.ClearAccountLockedUntil(r.Context(), acc.ID)
 		}
 
-		if _, err := handler.adminAuthService.DoLogin(w, r, acc); err != nil {
+		if _, err := handler.adminAuthService.DoLoginRemember(w, r, acc, remember); err != nil {
 			log.Err(err).Msg("failed to login after backup code verify")
 			WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 			return
