@@ -73,3 +73,46 @@ func TestAdminSession_RememberMeBypassesIdle(t *testing.T) {
 		t.Fatalf("remembered session row must be kept, found %d", n)
 	}
 }
+
+// TestDoLoginRemember_PersistsFlag pins that DoLoginRemember writes the chosen
+// flag and the DoLogin shim defaults it to false.
+func TestDoLoginRemember_PersistsFlag(t *testing.T) {
+	ctx := context.Background()
+	acc := testEnv.CreateTestAccount(t, "rmlogin-"+GenerateUniqueSlug("u")+"@example.com")
+	defer testEnv.CleanupTestData(t, &TestFixtures{Account: acc})
+
+	authSvc, err := auth.NewAuthService(GetTestConfig(), testEnv.Repo)
+	if err != nil {
+		t.Fatalf("auth service: %v", err)
+	}
+
+	// remember=true via DoLoginRemember.
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodPost, "/admin/auth/login", nil)
+	remembered, err := authSvc.DoLoginRemember(w, r, acc, true)
+	if err != nil {
+		t.Fatalf("DoLoginRemember: %v", err)
+	}
+	if !remembered.RememberMe {
+		t.Fatalf("returned session RememberMe=true expected, got %+v", remembered)
+	}
+	var rm bool
+	if err := testEnv.DB.Pool().QueryRow(ctx,
+		`SELECT remember_me FROM sessions WHERE id = $1`, remembered.ID).Scan(&rm); err != nil {
+		t.Fatalf("read remember_me: %v", err)
+	}
+	if !rm {
+		t.Fatal("persisted remember_me should be true")
+	}
+
+	// shim defaults to false.
+	w2 := httptest.NewRecorder()
+	r2 := httptest.NewRequest(http.MethodPost, "/admin/auth/login", nil)
+	plain, err := authSvc.DoLogin(w2, r2, acc)
+	if err != nil {
+		t.Fatalf("DoLogin: %v", err)
+	}
+	if plain.RememberMe {
+		t.Fatal("DoLogin shim should default RememberMe=false")
+	}
+}

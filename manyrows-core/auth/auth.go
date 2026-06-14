@@ -331,7 +331,17 @@ func (a *Service) DoLogout(w http.ResponseWriter, r *http.Request) error {
 	return a.clearTokenClaims(w, r)
 }
 
+// DoLogin mints an admin session with remember-me OFF (the default 8h idle
+// behavior). It is a shim over DoLoginRemember for callers that don’t offer the
+// choice (register, OAuth, post-password-reset).
 func (a *Service) DoLogin(w http.ResponseWriter, r *http.Request, ac *core.Account) (*core.Session, error) {
+	return a.DoLoginRemember(w, r, ac, false)
+}
+
+// DoLoginRemember mints an admin session. When rememberMe is true the session
+// is exempt from the sliding idle timeout (see GetSession) and lives to the
+// absolute sessionTTL.
+func (a *Service) DoLoginRemember(w http.ResponseWriter, r *http.Request, ac *core.Account, rememberMe bool) (*core.Session, error) {
 	// 1) Generate token claims (TokenID + secret)
 	claims, secretHash, err := newTokenClaims()
 	if err != nil {
@@ -361,6 +371,7 @@ func (a *Service) DoLogin(w http.ResponseWriter, r *http.Request, ac *core.Accou
 	ses.UserAgent = userAgent
 	ses.IP = ip
 	ses.ID = utils.NewUUID()
+	ses.RememberMe = rememberMe
 
 	err = a.repo.InsertSession(r.Context(), &ses)
 
