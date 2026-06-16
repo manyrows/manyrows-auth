@@ -73,10 +73,82 @@ function slugifyForFilename(s: string): string {
 export type ImportUser = {
   email?: string;
   enabled?: boolean;
+  emailVerified?: boolean;
+  emailVerifiedAt?: string; // export emits this timestamp; treated as verified=true
   roles?: string[];
   permissions?: string[];
   fields?: Record<string, unknown>;
 };
+
+// The payload the server's users:import endpoint accepts (one entry per row).
+export type ImportRow = {
+  email?: string;
+  enabled?: boolean;
+  emailVerified?: boolean;
+  roles?: string[];
+  permissions?: string[];
+  fields?: Record<string, unknown>;
+};
+
+// Map parsed file entries to server rows. Preserves present-vs-absent (an
+// omitted key stays omitted so the server leaves that facet unchanged), strips
+// export-only fields (id/passwordSetAt/lastLoginAt), and translates
+// emailVerifiedAt -> emailVerified so an exported file re-imports faithfully.
+export function toImportRows(users: ImportUser[]): ImportRow[] {
+  return users.map((u) => {
+    const row: ImportRow = { email: u.email };
+    if (u.enabled !== undefined) row.enabled = u.enabled;
+    if (u.emailVerified !== undefined) row.emailVerified = u.emailVerified;
+    else if (u.emailVerifiedAt) row.emailVerified = true;
+    if (u.roles !== undefined) row.roles = u.roles;
+    if (u.permissions !== undefined) row.permissions = u.permissions;
+    if (u.fields !== undefined) row.fields = u.fields;
+    return row;
+  });
+}
+
+// ---- server response shapes ----
+
+export type ImportRowError = { field?: string; message: string };
+export type ImportOutcome = "created" | "updated" | "skipped" | "failed";
+export type ImportRowResult = {
+  row: number;
+  email: string;
+  outcome: ImportOutcome;
+  userId?: string;
+  errors?: ImportRowError[];
+  warnings?: string[];
+};
+export type ImportSummary = {
+  total: number;
+  created: number;
+  updated: number;
+  skipped: number;
+  failed: number;
+};
+export type ImportResponse = {
+  dryRun: boolean;
+  summary: ImportSummary;
+  rows: ImportRowResult[];
+};
+
+// Flatten a server response into the summary plus a human-readable failure list
+// for the result/preview dialogs.
+export function summarizeImportResponse(resp: ImportResponse): {
+  summary: ImportSummary;
+  failures: { email: string; reason: string }[];
+} {
+  const failures = resp.rows
+    .filter((r) => r.outcome === "failed")
+    .map((r) => ({
+      email: r.email || "(no email)",
+      reason:
+        (r.errors ?? [])
+          .map((e) => (e.field ? `${e.field}: ${e.message}` : e.message))
+          .join("; ") || "failed",
+    }));
+  return { summary: resp.summary, failures };
+}
 
 /**
  * Parse a JSON string into an import users array. Returns [] for non-array
@@ -87,40 +159,6 @@ export type ImportUser = {
 export function parseUsersJson(text: string): ImportUser[] {
   const data = JSON.parse(text);
   return Array.isArray(data) ? (data as ImportUser[]) : [];
-}
-
-type ImportPreview = {
-  total: number;
-  toCreate: number;
-  toUpdate: number;
-  missingEmail: number;
-};
-
-/**
- * Compute the create/update split for an import preview. Email matching is
- * case-insensitive. Rows without an email address are counted separately
- * (they'll fail at import time) so the preview numbers are honest.
- */
-export function computeImportPreview(
-  users: ImportUser[],
-  existingEmailsLower: Set<string>,
-): ImportPreview {
-  let toCreate = 0;
-  let toUpdate = 0;
-  let missingEmail = 0;
-  for (const u of users) {
-    const email = u.email?.trim();
-    if (!email) {
-      missingEmail++;
-      continue;
-    }
-    if (existingEmailsLower.has(email.toLowerCase())) {
-      toUpdate++;
-    } else {
-      toCreate++;
-    }
-  }
-  return { total: users.length, toCreate, toUpdate, missingEmail };
 }
 
 /**
