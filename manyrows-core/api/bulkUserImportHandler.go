@@ -3,16 +3,21 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strings"
 
 	"manyrows-core/core"
+	"manyrows-core/core/repo"
 	"manyrows-core/utils"
 
 	"github.com/gofrs/uuid/v5"
 	"github.com/rs/zerolog/log"
 )
 
+// maxImportRows caps rows per request. The root router also enforces a 1 MB
+// request-body limit (app/router.go), so field-heavy imports can hit that
+// ceiling before 1000 rows — those requests return 413, not a silent truncation.
 const maxImportRows = 1000
 
 // importRow is one user entry in an import request. Pointer/map fields let us
@@ -153,12 +158,22 @@ func (handler *RequestHandler) HandleAdminBulkUserImport(w http.ResponseWriter, 
 	// us app.ProjectID and app.UserPoolID for slug/field resolution.
 	app, err := handler.repo.GetAppByIDForProject(ctx, ws.ID, projectID, appID)
 	if err != nil {
-		WriteError(w, r, "error.appNotFound", http.StatusNotFound)
+		if errors.Is(err, repo.ErrNotFound) {
+			WriteError(w, r, "error.appNotFound", http.StatusNotFound)
+			return
+		}
+		log.Error().Err(err).Msg("bulk import: failed to load app")
+		WriteError(w, r, "error.internalError", http.StatusInternalServerError)
 		return
 	}
 
 	var req bulkImportRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		var maxErr *http.MaxBytesError
+		if errors.As(err, &maxErr) {
+			WriteErrorMsg(w, r, "import payload too large; split into smaller batches", http.StatusRequestEntityTooLarge)
+			return
+		}
 		WriteError(w, r, "error.invalidJson", http.StatusBadRequest)
 		return
 	}
@@ -168,11 +183,11 @@ func (handler *RequestHandler) HandleAdminBulkUserImport(w http.ResponseWriter, 
 		onConflict = "skip"
 	}
 	if onConflict != "skip" && onConflict != "update" {
-		utils.WriteJsonWithStatusCode(w, map[string]any{"error": "onConflict must be 'skip' or 'update'"}, http.StatusBadRequest)
+		WriteErrorMsg(w, r, "onConflict must be 'skip' or 'update'", http.StatusBadRequest)
 		return
 	}
 	if len(req.Rows) > maxImportRows {
-		utils.WriteJsonWithStatusCode(w, map[string]any{"error": "maximum 1000 rows per request"}, http.StatusBadRequest)
+		WriteErrorMsg(w, r, "maximum 1000 rows per request", http.StatusBadRequest)
 		return
 	}
 
@@ -187,7 +202,7 @@ func (handler *RequestHandler) HandleAdminBulkUserImport(w http.ResponseWriter, 
 	// affecting every row, so fail the whole request.
 	defaultRoleIDs, unknownDefaults := resolveSlugs(req.DefaultRoles, lk.roleBySlug)
 	if len(unknownDefaults) > 0 {
-		utils.WriteJsonWithStatusCode(w, map[string]any{"error": "unknown default role(s): " + strings.Join(unknownDefaults, ", ")}, http.StatusBadRequest)
+		WriteErrorMsg(w, r, "unknown default role(s): "+strings.Join(unknownDefaults, ", "), http.StatusBadRequest)
 		return
 	}
 	_ = defaultRoleIDs // used in the apply phase (Task 3)

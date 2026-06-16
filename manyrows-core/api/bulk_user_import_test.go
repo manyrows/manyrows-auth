@@ -117,3 +117,33 @@ func TestBulkUserImport_AppNotFound(t *testing.T) {
 		t.Fatalf("expected 404, got %d", rr.Code)
 	}
 }
+
+func TestBulkUserImport_CrossWorkspaceAppIsolation(t *testing.T) {
+	svc := NewTestServices(t)
+	router := setupBulkUserImportRouter(t, svc)
+
+	// Workspace A is the caller.
+	accA := testEnv.CreateTestAccount(t, "impA-"+GenerateUniqueSlug("u")+"@example.com")
+	wsA := testEnv.CreateTestWorkspace(t, accA, "WS-A", GenerateUniqueSlug("ws"))
+	sessA, claimsA := testEnv.CreateTestSession(t, accA)
+
+	// Workspace B owns the target app.
+	accB := testEnv.CreateTestAccount(t, "impB-"+GenerateUniqueSlug("u")+"@example.com")
+	wsB := testEnv.CreateTestWorkspace(t, accB, "WS-B", GenerateUniqueSlug("ws"))
+	appB := testEnv.CreateTestApp(t, wsB, accB)
+	sessB, _ := testEnv.CreateTestSession(t, accB)
+
+	defer testEnv.CleanupTestData(t, &TestFixtures{Account: accA, Workspace: wsA, Session: sessA})
+	defer testEnv.CleanupTestData(t, &TestFixtures{Account: accB, Workspace: wsB, Session: sessB})
+
+	// A's admin targets B's app through A's own workspace path -> 404 (no cross-tenant access).
+	url := fmt.Sprintf("/admin/workspace/%s/projects/%s/apps/%s/users:import", wsA.ID, appB.ProjectID, appB.ID)
+	body, _ := json.Marshal(map[string]any{"rows": []any{}})
+	req := httptest.NewRequest(http.MethodPost, url, bytes.NewReader(body))
+	testEnv.SetSessionCookie(t, req, claimsA)
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+	if rr.Code != http.StatusNotFound {
+		t.Fatalf("expected 404 for cross-workspace app, got %d: %s", rr.Code, rr.Body.String())
+	}
+}
