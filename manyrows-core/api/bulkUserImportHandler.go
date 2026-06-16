@@ -23,6 +23,13 @@ import (
 // ceiling before 1000 rows — those requests return 413, not a silent truncation.
 const maxImportRows = 1000
 
+// maxInviteRows caps how many rows an import may carry when sendInvite=true.
+// Invites are sent synchronously (one SMTP round-trip per created user) inside
+// the request, and the router enforces a 60s timeout — so bulk invite-on-import
+// is bounded here. Large invite batches belong to async provisioning, not this
+// endpoint.
+const maxInviteRows = 50
+
 // importRow is one user entry in an import request. Pointer/map fields let us
 // distinguish "key absent" (leave unchanged on update) from "present but empty"
 // (explicitly clear). See the design's present-vs-absent table.
@@ -243,7 +250,8 @@ func (handler *RequestHandler) planRow(
 	return plan
 }
 
-func failRow(res importRowResult, field, msg string) importRowResult {
+func failRow(res importRowResult, field, msg string, err error) importRowResult {
+	log.Error().Err(err).Str("email", utils.MaskEmail(res.Email)).Str("step", field).Msg("bulk import: " + msg)
 	res.Outcome = "failed"
 	res.Errors = append(res.Errors, importFieldError{Field: field, Message: msg})
 	return res
@@ -268,7 +276,7 @@ func (handler *RequestHandler) applyRow(
 
 	user, created, err := handler.repo.GetOrCreateUser(ctx, res.Email, app, core.UserSourceInvited)
 	if err != nil {
-		return failRow(res, "", "internal error")
+		return failRow(res, "", "internal error", err)
 	}
 	res.UserID = user.ID.String()
 
@@ -278,7 +286,7 @@ func (handler *RequestHandler) applyRow(
 	}
 
 	if _, _, err := handler.repo.EnsureAppMember(ctx, app.ID, user.ID, core.UserSourceInvited); err != nil {
-		return failRow(res, "", "membership creation failed")
+		return failRow(res, "", "membership creation failed", err)
 	}
 
 	// Roles: present -> set exactly (may clear); absent + created -> defaults.
@@ -287,32 +295,32 @@ func (handler *RequestHandler) applyRow(
 		if err := handler.repo.ReplaceUserRoles(ctx, repo.ReplaceUserRolesParams{
 			ProjectID: app.ProjectID, AppID: app.ID, UserID: user.ID, RoleIDs: plan.roleIDs, Now: time.Now().UTC(),
 		}); err != nil {
-			return failRow(res, "roles", "role assignment failed")
+			return failRow(res, "roles", "role assignment failed", err)
 		}
 	case created:
 		if err := handler.repo.ReplaceUserRoles(ctx, repo.ReplaceUserRolesParams{
 			ProjectID: app.ProjectID, AppID: app.ID, UserID: user.ID, RoleIDs: defaultRoleIDs, Now: time.Now().UTC(),
 		}); err != nil {
-			return failRow(res, "roles", "role assignment failed")
+			return failRow(res, "roles", "role assignment failed", err)
 		}
 	}
 
 	if row.Permissions != nil {
 		if err := handler.repo.SetDirectPermissions(ctx, app.ProjectID, user.ID, app.ID, plan.permIDs); err != nil {
-			return failRow(res, "permissions", "permission assignment failed")
+			return failRow(res, "permissions", "permission assignment failed", err)
 		}
 	}
 
 	if row.Enabled != nil {
 		if err := handler.repo.SetUserEnabled(ctx, user.ID, *row.Enabled); err != nil {
-			return failRow(res, "enabled", "set enabled failed")
+			return failRow(res, "enabled", "set enabled failed", err)
 		}
 	}
 
 	// Never un-verify: only act on emailVerified=true.
 	if row.EmailVerified != nil && *row.EmailVerified {
 		if err := handler.repo.SetUserEmailVerified(ctx, user.ID, time.Now().UTC()); err != nil {
-			return failRow(res, "emailVerified", "set email verified failed")
+			return failRow(res, "emailVerified", "set email verified failed", err)
 		}
 	}
 
@@ -324,7 +332,7 @@ func (handler *RequestHandler) applyRow(
 			UpdatedAt:   time.Now().UTC(),
 			UpdatedBy:   actorID,
 		}, raw); err != nil {
-			return failRow(res, "fields", "field value write failed")
+			return failRow(res, "fields", "field value write failed", err)
 		}
 	}
 
@@ -397,6 +405,10 @@ func (handler *RequestHandler) HandleAdminBulkUserImport(w http.ResponseWriter, 
 	}
 	if len(req.Rows) > maxImportRows {
 		WriteErrorMsg(w, r, "maximum 1000 rows per request", http.StatusBadRequest)
+		return
+	}
+	if req.SendInvite && len(req.Rows) > maxInviteRows {
+		WriteErrorMsg(w, r, "sendInvite is only supported for imports of 50 rows or fewer; import without sendInvite for larger batches", http.StatusBadRequest)
 		return
 	}
 

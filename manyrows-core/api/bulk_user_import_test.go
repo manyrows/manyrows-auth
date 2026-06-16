@@ -319,7 +319,9 @@ func TestBulkUserImport_AppliesFacets(t *testing.T) {
 			t.Fatalf("expected 200, got %d: %s", rr.Code, rr.Body.String())
 		}
 		var out importResp
-		_ = json.Unmarshal(rr.Body.Bytes(), &out)
+		if err := json.Unmarshal(rr.Body.Bytes(), &out); err != nil {
+			t.Fatalf("decode response: %v (body=%s)", err, rr.Body.String())
+		}
 		return out
 	}
 
@@ -347,6 +349,13 @@ func TestBulkUserImport_AppliesFacets(t *testing.T) {
 	}
 	if u.EmailVerifiedAt == nil {
 		t.Errorf("expected email verified")
+	}
+	roleRows, err := testEnv.Repo.GetUserRolesByUserAndAppID(ctx, app.ProjectID, u.ID, app.ID)
+	if err != nil {
+		t.Fatalf("GetUserRolesByUserAndAppID: %v", err)
+	}
+	if len(roleRows) != 1 || roleRows[0].RoleID != role.ID {
+		t.Errorf("expected exactly the imported role on create, got %+v", roleRows)
 	}
 
 	// Re-import same email in SKIP mode -> skipped, no change.
