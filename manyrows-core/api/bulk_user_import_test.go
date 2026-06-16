@@ -295,3 +295,145 @@ func TestBulkUserImport_DryRunClassifies(t *testing.T) {
 		t.Fatalf("dryRun created a user (%s) — must not write", newEmail)
 	}
 }
+
+func TestBulkUserImport_AppliesFacets(t *testing.T) {
+	ctx := context.Background()
+	svc := NewTestServices(t)
+	router := setupBulkUserImportRouter(t, svc)
+
+	acc := testEnv.CreateTestAccount(t, "impapply-"+GenerateUniqueSlug("u")+"@example.com")
+	ws := testEnv.CreateTestWorkspace(t, acc, "WS", GenerateUniqueSlug("ws"))
+	app := testEnv.CreateTestApp(t, ws, acc)
+	sess, claims := testEnv.CreateTestSession(t, acc)
+	defer testEnv.CleanupTestData(t, &TestFixtures{Account: acc, Workspace: ws, Session: sess})
+
+	role := createTestRole(t, app.ProjectID)
+	url := fmt.Sprintf("/admin/workspace/%s/projects/%s/apps/%s/users:import", ws.ID, app.ProjectID, app.ID)
+	post := func(payload map[string]any) importResp {
+		body, _ := json.Marshal(payload)
+		req := httptest.NewRequest(http.MethodPost, url, bytes.NewReader(body))
+		testEnv.SetSessionCookie(t, req, claims)
+		rr := httptest.NewRecorder()
+		router.ServeHTTP(rr, req)
+		if rr.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d: %s", rr.Code, rr.Body.String())
+		}
+		var out importResp
+		_ = json.Unmarshal(rr.Body.Bytes(), &out)
+		return out
+	}
+
+	email := "applied-" + GenerateUniqueSlug("u") + "@example.com"
+	t.Cleanup(func() {
+		if u, _ := testEnv.Repo.GetUserByEmailInPool(ctx, email, app.UserPoolID); u != nil {
+			_, _ = testEnv.DB.Pool().Exec(ctx, "DELETE FROM users WHERE id = $1", u.ID)
+		}
+	})
+
+	out := post(map[string]any{
+		"rows": []map[string]any{
+			{"email": email, "enabled": false, "emailVerified": true, "roles": []string{role.Slug}},
+		},
+	})
+	if out.Summary.Created != 1 {
+		t.Fatalf("expected created=1, got %+v (rows=%+v)", out.Summary, out.Rows)
+	}
+	u, err := testEnv.Repo.GetUserByEmailInPool(ctx, email, app.UserPoolID)
+	if err != nil || u == nil {
+		t.Fatalf("user not created: %v", err)
+	}
+	if u.Enabled {
+		t.Errorf("expected enabled=false")
+	}
+	if u.EmailVerifiedAt == nil {
+		t.Errorf("expected email verified")
+	}
+
+	// Re-import same email in SKIP mode -> skipped, no change.
+	out = post(map[string]any{"onConflict": "skip", "rows": []map[string]any{{"email": email, "enabled": true}}})
+	if out.Summary.Skipped != 1 {
+		t.Fatalf("expected skipped=1, got %+v", out.Summary)
+	}
+	u, _ = testEnv.Repo.GetUserByEmailInPool(ctx, email, app.UserPoolID)
+	if u.Enabled {
+		t.Errorf("skip mode must not have re-enabled the user")
+	}
+
+	// Re-import in UPDATE mode with enabled=true -> updated, now enabled.
+	out = post(map[string]any{"onConflict": "update", "rows": []map[string]any{{"email": email, "enabled": true}}})
+	if out.Summary.Updated != 1 {
+		t.Fatalf("expected updated=1, got %+v", out.Summary)
+	}
+	u, _ = testEnv.Repo.GetUserByEmailInPool(ctx, email, app.UserPoolID)
+	if !u.Enabled {
+		t.Errorf("update mode should have enabled the user")
+	}
+}
+
+func TestBulkUserImport_PresentVsAbsentRoles(t *testing.T) {
+	ctx := context.Background()
+	svc := NewTestServices(t)
+	router := setupBulkUserImportRouter(t, svc)
+
+	acc := testEnv.CreateTestAccount(t, "imppva-"+GenerateUniqueSlug("u")+"@example.com")
+	ws := testEnv.CreateTestWorkspace(t, acc, "WS", GenerateUniqueSlug("ws"))
+	app := testEnv.CreateTestApp(t, ws, acc)
+	sess, claims := testEnv.CreateTestSession(t, acc)
+	defer testEnv.CleanupTestData(t, &TestFixtures{Account: acc, Workspace: ws, Session: sess})
+
+	role := createTestRole(t, app.ProjectID)
+	url := fmt.Sprintf("/admin/workspace/%s/projects/%s/apps/%s/users:import", ws.ID, app.ProjectID, app.ID)
+	post := func(payload map[string]any) {
+		body, _ := json.Marshal(payload)
+		req := httptest.NewRequest(http.MethodPost, url, bytes.NewReader(body))
+		testEnv.SetSessionCookie(t, req, claims)
+		rr := httptest.NewRecorder()
+		router.ServeHTTP(rr, req)
+		if rr.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d: %s", rr.Code, rr.Body.String())
+		}
+	}
+
+	email := "pva-" + GenerateUniqueSlug("u") + "@example.com"
+	t.Cleanup(func() {
+		if u, _ := testEnv.Repo.GetUserByEmailInPool(ctx, email, app.UserPoolID); u != nil {
+			_, _ = testEnv.DB.Pool().Exec(ctx, "DELETE FROM users WHERE id = $1", u.ID)
+		}
+	})
+
+	// helper: count this user's role rows for the app
+	countRoles := func() int {
+		urs, err := testEnv.Repo.GetUserRolesByUserAndAppID(ctx, app.ProjectID, mustUserID(t, ctx, app, email), app.ID)
+		if err != nil {
+			t.Fatalf("GetUserRolesByUserAndAppID: %v", err)
+		}
+		return len(urs)
+	}
+
+	// Create WITH a role.
+	post(map[string]any{"rows": []map[string]any{{"email": email, "roles": []string{role.Slug}}}})
+	if n := countRoles(); n != 1 {
+		t.Fatalf("expected 1 role after create, got %d", n)
+	}
+
+	// Update with roles ABSENT -> roles unchanged.
+	post(map[string]any{"onConflict": "update", "rows": []map[string]any{{"email": email, "enabled": true}}})
+	if n := countRoles(); n != 1 {
+		t.Fatalf("absent roles must be preserved, got %d roles", n)
+	}
+
+	// Update with roles: [] -> cleared.
+	post(map[string]any{"onConflict": "update", "rows": []map[string]any{{"email": email, "roles": []string{}}}})
+	if n := countRoles(); n != 0 {
+		t.Fatalf("empty roles array must clear roles, got %d", n)
+	}
+}
+
+func mustUserID(t *testing.T, ctx context.Context, app *core.App, email string) uuid.UUID {
+	t.Helper()
+	u, err := testEnv.Repo.GetUserByEmailInPool(ctx, email, app.UserPoolID)
+	if err != nil || u == nil {
+		t.Fatalf("user %s not found: %v", email, err)
+	}
+	return u.ID
+}

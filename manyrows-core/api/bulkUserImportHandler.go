@@ -8,6 +8,7 @@ import (
 	"net/mail"
 	"sort"
 	"strings"
+	"time"
 
 	"manyrows-core/core"
 	"manyrows-core/core/repo"
@@ -242,6 +243,107 @@ func (handler *RequestHandler) planRow(
 	return plan
 }
 
+func failRow(res importRowResult, field, msg string) importRowResult {
+	res.Outcome = "failed"
+	res.Errors = append(res.Errors, importFieldError{Field: field, Message: msg})
+	return res
+}
+
+// applyRow performs the writes for a planned (created/updated) row, best-effort
+// and idempotent. A write error downgrades the row to "failed" with the failing
+// step recorded; the user row may already exist (re-running converges).
+func (handler *RequestHandler) applyRow(
+	ctx context.Context,
+	r *http.Request,
+	plan importRowPlan,
+	app *core.App,
+	ws *core.Workspace,
+	actorID uuid.UUID,
+	defaultRoleIDs []uuid.UUID,
+	onConflict string,
+	sendInvite bool,
+) importRowResult {
+	res := plan.result
+	row := plan.row
+
+	user, created, err := handler.repo.GetOrCreateUser(ctx, res.Email, app, core.UserSourceInvited)
+	if err != nil {
+		return failRow(res, "", "internal error")
+	}
+	res.UserID = user.ID.String()
+
+	if !created && onConflict != "update" {
+		res.Outcome = "skipped"
+		return res
+	}
+
+	if _, _, err := handler.repo.EnsureAppMember(ctx, app.ID, user.ID, core.UserSourceInvited); err != nil {
+		return failRow(res, "", "membership creation failed")
+	}
+
+	// Roles: present -> set exactly (may clear); absent + created -> defaults.
+	switch {
+	case row.Roles != nil:
+		if err := handler.repo.ReplaceUserRoles(ctx, repo.ReplaceUserRolesParams{
+			ProjectID: app.ProjectID, AppID: app.ID, UserID: user.ID, RoleIDs: plan.roleIDs, Now: time.Now().UTC(),
+		}); err != nil {
+			return failRow(res, "roles", "role assignment failed")
+		}
+	case created:
+		if err := handler.repo.ReplaceUserRoles(ctx, repo.ReplaceUserRolesParams{
+			ProjectID: app.ProjectID, AppID: app.ID, UserID: user.ID, RoleIDs: defaultRoleIDs, Now: time.Now().UTC(),
+		}); err != nil {
+			return failRow(res, "roles", "role assignment failed")
+		}
+	}
+
+	if row.Permissions != nil {
+		if err := handler.repo.SetDirectPermissions(ctx, app.ProjectID, user.ID, app.ID, plan.permIDs); err != nil {
+			return failRow(res, "permissions", "permission assignment failed")
+		}
+	}
+
+	if row.Enabled != nil {
+		if err := handler.repo.SetUserEnabled(ctx, user.ID, *row.Enabled); err != nil {
+			return failRow(res, "enabled", "set enabled failed")
+		}
+	}
+
+	// Never un-verify: only act on emailVerified=true.
+	if row.EmailVerified != nil && *row.EmailVerified {
+		if err := handler.repo.SetUserEmailVerified(ctx, user.ID, time.Now().UTC()); err != nil {
+			return failRow(res, "emailVerified", "set email verified failed")
+		}
+	}
+
+	for fieldID, raw := range plan.fieldVals {
+		if _, err := handler.repo.UpsertUserFieldValue(ctx, core.UserFieldValue{
+			ID:          utils.NewUUID(),
+			UserID:      user.ID,
+			UserFieldID: fieldID,
+			UpdatedAt:   time.Now().UTC(),
+			UpdatedBy:   actorID,
+		}, raw); err != nil {
+			return failRow(res, "fields", "field value write failed")
+		}
+	}
+
+	if created {
+		res.Outcome = "created"
+		handler.dispatchWebhook(app.ID, "user.created", map[string]any{"userId": user.ID, "email": res.Email, "appId": app.ID})
+		if sendInvite {
+			if app.AppURL == nil || *app.AppURL == "" {
+				res.Warnings = append(res.Warnings, "app URL not configured; invite not sent")
+			} else if err := handler.sendUserInviteEmail(ctx, ws.ID, res.Email, app.DisplayName(), *app.AppURL, GetLanguageFromRequest(r)); err != nil {
+				res.Warnings = append(res.Warnings, "invite email failed: "+err.Error())
+			}
+		}
+	} else {
+		res.Outcome = "updated"
+	}
+	return res
+}
+
 // HandleAdminBulkUserImport imports/updates many users in one request.
 // POST /admin/workspace/{workspaceId}/projects/{projectId}/apps/{appId}/users:import
 func (handler *RequestHandler) HandleAdminBulkUserImport(w http.ResponseWriter, r *http.Request) {
@@ -250,7 +352,6 @@ func (handler *RequestHandler) HandleAdminBulkUserImport(w http.ResponseWriter, 
 	if !ok {
 		return
 	}
-	_ = acc // used in the apply phase (Task 3)
 
 	projectID, err := utils.GetPathUUID("projectId", r)
 	if err != nil || projectID == uuid.Nil {
@@ -313,7 +414,6 @@ func (handler *RequestHandler) HandleAdminBulkUserImport(w http.ResponseWriter, 
 		WriteErrorMsg(w, r, "unknown default role(s): "+strings.Join(unknownDefaults, ", "), http.StatusBadRequest)
 		return
 	}
-	_ = defaultRoleIDs // used in the apply phase (Task 3)
 
 	seen := make(map[string]bool, len(req.Rows))
 	plans := make([]importRowPlan, 0, len(req.Rows))
@@ -323,9 +423,11 @@ func (handler *RequestHandler) HandleAdminBulkUserImport(w http.ResponseWriter, 
 
 	results := make([]importRowResult, 0, len(plans))
 	for _, plan := range plans {
-		// Apply phase (Task 3) handles created/updated rows. For now, and
-		// always for dryRun, return the classification as-is.
-		results = append(results, plan.result)
+		if req.DryRun || plan.result.Outcome == "failed" || plan.result.Outcome == "skipped" {
+			results = append(results, plan.result)
+			continue
+		}
+		results = append(results, handler.applyRow(ctx, r, plan, &app, ws, acc.ID, defaultRoleIDs, onConflict, req.SendInvite))
 	}
 
 	resp := bulkImportResponse{DryRun: req.DryRun, Rows: results, Summary: summarize(results)}
