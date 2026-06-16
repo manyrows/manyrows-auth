@@ -1194,6 +1194,7 @@ export default function AppUsers({ project, appId: appIdProp }: Props) {
   const [exporting, setExporting] = React.useState(false);
   const [importPreview, setImportPreview] = React.useState<ImportPreview | null>(null);
   const [importRunning, setImportRunning] = React.useState(false);
+  const [importDryRunning, setImportDryRunning] = React.useState(false);
   const [importOnConflict, setImportOnConflict] = React.useState<"skip" | "update">("skip");
   const [importResult, setImportResult] = React.useState<ImportResponse | null>(null);
 
@@ -1281,6 +1282,7 @@ export default function AppUsers({ project, appId: appIdProp }: Props) {
   const handleImportFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || !selectedAppId) return;
+    if (importing) return;
     e.target.value = ""; // allow re-selecting the same file later
 
     setImporting(true);
@@ -1307,15 +1309,22 @@ export default function AppUsers({ project, appId: appIdProp }: Props) {
   // Re-run the dry-run when the conflict mode changes so the preview stays honest.
   const changeImportOnConflict = async (next: "skip" | "update") => {
     setImportOnConflict(next);
-    if (!importPreview || !selectedAppId) return;
+    const snapshot = importPreview;
+    if (!snapshot || !selectedAppId) return;
+    setImportDryRunning(true);
     try {
-      const response = await importAppUsers(project.workspaceId, project.id, selectedAppId, importPreview.rows, {
+      const response = await importAppUsers(project.workspaceId, project.id, selectedAppId, snapshot.rows, {
         onConflict: next,
         dryRun: true,
       });
-      setImportPreview({ ...importPreview, response });
+      // Only apply if the preview hasn't been replaced by a newer file-select.
+      setImportPreview((prev) =>
+        prev && prev.filename === snapshot.filename ? { ...prev, response } : prev,
+      );
     } catch {
       /* leave the previous preview in place on transient error */
+    } finally {
+      setImportDryRunning(false);
     }
   };
 
@@ -2671,7 +2680,7 @@ export default function AppUsers({ project, appId: appIdProp }: Props) {
                 exclusive
                 value={importOnConflict}
                 onChange={(_e, v) => { if (v) void changeImportOnConflict(v); }}
-                disabled={importRunning}
+                disabled={importRunning || importDryRunning}
               >
                 <ToggleButton value="skip">{t("projectMembers.importSkip", { defaultValue: "Skip existing" })}</ToggleButton>
                 <ToggleButton value="update">{t("projectMembers.importUpdate", { defaultValue: "Update existing" })}</ToggleButton>
