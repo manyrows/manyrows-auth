@@ -34,6 +34,8 @@ import {
   TablePagination,
   TableRow,
   TextField,
+  ToggleButton,
+  ToggleButtonGroup,
   Tooltip,
   Typography,
 } from "@mui/material";
@@ -48,9 +50,12 @@ import {
   buildExportEntry,
   buildExportFilename,
   parseUsersJson,
-  computeImportPreview,
   extractErrorReason,
+  toImportRows,
+  summarizeImportResponse,
   type ImportUser,
+  type ImportRow,
+  type ImportResponse,
 } from "./appUsersImportExport";
 
 const tc = { code: <code />, b: <b />, strong: <strong /> };
@@ -159,6 +164,20 @@ async function createWorkspaceAccount(workspaceId: string, email: string, appId:
     roleIds,
     sendInvite: !!sendInvite,
   });
+  return r.data;
+}
+
+async function importAppUsers(
+  workspaceId: string,
+  projectId: string,
+  appId: string,
+  rows: ImportRow[],
+  opts: { onConflict: "skip" | "update"; dryRun: boolean; sendInvite?: boolean },
+): Promise<ImportResponse> {
+  const r = await axios.post<ImportResponse>(
+    `/admin/workspace/${workspaceId}/projects/${projectId}/apps/${appId}/users:import`,
+    { onConflict: opts.onConflict, dryRun: opts.dryRun, sendInvite: !!opts.sendInvite, rows },
+  );
   return r.data;
 }
 
@@ -1168,16 +1187,15 @@ export default function AppUsers({ project, appId: appIdProp }: Props) {
   }, [apps]);
 
   // === Export / Import ===
-  type ImportPreview = { filename: string; users: ImportUser[]; toCreate: number; toUpdate: number };
-  type ImportError = { email: string; reason: string };
-  type ImportResult = { imported: number; failed: number; errors: ImportError[] };
+  type ImportPreview = { filename: string; rows: ImportRow[]; response: ImportResponse };
 
   const fileInputRef = React.useRef<HTMLInputElement>(null);
   const [importing, setImporting] = React.useState(false);
   const [exporting, setExporting] = React.useState(false);
   const [importPreview, setImportPreview] = React.useState<ImportPreview | null>(null);
-  const [importProgress, setImportProgress] = React.useState<{ current: number; total: number } | null>(null);
-  const [importResult, setImportResult] = React.useState<ImportResult | null>(null);
+  const [importRunning, setImportRunning] = React.useState(false);
+  const [importOnConflict, setImportOnConflict] = React.useState<"skip" | "update">("skip");
+  const [importResult, setImportResult] = React.useState<ImportResponse | null>(null);
 
   const handleExport = async () => {
     if (!selectedAppId) return;
@@ -1259,7 +1277,7 @@ export default function AppUsers({ project, appId: appIdProp }: Props) {
     }
   };
 
-  // Step 1: parse file, compute preview (how many will be created vs updated), show dialog.
+  // Step 1: parse file, run a server-side dry-run, show the preview dialog.
   const handleImportFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || !selectedAppId) return;
@@ -1268,107 +1286,56 @@ export default function AppUsers({ project, appId: appIdProp }: Props) {
     setImporting(true);
     try {
       const text = await file.text();
-      const users = parseUsersJson(text);
-
+      const users = parseUsersJson(text) as ImportUser[];
       if (users.length === 0) {
         enqueueSnackbar(t("projectMembers.importNoUsers", { defaultValue: "No users found in file" }), { variant: "warning" });
         return;
       }
-
-      // Fetch existing members so we can count create vs. update before touching anything.
-      const { members: existing } = await getProjectMembersPaged(project, selectedAppId, 0, 10000, "");
-      const existingEmailsLower = new Set(existing.map((m) => m.email.toLowerCase()));
-      const { toCreate, toUpdate } = computeImportPreview(users, existingEmailsLower);
-
-      setImportPreview({ filename: file.name, users, toCreate, toUpdate });
-    } catch {
-      enqueueSnackbar(t("projectMembers.importInvalidJson", { defaultValue: "Invalid JSON file" }), { variant: "error" });
+      const rows = toImportRows(users);
+      const response = await importAppUsers(project.workspaceId, project.id, selectedAppId, rows, {
+        onConflict: importOnConflict,
+        dryRun: true,
+      });
+      setImportPreview({ filename: file.name, rows, response });
+    } catch (err) {
+      enqueueSnackbar(extractErrorReason(err) || t("projectMembers.importInvalidJson", { defaultValue: "Invalid JSON file" }), { variant: "error" });
     } finally {
       setImporting(false);
     }
   };
 
-  // Step 2: user confirmed preview. Actually run the import, tracking progress + per-row errors.
+  // Re-run the dry-run when the conflict mode changes so the preview stays honest.
+  const changeImportOnConflict = async (next: "skip" | "update") => {
+    setImportOnConflict(next);
+    if (!importPreview || !selectedAppId) return;
+    try {
+      const response = await importAppUsers(project.workspaceId, project.id, selectedAppId, importPreview.rows, {
+        onConflict: next,
+        dryRun: true,
+      });
+      setImportPreview({ ...importPreview, response });
+    } catch {
+      /* leave the previous preview in place on transient error */
+    }
+  };
+
+  // Step 2: user confirmed. Run the real import in one request.
   const runImport = async () => {
     if (!importPreview || !selectedAppId) return;
-    const users = importPreview.users;
-
-    setImportProgress({ current: 0, total: users.length });
-
-    // Load field schemas + permissions once for slug-to-ID resolution.
-    let fieldSchemas: { id: string; key: string }[] = [];
-    let permissionsList: { id: string; slug: string }[] = [];
-    const hasFields = users.some((u) => u.fields && Object.keys(u.fields).length > 0);
-    const hasPerms = users.some((u) => u.permissions && u.permissions.length > 0);
-    const preloadPromises: Promise<void>[] = [];
-    const importPoolId = selectedApp?.userPoolId;
-    if (hasFields && importPoolId) {
-      preloadPromises.push(
-        axios.get(`/admin/workspace/${project.workspaceId}/userPools/${importPoolId}/userFields`)
-          .then((res) => { fieldSchemas = ((res.data?.userFields ?? []) as UserField[]).filter((f) => f.status === "active"); })
-          .catch(() => {}),
-      );
+    setImportRunning(true);
+    try {
+      const response = await importAppUsers(project.workspaceId, project.id, selectedAppId, importPreview.rows, {
+        onConflict: importOnConflict,
+        dryRun: false,
+      });
+      setImportPreview(null);
+      setImportResult(response);
+      await refreshCore();
+    } catch (err) {
+      enqueueSnackbar(extractErrorReason(err) || t("projectMembers.importFailed", { defaultValue: "Import failed" }), { variant: "error" });
+    } finally {
+      setImportRunning(false);
     }
-    if (hasPerms) {
-      preloadPromises.push(
-        axios.get(`/admin/workspace/${project.workspaceId}/projects/${project.id}/permissions`)
-          .then((res) => {
-            const list = (res.data?.permissions ?? []) as Permission[];
-            permissionsList = list.map((p) => ({ id: p.id, slug: p.slug }));
-          })
-          .catch(() => {}),
-      );
-    }
-    await Promise.all(preloadPromises);
-
-    const errors: ImportError[] = [];
-    let imported = 0;
-
-    for (let i = 0; i < users.length; i++) {
-      const u = users[i];
-      const email = u.email || "(no email)";
-      try {
-        if (!u.email) throw new Error("missing email");
-        const importRoleIds = (u.roles ?? [])
-          .map((slug) => roles.find((r) => r.slug === slug)?.id)
-          .filter(Boolean) as string[];
-        const result = await createWorkspaceAccount(project.workspaceId, u.email, selectedAppId, importRoleIds);
-        if (u.enabled === false) {
-          await setUserEnabled(project.workspaceId, result.id, false);
-        }
-        if (u.permissions && u.permissions.length > 0 && permissionsList.length > 0) {
-          const permIds = u.permissions
-            .map((slug) => permissionsList.find((p) => p.slug === slug)?.id)
-            .filter(Boolean) as string[];
-          if (permIds.length > 0) {
-            await axios.put(
-              `/admin/workspace/${project.workspaceId}/projects/${project.id}/memberPermissions/${result.id}`,
-              { appId: selectedAppId, permissionIds: permIds },
-            );
-          }
-        }
-        if (u.fields && fieldSchemas.length > 0 && importPoolId) {
-          for (const [key, value] of Object.entries(u.fields)) {
-            const field = fieldSchemas.find((f) => f.key === key);
-            if (field) {
-              await axios.put(
-                `/admin/workspace/${project.workspaceId}/userPools/${importPoolId}/userFields/${field.id}/users/${result.id}`,
-                { value },
-              );
-            }
-          }
-        }
-        imported++;
-      } catch (err) {
-        errors.push({ email, reason: extractErrorReason(err) });
-      }
-      setImportProgress({ current: i + 1, total: users.length });
-    }
-
-    setImportPreview(null);
-    setImportProgress(null);
-    setImportResult({ imported, failed: errors.length, errors });
-    await refreshCore();
   };
 
   const addDisabled = !hasApps || !hasRoles;
@@ -2682,113 +2649,116 @@ export default function AppUsers({ project, appId: appIdProp }: Props) {
         </DialogActions>
       </Dialog>
 
-      {/* Import preview / progress dialog */}
+      {/* Import preview dialog */}
       <Dialog
         open={!!importPreview}
-        onClose={() => { if (!importProgress) setImportPreview(null); }}
+        onClose={() => { if (!importRunning) setImportPreview(null); }}
         maxWidth="sm"
         fullWidth
       >
         <DialogTitle>{t("projectMembers.importTitle", { defaultValue: "Import users" })}</DialogTitle>
         <DialogContent>
-          {importProgress ? (
-            <Stack spacing={2} sx={{ mt: 1 }}>
-              <Typography variant="body2">
-                {t("projectMembers.importingProgress", { current: importProgress.current, total: importProgress.total, defaultValue: "Importing {{current}} of {{total}}…" })}
-              </Typography>
-              <LinearProgress
-                variant="determinate"
-                value={(importProgress.current / Math.max(importProgress.total, 1)) * 100}
-              />
-            </Stack>
-          ) : importPreview ? (
+          {importPreview ? (
             <Stack spacing={1.5} sx={{ mt: 1 }}>
               <Typography variant="body2" color="text.secondary">
                 <Trans i18nKey="projectMembers.importFrom" values={{ filename: importPreview.filename }} components={tc}>
                   From <code>{"{{filename}}"}</code>
                 </Trans>
               </Typography>
-              <Typography>
-                <Trans i18nKey="projectMembers.importUsersInFile" count={importPreview.users.length} values={{ count: importPreview.users.length }} components={tc}>
-                  <b>{"{{count}}"}</b> users in file:
-                </Trans>
-              </Typography>
-              <Box sx={{ pl: 2 }}>
+
+              <ToggleButtonGroup
+                size="small"
+                exclusive
+                value={importOnConflict}
+                onChange={(_e, v) => { if (v) void changeImportOnConflict(v); }}
+                disabled={importRunning}
+              >
+                <ToggleButton value="skip">{t("projectMembers.importSkip", { defaultValue: "Skip existing" })}</ToggleButton>
+                <ToggleButton value="update">{t("projectMembers.importUpdate", { defaultValue: "Update existing" })}</ToggleButton>
+              </ToggleButtonGroup>
+
+              <Box sx={{ pl: 0.5 }}>
                 <Typography variant="body2" color="success.main">
-                  • {t("projectMembers.importWillCreate", { count: importPreview.toCreate, defaultValue: "{{count}} will be created" })}
+                  • {t("projectMembers.importWillCreate", { count: importPreview.response.summary.created, defaultValue: "{{count}} will be created" })}
                 </Typography>
                 <Typography variant="body2" color="text.secondary">
-                  • {t("projectMembers.importWillUpdate", { count: importPreview.toUpdate, defaultValue: "{{count}} will be updated (email already exists)" })}
+                  • {t("projectMembers.importWillUpdate", { count: importPreview.response.summary.updated, defaultValue: "{{count}} will be updated" })}
                 </Typography>
+                <Typography variant="body2" color="text.secondary">
+                  • {t("projectMembers.importWillSkip", { count: importPreview.response.summary.skipped, defaultValue: "{{count}} will be skipped" })}
+                </Typography>
+                {importPreview.response.summary.failed > 0 && (
+                  <Typography variant="body2" color="error.main">
+                    • {t("projectMembers.importWillFail", { count: importPreview.response.summary.failed, defaultValue: "{{count}} have errors and will be skipped" })}
+                  </Typography>
+                )}
               </Box>
-              <Alert severity="info" sx={{ mt: 1, fontSize: 13 }}>
-                {t("projectMembers.importNote", { defaultValue: "Roles and field values will be applied. Unknown role/permission/field slugs are silently skipped; check the result for errors." })}
-              </Alert>
+
+              {importPreview.response.summary.failed > 0 && (
+                <Box sx={{ maxHeight: 220, overflow: "auto", border: "1px solid", borderColor: "divider", borderRadius: 1, p: 1.5 }}>
+                  {summarizeImportResponse(importPreview.response).failures.map((f, i) => (
+                    <Box key={i} sx={{ mb: 1, "&:last-of-type": { mb: 0 } }}>
+                      <Typography variant="body2" sx={{ fontFamily: "var(--font-mono)", fontWeight: 600 }}>{f.email}</Typography>
+                      <Typography variant="caption" color="text.secondary">{f.reason}</Typography>
+                    </Box>
+                  ))}
+                </Box>
+              )}
             </Stack>
           ) : null}
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setImportPreview(null)} disabled={!!importProgress}>
+          <Button onClick={() => setImportPreview(null)} disabled={importRunning}>
             {t("common.cancel", { defaultValue: "Cancel" })}
           </Button>
           <Button
             onClick={runImport}
             variant="contained"
-            disabled={!!importProgress || !importPreview || importPreview.users.length === 0}
+            disabled={importRunning || !importPreview || (importPreview.response.summary.created + importPreview.response.summary.updated === 0)}
           >
-            {importProgress ? t("projectMembers.importingShort", { defaultValue: "Importing…" }) : t("projectMembers.importN", { count: importPreview?.users.length ?? 0, defaultValue: "Import {{count}}" })}
+            {importRunning
+              ? t("projectMembers.importingShort", { defaultValue: "Importing…" })
+              : t("projectMembers.importApply", { defaultValue: "Apply import" })}
           </Button>
         </DialogActions>
       </Dialog>
 
       {/* Import result dialog */}
-      <Dialog
-        open={!!importResult}
-        onClose={() => setImportResult(null)}
-        maxWidth="sm"
-        fullWidth
-      >
+      <Dialog open={!!importResult} onClose={() => setImportResult(null)} maxWidth="sm" fullWidth>
         <DialogTitle>{t("projectMembers.importComplete", { defaultValue: "Import complete" })}</DialogTitle>
         <DialogContent>
-          {importResult && (
-            <Stack spacing={1.5} sx={{ mt: 1 }}>
-              <Typography color="success.main">
-                <Trans i18nKey="projectMembers.importedCount" values={{ count: importResult.imported }} components={tc}>
-                  Imported: <b>{"{{count}}"}</b>
-                </Trans>
-              </Typography>
-              {importResult.failed > 0 && (
-                <>
-                  <Typography color="error.main">
-                    <Trans i18nKey="projectMembers.failedCount" values={{ count: importResult.failed }} components={tc}>
-                      Failed: <b>{"{{count}}"}</b>
-                    </Trans>
-                  </Typography>
-                  <Box
-                    sx={{
-                      maxHeight: 320,
-                      overflow: "auto",
-                      border: "1px solid",
-                      borderColor: "divider",
-                      borderRadius: 1,
-                      p: 1.5,
-                    }}
-                  >
-                    {importResult.errors.map((err, i) => (
-                      <Box key={i} sx={{ mb: 1.25, "&:last-of-type": { mb: 0 } }}>
-                        <Typography variant="body2" sx={{ fontFamily: "var(--font-mono)", fontWeight: 600 }}>
-                          {err.email}
-                        </Typography>
-                        <Typography variant="caption" color="text.secondary">
-                          {err.reason}
-                        </Typography>
-                      </Box>
-                    ))}
-                  </Box>
-                </>
-              )}
-            </Stack>
-          )}
+          {importResult && (() => {
+            const { summary, failures } = summarizeImportResponse(importResult);
+            return (
+              <Stack spacing={1.5} sx={{ mt: 1 }}>
+                <Typography color="success.main">
+                  {t("projectMembers.importResultLine", {
+                    created: summary.created,
+                    updated: summary.updated,
+                    skipped: summary.skipped,
+                    defaultValue: "Created {{created}}, updated {{updated}}, skipped {{skipped}}",
+                  })}
+                </Typography>
+                {summary.failed > 0 && (
+                  <>
+                    <Typography color="error.main">
+                      <Trans i18nKey="projectMembers.failedCount" values={{ count: summary.failed }} components={tc}>
+                        Failed: <b>{"{{count}}"}</b>
+                      </Trans>
+                    </Typography>
+                    <Box sx={{ maxHeight: 320, overflow: "auto", border: "1px solid", borderColor: "divider", borderRadius: 1, p: 1.5 }}>
+                      {failures.map((err, i) => (
+                        <Box key={i} sx={{ mb: 1.25, "&:last-of-type": { mb: 0 } }}>
+                          <Typography variant="body2" sx={{ fontFamily: "var(--font-mono)", fontWeight: 600 }}>{err.email}</Typography>
+                          <Typography variant="caption" color="text.secondary">{err.reason}</Typography>
+                        </Box>
+                      ))}
+                    </Box>
+                  </>
+                )}
+              </Stack>
+            );
+          })()}
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setImportResult(null)} variant="contained">
