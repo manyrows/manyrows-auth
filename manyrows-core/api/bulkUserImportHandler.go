@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"net/mail"
 	"strings"
 
 	"manyrows-core/core"
@@ -134,6 +135,94 @@ func summarize(rows []importRowResult) importSummary {
 	return s
 }
 
+// importRowPlan is the validated, classified form of one row, carrying the
+// resolved ids the apply phase needs so slugs are resolved exactly once.
+type importRowPlan struct {
+	result    importRowResult
+	row       importRow
+	roleIDs   []uuid.UUID                   // resolved when row.Roles != nil
+	permIDs   []uuid.UUID                   // resolved when row.Permissions != nil
+	fieldVals map[uuid.UUID]json.RawMessage // fieldID -> raw value (known keys only)
+}
+
+// planRow validates one row and classifies its outcome WITHOUT writing.
+// seen tracks normalized emails already encountered in this batch.
+func (handler *RequestHandler) planRow(
+	ctx context.Context,
+	idx int,
+	row importRow,
+	lk importLookups,
+	poolID uuid.UUID,
+	onConflict string,
+	seen map[string]bool,
+) importRowPlan {
+	plan := importRowPlan{row: row}
+	plan.result.Row = idx + 1
+	plan.result.Email = strings.TrimSpace(row.Email)
+
+	fail := func(field, msg string) importRowPlan {
+		plan.result.Outcome = "failed"
+		plan.result.Errors = append(plan.result.Errors, importFieldError{Field: field, Message: msg})
+		return plan
+	}
+
+	email := strings.TrimSpace(strings.ToLower(row.Email))
+	if _, err := mail.ParseAddress(email); err != nil {
+		return fail("email", "invalid email format")
+	}
+	plan.result.Email = email
+
+	if seen[email] {
+		return fail("email", "duplicate email in file")
+	}
+	seen[email] = true
+
+	if row.Roles != nil {
+		ids, unknown := resolveSlugs(*row.Roles, lk.roleBySlug)
+		if len(unknown) > 0 {
+			return fail("roles", "unknown role(s): "+strings.Join(unknown, ", "))
+		}
+		plan.roleIDs = ids
+	}
+	if row.Permissions != nil {
+		ids, unknown := resolveSlugs(*row.Permissions, lk.permBySlug)
+		if len(unknown) > 0 {
+			return fail("permissions", "unknown permission(s): "+strings.Join(unknown, ", "))
+		}
+		plan.permIDs = ids
+	}
+	if row.Fields != nil {
+		plan.fieldVals = map[uuid.UUID]json.RawMessage{}
+		for key, raw := range row.Fields {
+			field, ok := lk.fieldByKey[key]
+			if !ok {
+				return fail("fields."+key, "unknown field key")
+			}
+			if msg := core.ValidateFieldValue(field.ValueType, raw); msg != "" {
+				return fail("fields."+key, msg)
+			}
+			plan.fieldVals[field.ID] = raw
+		}
+	}
+
+	// Existence classification (read-only).
+	existing, err := handler.repo.GetUserByEmailInPool(ctx, email, poolID)
+	if err != nil && !errors.Is(err, repo.ErrNotFound) {
+		return fail("", "internal error")
+	}
+	switch {
+	case existing == nil:
+		plan.result.Outcome = "created"
+	case onConflict == "update":
+		plan.result.Outcome = "updated"
+		plan.result.UserID = existing.ID.String()
+	default:
+		plan.result.Outcome = "skipped"
+		plan.result.UserID = existing.ID.String()
+	}
+	return plan
+}
+
 // HandleAdminBulkUserImport imports/updates many users in one request.
 // POST /admin/workspace/{workspaceId}/projects/{projectId}/apps/{appId}/users:import
 func (handler *RequestHandler) HandleAdminBulkUserImport(w http.ResponseWriter, r *http.Request) {
@@ -207,8 +296,19 @@ func (handler *RequestHandler) HandleAdminBulkUserImport(w http.ResponseWriter, 
 	}
 	_ = defaultRoleIDs // used in the apply phase (Task 3)
 
-	// Row processing is added in Task 2 (validate) and Task 3 (apply).
-	results := make([]importRowResult, 0, len(req.Rows))
+	seen := make(map[string]bool, len(req.Rows))
+	plans := make([]importRowPlan, 0, len(req.Rows))
+	for i, row := range req.Rows {
+		plans = append(plans, handler.planRow(ctx, i, row, lk, app.UserPoolID, onConflict, seen))
+	}
+
+	results := make([]importRowResult, 0, len(plans))
+	for _, plan := range plans {
+		// Apply phase (Task 3) handles created/updated rows. For now, and
+		// always for dryRun, return the classification as-is.
+		results = append(results, plan.result)
+	}
+
 	resp := bulkImportResponse{DryRun: req.DryRun, Rows: results, Summary: summarize(results)}
 	utils.WriteJsonWithStatusCode(w, resp, http.StatusOK)
 }

@@ -2,11 +2,15 @@ package api_test
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
+
+	"manyrows-core/core"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/gofrs/uuid/v5"
@@ -145,5 +149,121 @@ func TestBulkUserImport_CrossWorkspaceAppIsolation(t *testing.T) {
 	router.ServeHTTP(rr, req)
 	if rr.Code != http.StatusNotFound {
 		t.Fatalf("expected 404 for cross-workspace app, got %d: %s", rr.Code, rr.Body.String())
+	}
+}
+
+func createTestPermission(t *testing.T, projectID uuid.UUID, slug string) core.Permission {
+	t.Helper()
+	p := core.Permission{ProjectID: projectID, Name: "perm-" + slug, Slug: slug}
+	if err := testEnv.Repo.CreatePermission(context.Background(), p); err != nil {
+		t.Fatalf("CreatePermission: %v", err)
+	}
+	got, err := testEnv.Repo.GetPermissionsByProjectID(context.Background(), projectID)
+	if err != nil {
+		t.Fatalf("GetPermissionsByProjectID: %v", err)
+	}
+	for _, x := range got {
+		if x.Slug == slug {
+			return x
+		}
+	}
+	t.Fatalf("permission %s not found after create", slug)
+	return core.Permission{}
+}
+
+func createTestUserField(t *testing.T, poolID, createdBy uuid.UUID, key string, vt core.UserFieldValueType) core.UserField {
+	t.Helper()
+	now := time.Now().UTC()
+	uf, err := testEnv.Repo.CreateUserField(context.Background(), core.UserField{
+		UserPoolID:   poolID,
+		Key:          key,
+		ValueType:    vt,
+		Visibility:   "server",
+		UserEditable: false,
+		Label:        key,
+		Status:       "active",
+		CreatedAt:    now,
+		UpdatedAt:    now,
+		CreatedBy:    createdBy,
+	})
+	if err != nil {
+		t.Fatalf("CreateUserField: %v", err)
+	}
+	return uf
+}
+
+func TestBulkUserImport_DryRunClassifies(t *testing.T) {
+	ctx := context.Background()
+	svc := NewTestServices(t)
+	router := setupBulkUserImportRouter(t, svc)
+
+	acc := testEnv.CreateTestAccount(t, "impdry-"+GenerateUniqueSlug("u")+"@example.com")
+	ws := testEnv.CreateTestWorkspace(t, acc, "WS", GenerateUniqueSlug("ws"))
+	app := testEnv.CreateTestApp(t, ws, acc)
+	sess, claims := testEnv.CreateTestSession(t, acc)
+	defer testEnv.CleanupTestData(t, &TestFixtures{Account: acc, Workspace: ws, Session: sess})
+
+	role := createTestRole(t, app.ProjectID)
+	createTestUserField(t, app.UserPoolID, acc.ID, "department", core.UserFieldValueTypeString)
+
+	// An existing user in the pool.
+	existingEmail := "existing-" + GenerateUniqueSlug("u") + "@example.com"
+	existing, _, err := testEnv.Repo.GetOrCreateUser(ctx, existingEmail, app, core.UserSourceRegistered)
+	if err != nil {
+		t.Fatalf("seed existing user: %v", err)
+	}
+	t.Cleanup(func() { _, _ = testEnv.DB.Pool().Exec(ctx, "DELETE FROM users WHERE id = $1", existing.ID) })
+
+	url := fmt.Sprintf("/admin/workspace/%s/projects/%s/apps/%s/users:import", ws.ID, app.ProjectID, app.ID)
+	post := func(payload map[string]any) importResp {
+		body, _ := json.Marshal(payload)
+		req := httptest.NewRequest(http.MethodPost, url, bytes.NewReader(body))
+		testEnv.SetSessionCookie(t, req, claims)
+		rr := httptest.NewRecorder()
+		router.ServeHTTP(rr, req)
+		if rr.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d: %s", rr.Code, rr.Body.String())
+		}
+		var out importResp
+		if err := json.Unmarshal(rr.Body.Bytes(), &out); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		return out
+	}
+
+	newEmail := "new-" + GenerateUniqueSlug("u") + "@example.com"
+	out := post(map[string]any{
+		"dryRun":     true,
+		"onConflict": "skip",
+		"rows": []map[string]any{
+			{"email": newEmail, "roles": []string{role.Slug}},
+			{"email": existingEmail},
+			{"email": "not-an-email"},
+			{"email": "bad-role-" + GenerateUniqueSlug("u") + "@e.com", "roles": []string{"nope"}},
+			{"email": "bad-field-" + GenerateUniqueSlug("u") + "@e.com", "fields": map[string]any{"department": 123}},
+			{"email": "bad-key-" + GenerateUniqueSlug("u") + "@e.com", "fields": map[string]any{"nokey": "x"}},
+		},
+	})
+	// 6 rows: 1 new (created), 1 existing (skipped, onConflict=skip), and 4 that
+	// fail validation — invalid email, unknown role, wrong-typed field value, and
+	// an unknown field key.
+	if out.Summary.Created != 1 || out.Summary.Skipped != 1 || out.Summary.Failed != 4 {
+		t.Fatalf("skip mode: expected created=1 skipped=1 failed=4, got %+v", out.Summary)
+	}
+
+	out = post(map[string]any{
+		"dryRun":     true,
+		"onConflict": "update",
+		"rows": []map[string]any{
+			{"email": newEmail},
+			{"email": existingEmail},
+		},
+	})
+	if out.Summary.Created != 1 || out.Summary.Updated != 1 {
+		t.Fatalf("update mode: expected created=1 updated=1, got %+v", out.Summary)
+	}
+
+	if u, _ := testEnv.Repo.GetUserByEmailInPool(ctx, newEmail, app.UserPoolID); u != nil {
+		t.Fatalf("dryRun created a user (%s) — must not write", newEmail)
 	}
 }
