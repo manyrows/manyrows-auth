@@ -382,6 +382,9 @@ func (a *AppService) initRouter() error {
 			// Bulk recovery: fan one action out over many users.
 			r.Post("/users:bulk", requestHandler.HandleAdminBulkUserAction)
 
+			// Bulk import: create/update many users from an uploaded file.
+			r.Post("/users:import", requestHandler.HandleAdminBulkUserImport)
+
 			// Parity with the S2S API for support operations on a user.
 			r.Post("/users/{userId}/magic-link", requestHandler.HandleAdminCreateMagicLink)
 			r.Put("/users/{userId}/password", requestHandler.HandleAdminSetUserPassword)

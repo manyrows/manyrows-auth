@@ -3,9 +3,11 @@ import {
   buildExportEntry,
   buildExportFilename,
   parseUsersJson,
-  computeImportPreview,
+  toImportRows,
+  summarizeImportResponse,
   extractErrorReason,
   resolveSlugsToIds,
+  type ImportResponse,
 } from "./appUsersImportExport";
 
 // ===== buildExportEntry =====
@@ -122,56 +124,39 @@ describe("parseUsersJson", () => {
   });
 });
 
-// ===== computeImportPreview =====
+// ===== toImportRows =====
 
-describe("computeImportPreview", () => {
-  const existing = new Set(["alice@example.com", "bob@example.com"]);
-
-  it("counts all-new as toCreate", () => {
-    const preview = computeImportPreview(
-      [{ email: "carol@example.com" }, { email: "dave@example.com" }],
-      existing,
-    );
-    expect(preview).toEqual({ total: 2, toCreate: 2, toUpdate: 0, missingEmail: 0 });
+describe("toImportRows", () => {
+  it("preserves present-vs-absent and translates emailVerifiedAt", () => {
+    const rows = toImportRows([
+      { email: "a@x.com", roles: [], emailVerifiedAt: "2026-01-01T00:00:00Z", fields: { dept: "Eng" } },
+      { email: "b@x.com", enabled: false },
+    ]);
+    expect(rows[0]).toEqual({ email: "a@x.com", roles: [], emailVerified: true, fields: { dept: "Eng" } });
+    expect(rows[1]).toEqual({ email: "b@x.com", enabled: false });
+    expect("roles" in rows[1]).toBe(false);
   });
 
-  it("counts all-existing as toUpdate", () => {
-    const preview = computeImportPreview(
-      [{ email: "alice@example.com" }, { email: "bob@example.com" }],
-      existing,
-    );
-    expect(preview).toEqual({ total: 2, toCreate: 0, toUpdate: 2, missingEmail: 0 });
+  it("prefers an explicit emailVerified over emailVerifiedAt", () => {
+    const rows = toImportRows([{ email: "c@x.com", emailVerified: false, emailVerifiedAt: "2026-01-01T00:00:00Z" }]);
+    expect(rows[0].emailVerified).toBe(false);
   });
+});
 
-  it("matches case-insensitively", () => {
-    const preview = computeImportPreview(
-      [{ email: "ALICE@example.com" }, { email: "Bob@Example.Com" }],
-      existing,
-    );
-    expect(preview.toUpdate).toBe(2);
-    expect(preview.toCreate).toBe(0);
-  });
-
-  it("trims email whitespace before checking", () => {
-    const preview = computeImportPreview([{ email: "  alice@example.com  " }], existing);
-    expect(preview.toUpdate).toBe(1);
-  });
-
-  it("counts rows with missing email separately", () => {
-    const preview = computeImportPreview(
-      [{ email: "alice@example.com" }, { email: "" }, {}, { email: "   " }],
-      existing,
-    );
-    expect(preview).toEqual({ total: 4, toCreate: 0, toUpdate: 1, missingEmail: 3 });
-  });
-
-  it("works with empty input", () => {
-    expect(computeImportPreview([], existing)).toEqual({
-      total: 0,
-      toCreate: 0,
-      toUpdate: 0,
-      missingEmail: 0,
-    });
+describe("summarizeImportResponse", () => {
+  it("passes the summary through and flattens failures", () => {
+    const resp: ImportResponse = {
+      dryRun: false,
+      summary: { total: 3, created: 1, updated: 0, skipped: 1, failed: 1 },
+      rows: [
+        { row: 1, email: "ok@x.com", outcome: "created" },
+        { row: 2, email: "dup@x.com", outcome: "skipped" },
+        { row: 3, email: "bad@x.com", outcome: "failed", errors: [{ field: "roles", message: "unknown role(s): nope" }] },
+      ],
+    };
+    const { summary, failures } = summarizeImportResponse(resp);
+    expect(summary.created).toBe(1);
+    expect(failures).toEqual([{ email: "bad@x.com", reason: "roles: unknown role(s): nope" }]);
   });
 });
 
