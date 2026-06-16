@@ -251,6 +251,34 @@ func TestBulkUserImport_DryRunClassifies(t *testing.T) {
 		t.Fatalf("skip mode: expected created=1 skipped=1 failed=4, got %+v", out.Summary)
 	}
 
+	// Per-row outcomes + error categories (rows returned in input order).
+	type expect struct {
+		outcome string
+		field   string // first error field, "" when not failed
+	}
+	wantRows := []expect{
+		{"created", ""},
+		{"skipped", ""},
+		{"failed", "email"},
+		{"failed", "roles"},
+		{"failed", "fields.department"},
+		{"failed", "fields.nokey"},
+	}
+	if len(out.Rows) != len(wantRows) {
+		t.Fatalf("expected %d rows, got %d", len(wantRows), len(out.Rows))
+	}
+	for i, want := range wantRows {
+		got := out.Rows[i]
+		if got.Outcome != want.outcome {
+			t.Errorf("row %d: outcome = %q, want %q", i+1, got.Outcome, want.outcome)
+		}
+		if want.field != "" {
+			if len(got.Errors) == 0 || got.Errors[0].Field != want.field {
+				t.Errorf("row %d: expected first error field %q, got %+v", i+1, want.field, got.Errors)
+			}
+		}
+	}
+
 	out = post(map[string]any{
 		"dryRun":     true,
 		"onConflict": "update",

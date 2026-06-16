@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"net/mail"
+	"sort"
 	"strings"
 
 	"manyrows-core/core"
@@ -158,7 +159,9 @@ func (handler *RequestHandler) planRow(
 ) importRowPlan {
 	plan := importRowPlan{row: row}
 	plan.result.Row = idx + 1
-	plan.result.Email = strings.TrimSpace(row.Email)
+
+	email := strings.TrimSpace(strings.ToLower(row.Email))
+	plan.result.Email = email
 
 	fail := func(field, msg string) importRowPlan {
 		plan.result.Outcome = "failed"
@@ -166,12 +169,14 @@ func (handler *RequestHandler) planRow(
 		return plan
 	}
 
-	email := strings.TrimSpace(strings.ToLower(row.Email))
 	if _, err := mail.ParseAddress(email); err != nil {
 		return fail("email", "invalid email format")
 	}
-	plan.result.Email = email
 
+	// Dedupe is by email identity: the first row to use a given email claims
+	// it, even if that row later fails other validation. Any later row with the
+	// same email is a "duplicate" — a single import file listing one email
+	// twice is a data error the admin should fix, not silently merge.
 	if seen[email] {
 		return fail("email", "duplicate email in file")
 	}
@@ -193,15 +198,29 @@ func (handler *RequestHandler) planRow(
 	}
 	if row.Fields != nil {
 		plan.fieldVals = map[uuid.UUID]json.RawMessage{}
-		for key, raw := range row.Fields {
+		keys := make([]string, 0, len(row.Fields))
+		for k := range row.Fields {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		var fieldErrs []importFieldError
+		for _, key := range keys {
+			raw := row.Fields[key]
 			field, ok := lk.fieldByKey[key]
 			if !ok {
-				return fail("fields."+key, "unknown field key")
+				fieldErrs = append(fieldErrs, importFieldError{Field: "fields." + key, Message: "unknown field key"})
+				continue
 			}
 			if msg := core.ValidateFieldValue(field.ValueType, raw); msg != "" {
-				return fail("fields."+key, msg)
+				fieldErrs = append(fieldErrs, importFieldError{Field: "fields." + key, Message: msg})
+				continue
 			}
 			plan.fieldVals[field.ID] = raw
+		}
+		if len(fieldErrs) > 0 {
+			plan.result.Outcome = "failed"
+			plan.result.Errors = append(plan.result.Errors, fieldErrs...)
+			return plan
 		}
 	}
 
