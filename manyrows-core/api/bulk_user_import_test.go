@@ -438,6 +438,82 @@ func TestBulkUserImport_PresentVsAbsentRoles(t *testing.T) {
 	}
 }
 
+func TestBulkUserImport_RoundTripFacets(t *testing.T) {
+	ctx := context.Background()
+	svc := NewTestServices(t)
+	router := setupBulkUserImportRouter(t, svc)
+
+	acc := testEnv.CreateTestAccount(t, "imprt-"+GenerateUniqueSlug("u")+"@example.com")
+	ws := testEnv.CreateTestWorkspace(t, acc, "WS", GenerateUniqueSlug("ws"))
+	app := testEnv.CreateTestApp(t, ws, acc)
+	sess, claims := testEnv.CreateTestSession(t, acc)
+	defer testEnv.CleanupTestData(t, &TestFixtures{Account: acc, Workspace: ws, Session: sess})
+
+	role := createTestRole(t, app.ProjectID)
+	perm := createTestPermission(t, app.ProjectID, "billing-read-"+GenerateUniqueSlug("p"))
+	createTestUserField(t, app.UserPoolID, acc.ID, "department", core.UserFieldValueTypeString)
+
+	url := fmt.Sprintf("/admin/workspace/%s/projects/%s/apps/%s/users:import", ws.ID, app.ProjectID, app.ID)
+	email := "rt-" + GenerateUniqueSlug("u") + "@example.com"
+	t.Cleanup(func() {
+		if u, _ := testEnv.Repo.GetUserByEmailInPool(ctx, email, app.UserPoolID); u != nil {
+			_, _ = testEnv.DB.Pool().Exec(ctx, "DELETE FROM users WHERE id = $1", u.ID)
+		}
+	})
+
+	body, _ := json.Marshal(map[string]any{
+		"rows": []map[string]any{{
+			"email":         email,
+			"enabled":       true,
+			"emailVerified": true,
+			"roles":         []string{role.Slug},
+			"permissions":   []string{perm.Slug},
+			"fields":        map[string]any{"department": "Engineering"},
+		}},
+	})
+	req := httptest.NewRequest(http.MethodPost, url, bytes.NewReader(body))
+	testEnv.SetSessionCookie(t, req, claims)
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rr.Code, rr.Body.String())
+	}
+	var out importResp
+	if err := json.Unmarshal(rr.Body.Bytes(), &out); err != nil {
+		t.Fatalf("decode response: %v (body=%s)", err, rr.Body.String())
+	}
+	if out.Summary.Created != 1 {
+		t.Fatalf("expected created=1, got %+v (rows=%+v)", out.Summary, out.Rows)
+	}
+
+	u, err := testEnv.Repo.GetUserByEmailInPool(ctx, email, app.UserPoolID)
+	if err != nil || u == nil {
+		t.Fatalf("user missing: %v", err)
+	}
+	if !u.Enabled {
+		t.Errorf("expected enabled=true")
+	}
+	if u.EmailVerifiedAt == nil {
+		t.Errorf("expected email verified")
+	}
+
+	roleRows, err := testEnv.Repo.GetUserRolesByUserAndAppID(ctx, app.ProjectID, u.ID, app.ID)
+	if err != nil {
+		t.Fatalf("GetUserRolesByUserAndAppID: %v", err)
+	}
+	if len(roleRows) != 1 || roleRows[0].RoleID != role.ID {
+		t.Errorf("expected the imported role, got %+v", roleRows)
+	}
+
+	permIDs, err := testEnv.Repo.GetDirectPermissionIDs(ctx, app.ProjectID, u.ID, app.ID)
+	if err != nil {
+		t.Fatalf("GetDirectPermissionIDs: %v", err)
+	}
+	if len(permIDs) != 1 || permIDs[0] != perm.ID {
+		t.Errorf("expected direct permission %s, got %v", perm.ID, permIDs)
+	}
+}
+
 func mustUserID(t *testing.T, ctx context.Context, app *core.App, email string) uuid.UUID {
 	t.Helper()
 	u, err := testEnv.Repo.GetUserByEmailInPool(ctx, email, app.UserPoolID)
