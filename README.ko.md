@@ -408,7 +408,7 @@ UI(로그인, 회원가입, OTP 인증, 비밀번호 재설정, 프로필)입니
 React용 선택적 편의 레이어이며(프레임워크가 없어도 쓸 수 있는
 런타임도 있습니다), 완전한 제어를 원하면 Client REST API를 직접
 호출하세요. 전체 레퍼런스 - 모든 prop, 훅, 테마, 인증 라우트 처리,
-REST API - 는 **<https://manyrows.com/docs>**에 있습니다.
+REST API - 는 **<https://manyrows.com/products/auth/docs>**에 있습니다.
 
 > **CORS - 필수.** AppKit은 *여러분 앱의* 오리진에서 ManyRows를
 > 호출하므로, 관리자 UI(Apps 페이지)에서 앱의 허용 CORS 오리진에

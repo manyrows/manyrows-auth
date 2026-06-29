@@ -285,7 +285,7 @@ export default function AppHeader(props: AppHeaderProps) {
           {/* API docs */}
           <Button
             component="a"
-            href="https://manyrows.com/docs"
+            href="https://manyrows.com/products/auth/docs"
             target="_blank"
             rel="noopener noreferrer"
             size="small"

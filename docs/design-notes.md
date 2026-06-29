@@ -3,7 +3,7 @@
 ManyRows Auth is built by one developer, in the open, for a domain where the
 defaults are often wrong and the "obvious" feature is sometimes the one you
 shouldn't ship. This document records the non-obvious decisions: the *why*, not
-the *what*. (The [README](../README.md) and the [docs](https://manyrows.com/docs)
+the *what*. (The [README](../README.md) and the [docs](https://manyrows.com/products/auth/docs)
 cover what it does and how to use it.)
 
 Each entry has the same shape: the decision, the alternative we rejected, and the

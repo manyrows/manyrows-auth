@@ -402,7 +402,7 @@ password reset, profile) that talks to your install. It's an optional
 convenience layer for React (with a framework-free runtime too); if you
 want full control, call the Client REST API directly. Full reference -
 every prop, hook, theming, auth-route handling, the REST API - is at
-**<https://manyrows.com/docs>**.
+**<https://manyrows.com/products/auth/docs>**.
 
 > **CORS - required.** AppKit calls ManyRows from *your* app's origin,
 > so add your domain (e.g. `https://yourapp.com`) to the app's allowed
