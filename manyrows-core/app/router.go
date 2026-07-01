@@ -512,6 +512,13 @@ func commonSecurityHeaders(useHTTPSOnly bool) func(next http.Handler) http.Handl
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("X-Content-Type-Options", "nosniff")
 			w.Header().Set("Referrer-Policy", "strict-origin-when-cross-origin")
+			// This is an authentication server: the admin console, the
+			// AppKit auth widget, and the API should never appear in search
+			// results. X-Robots-Tag applies to every response (not just HTML
+			// with a <meta> tag) and, unlike robots.txt Disallow, actually
+			// causes crawlers to *drop* already-indexed pages — provided the
+			// page stays crawlable so the header can be seen.
+			w.Header().Set("X-Robots-Tag", "noindex, nofollow")
 			if useHTTPSOnly {
 				w.Header().Set("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
 			}
